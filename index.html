@@ -3656,13 +3656,19 @@ function matchCardNo(filename){
 }
 function openImgImport(){
   const inp=h("input",{type:"file",accept:"image/*",multiple:""});
+  const dinp=h("input",{type:"file",multiple:"",webkitdirectory:"",directory:""});
+  const pick=h("div",{style:"font-size:11px;color:var(--ink-soft);margin:2px 0"},"");
+  const cnt=()=>{const a=(inp.files?inp.files.length:0),b=(dinp.files?dinp.files.length:0);
+    pick.textContent=(a||b)?`選択中: ${a?a+"ファイル":""}${a&&b?" ＋ ":""}${b?"フォルダ("+b+"件)":""}`:"";};
+  inp.addEventListener("change",cnt);dinp.addEventListener("change",cnt);
   const status=h("div",{style:"font-size:12px;margin-top:10px;min-height:20px"});
   const usage=h("div",{style:"font-size:11px;color:var(--ink-soft);margin:4px 0"},"");
   const upd=()=>{usage.textContent="登録済み画像: "+Object.keys(IMGIDX).length+"枚（枚数制限なし）";};
   upd();
   const start=h("button",{class:"pri",onclick:async()=>{
-    const fs=inp.files?Array.from(inp.files):[];
-    if(!fs.length){toast("画像ファイルを選んでください");return;}
+    let fs=[...(inp.files?Array.from(inp.files):[]),...(dinp.files?Array.from(dinp.files):[])];
+    fs=fs.filter(f=>/\.(png|jpe?g|jfif|pjp|webp|gif|bmp|svg)$/i.test(f.name));
+    if(!fs.length){toast("画像ファイル/フォルダを選んでください");return;}
     if(!db){toast("同期に接続していません（Firebase未設定）。");return;}
     start.disabled=true;start.textContent="アップロード中…";modalLock=true;
     const res=await bulkUploadImgs(fs,(n,t,name)=>{status.textContent=`(${n}/${t}) ${name}`;});
@@ -3677,11 +3683,15 @@ function openImgImport(){
   modal(h("div",{},
     h("h2",{},"カード画像を一括アップロード"),
     h("p",{class:"hint"},
-      "ファイル名を「カード番号」にした画像を全部選んで実行（例 BP03-M06.png / TBP01-M01.jpg。"+
-      "アンダースコア・末尾の -SR 等は無視、選手名でも可）。約300pxのWebPに縮小して共有DBに保存、相手にも同期。全カードぶん入れてOK。"),
+      "ファイル名を「カード番号」にした画像（例 BP03-M06.png）。アンダースコア・末尾の -SR 等は無視、選手名でも可。"+
+      "約300pxのWebPに縮小して共有DBに保存、相手にも同期。全カードぶん入れてOK。"),
     usage,
+    h("div",{style:"font-size:11px;font-weight:700;margin:6px 0 2px"},"ファイルを選ぶ（1フォルダ内）"),
     inp,
-    h("div",{class:"row"},start,
+    h("div",{style:"font-size:11px;font-weight:700;margin:8px 0 2px"},"フォルダごと選ぶ（サブフォルダも全部・球団フォルダの親を指定でOK）"),
+    dinp,
+    pick,
+    h("div",{class:"row",style:"margin-top:8px"},start,
       h("button",{onclick:async()=>{
         if(!db){toast("同期に接続していません。");return;}
         if(!await uiConfirm("登録済みのカード画像を全部削除します。よろしいですか？","全部削除する"))return;
