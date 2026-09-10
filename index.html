@@ -2877,7 +2877,7 @@ function renderScoreboard(){
       h("button",{class:"step",onclick:()=>{b.inning++;save();}},"›")),
     outs,
     h("button",{class:"change",onclick:()=>{
-      b.outs=0;if(b.half==="top")b.half="bot";else{b.half="top";b.inning++;}
+      b.outs=0;b.swing=null;if(b.half==="top")b.half="bot";else{b.half="top";b.inning++;}
       pushLog(`チェンジ → ${b.inning}回${b.half==="top"?"表":"裏"}`);save();}},"チェンジ ⟳")));
   sb.append(team("p2",true));
   // line score (innings 1-5, more if extra innings)
@@ -2907,6 +2907,14 @@ function renderScoreboard(){
     h("button",{style:"background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700",
       onclick:()=>showdownSupport(true)},"勝負！サポート公開"),
     h("button",{onclick:()=>showdownSupport(false)},"サポートを伏せる")));
+  const atk=b.half==="top"?"p1":"p2";
+  const swBtn=(v,lab)=>h("button",{
+    style:b.swing===v?"background:var(--gold);border-color:var(--gold);color:#241a02;font-weight:800":"",
+    onclick:()=>{b.swing=(b.swing===v?null:v);pushLog(`${teamName(atk)} 宣言: ${b.swing==="meet"?"ミート":b.swing==="power"?"強振":"取消"}`);save();}},lab);
+  sb.append(h("div",{class:"turnbar"},
+    h("span",{class:"who"},teamName(atk)+" 打撃宣言"),
+    swBtn("meet","ミート"),swBtn("power","強振"),
+    h("span",{style:"font-size:11px;color:var(--ink-soft)"},b.swing?"":"（未宣言）")));
 }
 function renderPanel(p,mine,flip){
   const seat=G.seats[p],iAm=seat&&seat.cid===clientId;
@@ -2971,6 +2979,10 @@ function simpleZone(p,key,cls){
   const arr=G.zones[p][key]||[];
   let ex=null;
   if(key==="md")ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();G.zones[p].md=shuffle(G.zones[p].md);pushLog(`${teamName(p)} 山札シャッフル`);save();}},"混")];
+  if(key==="support"&&arr.length)ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();
+    const n=G.zones[p].support.length;
+    G.zones[p].support.forEach(c=>{c.down=false;delete c.reveal;c.rest=false;G.zones[p].rest.push(c);});
+    G.zones[p].support=[];pushLog(`${teamName(p)} サポート${n}枚をレストへ`);save();}},"→レスト")];
   const z=h("div",{class:"z "+cls},zoneHead(p,key,ZL[key],ex));
   const body=h("div",{class:"zb"});
   if(!arr.length)body.append(h("div",{class:"empty"},"—"));
