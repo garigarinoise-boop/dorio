@@ -2739,8 +2739,16 @@ function snapshotG(){
   s.libExtra=computeLibExtra();
   return s;
 }
+function syncOuts(){
+  const b=G.board;if(!b)return;
+  if(!b.outBase)b.outBase={p1:0,p2:0};
+  const atk=b.half==="top"?"p1":"p2";
+  const cur=(G.zones[atk]&&G.zones[atk].out)?G.zones[atk].out.length:0;
+  b.outs=Math.max(0,Math.min(3,cur-(b.outBase[atk]||0)));
+}
 function save(){
   G.rev=(G.rev||0)+1;G.updatedBy=clientId;
+  syncOuts();
   const snap=snapshotG();
   try{LS.setItem("dorio_g_"+GID,JSON.stringify(snap));
     LS.setItem("dorio_dl_p1",G.decklists.p1);LS.setItem("dorio_dl_p2",G.decklists.p2);}catch(e){}
@@ -2787,6 +2795,7 @@ function migrate(){
   G.v=3;if(!G.library)G.library={};
   if(!G.board.tp)G.board.tp={p1:3,p2:3};
   if(!G.board.line)G.board.line={p1:[],p2:[]};
+  if(!G.board.outBase)G.board.outBase={p1:0,p2:0};
   ["p1","p2"].forEach(q=>{if(!Array.isArray(G.board.line[q]))G.board.line[q]=[];});
   if(!G.decksize)G.decksize={p1:40,p2:40};
   ["p1","p2"].forEach(q=>{if(typeof G.decksize[q]!=="number")G.decksize[q]=40;});
@@ -2864,9 +2873,16 @@ function renderScoreboard(){
       h("button",{title:`${b.inning}回の得点+1`,onclick:()=>addRun(p,b.inning-1,1)},"+")),
     tpCtl(p));
   sb.append(team("p1",false));
-  const outs=h("div",{class:"outs"},"OUT");
+  syncOuts();
+  const atkS=b.half==="top"?"p1":"p2";
+  const outs=h("div",{class:"outs"},h("span",{title:"アウトエリアの枚数から自動カウント。ズレたらドットをクリックで補正"},"OUT"));
   for(let i=0;i<3;i++)outs.append(h("button",{class:"out-dot"+(b.outs>i?" on":""),
-    onclick:()=>{b.outs=(b.outs===i+1)?i:i+1;pushLog(`アウト ${b.outs}`);save();}}));
+    onclick:()=>{
+      const target=(b.outs===i+1)?i:i+1;
+      const cur=((G.zones[atkS]&&G.zones[atkS].out)||[]).length;
+      b.outBase[atkS]=cur-target;
+      pushLog(`アウト ${target}（補正）`);save();
+    }}));
   sb.append(h("div",{class:"sb-mid"},
     h("div",{class:"inning"},
       h("button",{class:"step",onclick:()=>{b.inning=Math.max(1,b.inning-1);save();}},"‹"),
@@ -2878,6 +2894,8 @@ function renderScoreboard(){
     outs,
     h("button",{class:"change",onclick:()=>{
       b.outs=0;b.swing=null;if(b.half==="top")b.half="bot";else{b.half="top";b.inning++;}
+      const na=b.half==="top"?"p1":"p2";
+      if(b.outBase)b.outBase[na]=(G.zones[na].out||[]).length;
       pushLog(`チェンジ → ${b.inning}回${b.half==="top"?"表":"裏"}`);save();}},"チェンジ ⟳")));
   sb.append(team("p2",true));
   // line score (innings 1-5, more if extra innings)
@@ -3724,7 +3742,7 @@ function freshGame(){
     seats:{p1:null,p2:null},names:{p1:"先攻",p2:"後攻"},
     decklists:{p1:PRESETS["ロッテ (BP03)"],p2:PRESETS["楽天 (BP03)"]},
     zones:{},library:{},decksize:{p1:40,p2:40},
-    board:{inning:1,half:"top",outs:0,score:{p1:0,p2:0},line:{p1:[],p2:[]},tp:{p1:3,p2:3},order:{p1:1,p2:1},turn:"p1"},
+    board:{inning:1,half:"top",outs:0,outBase:{p1:0,p2:0},score:{p1:0,p2:0},line:{p1:[],p2:[]},tp:{p1:3,p2:3},order:{p1:1,p2:1},turn:"p1"},
     dice:{p1:null,p2:null},
     log:[{id:uid(),t:now(),who:"",sys:true,msg:"卓を作成しました。"}]};
 }
