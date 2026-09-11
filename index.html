@@ -3072,7 +3072,7 @@ function openZoneList(p,key){
     const cell=h("div",{class:"zlcell"});
     cell.append(cardMini(c));
     const bar=h("div",{class:"zlbar"});
-    [["hand","手札"],["md","山札"],["rest","レスト"],["out","アウト"],["support","サポート"],["bench","ベンチ"]]
+    [["hand","手札"],["md","山札"],["rest","レスト"],["out","アウト"],["inning","イニング"],["support","サポート"],["main","メイン"],["bench","ベンチ"]]
       .filter(([k])=>k!==key).forEach(([k,lab])=>bar.append(h("button",{onclick:()=>{
         moveCard(p,key,null,i,p,k,undefined);openZoneList(p,key);
       }},"→"+lab)));
