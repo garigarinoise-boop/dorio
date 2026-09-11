@@ -2666,6 +2666,19 @@ function dispName(name){return (name||"").replace(NOre,"");}
 function cardNo(name){const m=(name||"").match(NOre);return m?m[1]:"";}
 const TEAMS={F:"日本ハム",M:"ロッテ",DB:"DeNA",S:"ヤクルト",E:"楽天",H:"ソフトバンク",C:"広島",D:"中日",B:"オリックス",L:"西武",G:"巨人",T:"阪神",SJ:"侍ジャパン",_:"その他"};
 function teamCode(name){const m=cardNo(name).match(/-([A-Z]+)\d*/);return (m&&TEAMS[m[1]])?m[1]:"_";}
+function teamCodeFromNo(no){const m=normNo(no).match(/-([A-Z]+)\d*/);return (m&&TEAMS[m[1]])?m[1]:"_";}
+async function clearTeamCardImgs(teamKey,onProg){
+  if(!db){toast("同期に接続していません。");return {done:0};}
+  const nos=Object.keys(IMGIDX).filter(no=>teamCodeFromNo(no)===teamKey);
+  let done=0;
+  for(const no of nos){
+    try{await db.ref("cardimg/"+no).remove();await db.ref("cardimg_idx/"+no).remove();}catch(e){}
+    delete IMG[no];delete IMGIDX[no];done++;
+    if(onProg)onProg(done,nos.length);
+  }
+  render();
+  return {done};
+}
 
 /* ---------- deck parsing ---------- */
 let NUM2KEY=null;
@@ -3693,7 +3706,14 @@ function openImgImport(){
   inp.addEventListener("change",cnt);dinp.addEventListener("change",cnt);
   const status=h("div",{style:"font-size:12px;margin-top:10px;min-height:20px"});
   const usage=h("div",{style:"font-size:11px;color:var(--ink-soft);margin:4px 0"},"");
-  const upd=()=>{usage.textContent="登録済み画像: "+Object.keys(IMGIDX).length+"枚（枚数制限なし）";};
+  const teamSel=h("select",{style:"font-size:11px;padding:3px 5px"});
+  const refreshTeamSel=()=>{
+    const counts={};Object.keys(IMGIDX).forEach(no=>{const t=teamCodeFromNo(no);counts[t]=(counts[t]||0)+1;});
+    const cur=teamSel.value;teamSel.innerHTML="";
+    Object.keys(TEAMS).forEach(k=>teamSel.append(h("option",{value:k},TEAMS[k]+`（${counts[k]||0}枚）`)));
+    if(cur)teamSel.value=cur;
+  };
+  const upd=()=>{usage.textContent="登録済み画像: "+Object.keys(IMGIDX).length+"枚（枚数制限なし）";refreshTeamSel();};
   upd();
   const start=h("button",{class:"pri",onclick:async()=>{
     let fs=[...(inp.files?Array.from(inp.files):[]),...(dinp.files?Array.from(dinp.files):[])];
@@ -3731,6 +3751,20 @@ function openImgImport(){
         status.textContent=`🧹 ${r.done>=0?r.done+"枚":""}削除しました。`;upd();
         toast("画像を全部削除しました");
       }},"全画像を削除")),
+    h("div",{class:"row",style:"margin-top:8px;align-items:center"},
+      h("span",{style:"font-size:11px"},"球団を指定して削除："),teamSel,
+      h("button",{onclick:async()=>{
+        if(!db){toast("同期に接続していません。");return;}
+        const tk=teamSel.value,tn=TEAMS[tk];
+        const n=Object.keys(IMGIDX).filter(no=>teamCodeFromNo(no)===tk).length;
+        if(!n){toast(tn+"の画像は登録されていません");return;}
+        if(!await uiConfirm(`「${tn}」の画像を${n}枚削除します。よろしいですか？`,"削除する"))return;
+        modalLock=true;status.style.color="var(--accent)";status.textContent="削除中…";
+        const r=await clearTeamCardImgs(tk,(d,t)=>{status.textContent=`削除中… ${d}/${t}`;});
+        modalLock=false;status.style.color="";
+        status.textContent=`🧹 「${tn}」${r.done}枚削除しました。`;upd();
+        toast(`「${tn}」の画像を${r.done}枚削除しました`);
+      }},"この球団だけ削除")),
     status,
     h("div",{class:"row"},h("button",{onclick:()=>{if(modalLock){toast("処理中です。終わるまで待ってください。");return;}closeModal();}},"閉じる"))
   ),true);
