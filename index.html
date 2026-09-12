@@ -158,6 +158,10 @@ body.selmode .field .z,body.selmode .lslot,body.selmode .bslot,body.selmode .ben
 .z-main{grid-area:main} .z-team{grid-area:team} .z-rest{grid-area:rest}
 .z-md{grid-area:md} .z-od{grid-area:od} .z-line{grid-area:line}
 .z-main{background:rgba(255,224,160,.15);border-color:rgba(255,228,175,.62)}
+/* main/support are what you're actively resolving — show them bigger */
+.z-main .card,.z-sup .card{width:126px}
+.z-main .card.art img,.z-sup .card.art img{max-height:238px}
+.z-main>.zb,.z-sup>.zb{align-content:flex-start}
 .z-base{background:rgba(190,140,84,.22);border-color:rgba(255,235,205,.5)}
 .z-base::before{content:"";position:absolute;left:50%;top:52%;width:58px;height:58px;
   transform:translate(-50%,-50%) rotate(45deg);border:2px solid rgba(255,255,255,.28);border-radius:6px;pointer-events:none}
