@@ -3027,7 +3027,8 @@ function renderHand(p,mine){
   arr.forEach((c,i)=>el.append(renderCard(p,"hand",null,i,c)));
   el.append(h("div",{class:"hend"},
     h("button",{onclick:()=>draw(p,1)},"山札から1枚"),
-    h("button",{onclick:async()=>{const v=await uiPrompt("何枚引く？","5");const n=+v;if(n>0)draw(p,n);}},"N枚")));
+    h("button",{onclick:async()=>{const v=await uiPrompt("何枚引く？","5");const n=+v;if(n>0)draw(p,n);}},"N枚"),
+    h("button",{onclick:()=>resetHand(p)},"手札リセット")));
   return el;
 }
 function renderField(p,flip){
@@ -3090,14 +3091,16 @@ function openPileMenu(p,key,anchor){
     });
     act("シャッフル（reveal解除）",()=>{G.zones[p].md=shuffle(G.zones[p].md);G.zones[p].md.forEach(c=>delete c.reveal);pushLog(`${teamName(p)} 山札シャッフル`);save();});
   }else{
-    act("シャッフル",()=>{G.zones[p].od=shuffle(G.zones[p].od);G.zones[p].od.forEach(c=>delete c.reveal);save();});
+    act("シャッフル",()=>{G.zones[p].od=shuffle(G.zones[p].od);save();});
   }
-  pop.append(h("div",{class:"sep"}));
-  pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを公開（両者）"));
-  pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"all");closePop();}},n+"枚"))));
-  pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを自分だけ確認"));
-  pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"me");closePop();}},n+"枚"))));
-  act("伏せ直す",()=>{arr.forEach(c=>delete c.reveal);save();});
+  if(key==="md"){
+    pop.append(h("div",{class:"sep"}));
+    pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを公開（両者）"));
+    pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"all");closePop();}},n+"枚"))));
+    pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを自分だけ確認"));
+    pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"me");closePop();}},n+"枚"))));
+    act("伏せ直す",()=>{arr.forEach(c=>delete c.reveal);save();});
+  }
   document.body.append(pop);
   const r=anchor.getBoundingClientRect();
   let x=r.left,y=r.bottom+4;
@@ -3243,9 +3246,9 @@ function lineZone(p){
 const OWNZ={hand:1,bench:1,support:1,out:1,rest:1};
 function cardFaceDown(p,zk,c){
   const owner=(p===bottomSeat());
-  if(zk==="mound")return false;
+  if(zk==="mound"||zk==="od")return false;
   if(c.reveal==="all")return false;
-  if(zk==="md"||zk==="od")return !(owner&&(zk==="od"||c.reveal==="me"));
+  if(zk==="md")return !(owner&&c.reveal==="me");
   return c.down&&!(owner&&(c.reveal==="me"||OWNZ[zk]));
 }
 function renderCard(p,zk,slot,i,c){
@@ -3362,6 +3365,15 @@ function showdownSupport(open){
 async function setup(p){
   if(!await uiConfirm(`${p==="p1"?"先攻":"後攻"}側をデッキリストから再配置します。\n打順・ベンチ・山札を組み直し、場のカードは戻ります。手札は保持。`,"配置し直す"))return;
   layoutSide(p,true);pushLog(`${teamName(p)} セットアップ`,true);save();
+}
+async function resetHand(p){
+  const arr=G.zones[p].hand||[];
+  if(!arr.length){toast("手札は空です");return;}
+  if(!await uiConfirm(`${p==="p1"?"先攻":"後攻"}側の手札${arr.length}枚を山札へ戻してシャッフルします。`,"手札をリセット"))return;
+  arr.forEach(c=>{c.down=true;delete c.reveal;c.rest=false;G.zones[p].md.push(c);});
+  G.zones[p].hand=[];
+  G.zones[p].md=shuffle(G.zones[p].md);
+  pushLog(`${teamName(p)} 手札をリセット（山札へ戻してシャッフル）`,true);save();
 }
 function rollFor(p){
   const n=Math.max(1,Math.min(4,+$("#rollN").value||2)),mod=+$("#rollMod").value||0;
