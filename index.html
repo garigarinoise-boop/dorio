@@ -2757,7 +2757,7 @@ function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor
 function mkCard(c,down){const L=G.library[c.name]||{};
   return {iid:uid(),name:c.name,meta:c.meta||"",eff:c.eff||"",role:c.role||L.role||null,
     zone:!!(c.zone||L.zone),tcard:!!(c.tcard||L.tcard),down:!!down,rest:false};}
-function layoutSide(p,keepHand){
+function layoutSide(p){
   const {order,main}=parseDecklist(G.decklists[p]||"");
   order.concat(main).forEach(registerLib);
   const z=emptyZones();
@@ -2767,7 +2767,6 @@ function layoutSide(p,keepHand){
   zon.forEach(c=>z.bench.push(mkCard(c,true)));
   tc.forEach(c=>z.team.push(mkCard(c,false)));
   z.md=shuffle(main.map(c=>mkCard(c,true)));
-  if(keepHand&&G.zones&&G.zones[p])z.hand=G.zones[p].hand||[];
   G.zones[p]=z;G.board.order[p]=1;
 }
 
@@ -3356,8 +3355,8 @@ function showdownSupport(open){
   pushLog(open?"勝負：両者サポートエリアを公開":"サポートエリアを伏せた",true);save();
 }
 async function setup(p){
-  if(!await uiConfirm(`${p==="p1"?"先攻":"後攻"}側をデッキリストから再配置します。\n打順・ベンチ・山札を組み直し、場のカードは戻ります。手札は保持。`,"配置し直す"))return;
-  layoutSide(p,true);pushLog(`${teamName(p)} セットアップ`,true);save();
+  if(!await uiConfirm(`${p==="p1"?"先攻":"後攻"}側をデッキリストから再配置します。\n打順・ベンチ・山札・手札を組み直します（場のカードは戻ります）。`,"配置し直す"))return;
+  layoutSide(p);pushLog(`${teamName(p)} セットアップ`,true);save();
 }
 async function resetHand(p){
   const arr=G.zones[p].hand||[];
@@ -3839,7 +3838,7 @@ function boot(){
   else{
     G=freshGame();
     try{const d1=LS.getItem("dorio_dl_p1"),d2=LS.getItem("dorio_dl_p2");if(d1)G.decklists.p1=d1;if(d2)G.decklists.p2=d2;}catch(e){}
-    seedLibrary();layoutSide("p1",false);layoutSide("p2",false);
+    seedLibrary();layoutSide("p1");layoutSide("p2");
   }
   try{const th=LS.getItem("dorio_theme");if(th)document.documentElement.setAttribute("data-theme",th);}catch(e){}
   $("#btnShare").onclick=openShare;
@@ -3849,7 +3848,7 @@ function boot(){
     if(!await uiConfirm("この卓を新規対戦でリセットします（デッキリスト・ライブラリ・着席は維持）。","リセット"))return;
     const dl={p1:G.decklists.p1,p2:G.decklists.p2},seats=G.seats,names=G.names,lib=G.library,ds=G.decksize;
     G=freshGame();G.decklists=dl;G.seats=seats;G.names=names;G.library=lib;if(ds)G.decksize=ds;
-    layoutSide("p1",false);layoutSide("p2",false);
+    layoutSide("p1");layoutSide("p2");
     pushLog("新規対戦を開始",true);save();
   };
   $("#btnTheme").onclick=()=>{
