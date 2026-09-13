@@ -400,6 +400,11 @@ function gameId(){
 }
 const GID=gameId();
 
+/* DeckLog（ブシロード公式）のデッキコードを取り込むための中継プロキシ（Cloudflare Workers）。
+   decklog.bushiroad.com の API は CORS 非対応のため直接fetchできず、これを経由する。
+   セットアップ手順は Vault の「対戦卓_DeckLog取り込みセットアップ」参照。 */
+const DECKLOG_PROXY="https://dorio-decklog-proxy.gari-gari-noise.workers.dev";
+
 const PRESETS={
 "ロッテ (BP03)":`# オーダー
 T 千葉ロッテマリーンズ | チームカード | 効果・投手/野手コストMAX・メイン枚数はカード参照。オーダーコストは宣言で管理
@@ -2699,12 +2704,17 @@ function parseDecklist(txt){
     if(/^#/.test(s)){bucket=/メイン|main/i.test(s)?main:order;return;}
     let n=1,body=s;const mm=s.match(/^(\d+)\s*[x×]\s*(.+)$/i);if(mm){n=Math.min(9,+mm[1]);body=mm[2].trim();}
     let role=null,zone=false,tcard=false;
-    const rm=body.match(/^(投|野|Z|ゾーン|ZONE|T|チーム|TEAM|先発|投手|野手)\s*[:：]?\s*(.+)$/i);
-    if(rm){
-      if(/^(z|ゾーン|zone)$/i.test(rm[1])){zone=true;role="F";}
-      else if(/^(t|チーム|team)$/i.test(rm[1])){tcard=true;}
-      else role=/投/.test(rm[1])?"P":"F";
-      body=rm[2].trim();
+    // a whole-line bare card number (TEAM-M04, TBP01-M08 等) is never a role-prefix line —
+    // checking this first stops "T"/"Z" from being misread as 役割指定 and eating the card number's leading letter
+    const wholeBare=body.match(/^[A-Za-z][A-Za-z0-9]*[-_][A-Za-z0-9]+$/);
+    if(!wholeBare){
+      const rm=body.match(/^(投|野|Z|ゾーン|ZONE|T|チーム|TEAM|先発|投手|野手)\s*[:：]?\s*(.+)$/i);
+      if(rm){
+        if(/^(z|ゾーン|zone)$/i.test(rm[1])){zone=true;role="F";}
+        else if(/^(t|チーム|team)$/i.test(rm[1])){tcard=true;}
+        else role=/投/.test(rm[1])?"P":"F";
+        body=rm[2].trim();
+      }
     }
     const parts=body.split("|").map(x=>x.trim());
     let nm=parts[0]||"（無名）";const meta=parts[1]||"",eff=parts.slice(2).join(" | ")||"";
@@ -2719,6 +2729,29 @@ function parseDecklist(txt){
     for(let i=0;i<n;i++)bucket.push({name:nm,meta,eff,role,zone,tcard});
   });
   return {order,main};
+}
+/* DeckLogのJSON（プロキシ経由）→ このツールのデッキテキスト形式に変換。
+   カード番号だけ渡せば parseDecklist 側がライブラリから役割/名前を解決する。 */
+function decklogJsonToText(j){
+  const team=(j.sub_list||[])[0];
+  const order=(j.p_list||[]).slice().sort((a,b)=>(a.slot||0)-(b.slot||0));
+  const main=j.list||[];
+  let s="# オーダー（DeckLog "+(j.deck_id||"")+"）\n";
+  if(team)s+=team.card_number+"\n";
+  order.forEach(c=>{for(let i=0;i<(c.num||1);i++)s+=c.card_number+"\n";});
+  s+="# メイン\n";
+  main.forEach(c=>{const n=c.num||1;s+=(n>1?n+"x ":"")+c.card_number+"\n";});
+  return s;
+}
+async function fetchDecklogDeck(code){
+  code=(code||"").trim().toUpperCase();
+  if(!/^[A-Z0-9]{3,12}$/.test(code))throw new Error("デッキコードの形式が変です（例: GC672）");
+  if(!DECKLOG_PROXY||DECKLOG_PROXY.includes("REPLACE_ME"))throw new Error("DeckLog取り込み用プロキシが未設定です");
+  const r=await fetch(DECKLOG_PROXY.replace(/\/$/,"")+"/"+encodeURIComponent(code));
+  if(!r.ok)throw new Error("取得失敗（"+r.status+"）");
+  const j=await r.json();
+  if(!j||!j.list)throw new Error("このコードのデッキが見つかりません");
+  return decklogJsonToText(j);
 }
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function mkCard(c,down){const L=G.library[c.name]||{};
@@ -3523,7 +3556,17 @@ function openDeck(p){
       const ta=h("textarea",{spellcheck:"false"});ta.value=serialize();
       const pr=h("div",{class:"presets"});
       Object.keys(PRESETS).forEach(k=>pr.append(h("button",{onclick:()=>ta.value=PRESETS[k]},k)));
-      wrap.append(h("p",{class:"hint"},"1行1枚。「投/野/Z/T」で役割、名前 | スタッツ | 効果、Nx で複数、# メイン 下が山札。カード番号だけの行でもOK（例 BP03-M06）。DeckLogのデッキはClaudeに『GC672取り込んで』と言えば変換します。オーダーは打順1〜9→10枚目以降はベンチ。"),pr,ta,
+      const dlCode=h("input",{type:"text",placeholder:"デッキコード（例 GC672）",style:"width:150px"});
+      const dlBtn=h("button",{class:"pri",onclick:async()=>{
+        const code=dlCode.value.trim();if(!code)return;
+        const orig=dlBtn.textContent;dlBtn.disabled=true;dlBtn.textContent="取込中…";
+        try{ta.value=await fetchDecklogDeck(code);toast("DeckLog "+code.toUpperCase()+" を読み込みました（内容を確認して保存）");}
+        catch(e){toast("DeckLog取り込み失敗: "+((e&&e.message)||e));}
+        finally{dlBtn.disabled=false;dlBtn.textContent=orig;}
+      }},"DeckLog読込");
+      dlCode.addEventListener("keydown",e=>{if(e.key==="Enter")dlBtn.click();});
+      const dlRow=h("div",{class:"presets"},dlCode,dlBtn);
+      wrap.append(h("p",{class:"hint"},"1行1枚。「投/野/Z/T」で役割、名前 | スタッツ | 効果、Nx で複数、# メイン 下が山札。カード番号だけの行でもOK（例 BP03-M06）。DeckLogのデッキコードは上の欄に入れて「DeckLog読込」→内容を確認して保存。オーダーは打順1〜9→10枚目以降はベンチ。"),dlRow,pr,ta,
         h("div",{class:"row"},
           h("button",{class:"pri",onclick:()=>{G.decklists[p]=ta.value;parseDecklist(ta.value).order.concat(parseDecklist(ta.value).main).forEach(registerLib);
             pushLog(`${teamName(p)} デッキ更新`,true);save();closeModal();setup(p);}},"保存"),
