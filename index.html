@@ -3034,8 +3034,8 @@ function renderHand(p,mine){
 function renderField(p,flip){
   const f=h("div",{class:"field"+(flip?" flip":"")});
   [["inning","z-inn"],["support","z-sup"],["main","z-main"],["team","z-team"]].forEach(([key,cls])=>f.append(simpleZone(p,key,cls)));
-  f.append(collapseZone(p,"out","z-out"));f.append(collapseZone(p,"rest","z-rest"));
-  f.append(pileZone(p,"md","z-md"));f.append(pileZone(p,"od","z-od"));
+  f.append(collapseZone(p,"out","z-out"));f.append(collapseZone(p,"rest","z-rest"));f.append(collapseZone(p,"od","z-od"));
+  f.append(pileZone(p,"md","z-md"));
   f.append(baseZone(p));f.append(lineZone(p));
   return f;
 }
@@ -3061,8 +3061,7 @@ function simpleZone(p,key,cls){
 }
 function pileZone(p,key,cls){
   const arr=G.zones[p][key]||[];
-  let ex=null;
-  if(key==="md")ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();G.zones[p].md=shuffle(G.zones[p].md);pushLog(`${teamName(p)} 山札シャッフル`);save();}},"混")];
+  const ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();G.zones[p].md=shuffle(G.zones[p].md);pushLog(`${teamName(p)} 山札シャッフル`);save();}},"混")];
   const z=h("div",{class:"z "+cls},zoneHead(p,key,ZL[key],ex));
   const body=h("div",{class:"zb"});
   if(!arr.length){body.append(h("div",{class:"stackcard empty2"},"空"));}
@@ -3081,26 +3080,20 @@ function openPileMenu(p,key,anchor){
   const pop=h("div",{class:"pop"});
   const act=(t,fn)=>pop.append(h("button",{onclick:()=>{fn();closePop();}},t));
   const arr=G.zones[p][key];
-  if(key==="md"){
-    act("1枚引く（→手札）",()=>draw(p,1));
-    act("N枚引く",async()=>{const v=await uiPrompt("何枚引く？","5");const n=+v;if(n>0)draw(p,n);});
-    act("トップ1枚をアウトへ（裏・自分だけ）",()=>{
-      const c=G.zones[p].md.shift();if(!c)return;
-      c.down=true;c.reveal="me";G.zones[p].out.push(c);
-      pushLog(`${teamName(p)} 山札トップを裏でアウトへ`);save();
-    });
-    act("シャッフル（reveal解除）",()=>{G.zones[p].md=shuffle(G.zones[p].md);G.zones[p].md.forEach(c=>delete c.reveal);pushLog(`${teamName(p)} 山札シャッフル`);save();});
-  }else{
-    act("シャッフル",()=>{G.zones[p].od=shuffle(G.zones[p].od);save();});
-  }
-  if(key==="md"){
-    pop.append(h("div",{class:"sep"}));
-    pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを公開（両者）"));
-    pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"all");closePop();}},n+"枚"))));
-    pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを自分だけ確認"));
-    pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"me");closePop();}},n+"枚"))));
-    act("伏せ直す",()=>{arr.forEach(c=>delete c.reveal);save();});
-  }
+  act("1枚引く（→手札）",()=>draw(p,1));
+  act("N枚引く",async()=>{const v=await uiPrompt("何枚引く？","5");const n=+v;if(n>0)draw(p,n);});
+  act("トップ1枚をアウトへ（裏・自分だけ）",()=>{
+    const c=G.zones[p].md.shift();if(!c)return;
+    c.down=true;c.reveal="me";G.zones[p].out.push(c);
+    pushLog(`${teamName(p)} 山札トップを裏でアウトへ`);save();
+  });
+  act("シャッフル（reveal解除）",()=>{G.zones[p].md=shuffle(G.zones[p].md);G.zones[p].md.forEach(c=>delete c.reveal);pushLog(`${teamName(p)} 山札シャッフル`);save();});
+  pop.append(h("div",{class:"sep"}));
+  pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを公開（両者）"));
+  pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"all");closePop();}},n+"枚"))));
+  pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを自分だけ確認"));
+  pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"me");closePop();}},n+"枚"))));
+  act("伏せ直す",()=>{arr.forEach(c=>delete c.reveal);save();});
   document.body.append(pop);
   const r=anchor.getBoundingClientRect();
   let x=r.left,y=r.bottom+4;
