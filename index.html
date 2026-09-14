@@ -347,7 +347,9 @@ window.FIREBASE_CONFIG = {
     <button class="tb-btn" id="btnShare">卓を共有</button>
     <button class="tb-btn" id="btnImg">画像一括</button>
     <button class="tb-btn" id="btnSync">手動同期</button>
+    <button class="tb-btn" id="btnSwap">先攻⇄後攻</button>
     <button class="tb-btn" id="btnReset">新規対戦</button>
+    <button class="tb-btn" id="btnHardReset">完全リセット</button>
     <button class="tb-btn" id="btnTheme">◐</button>
   </div>
   <div class="scoreboard" id="scoreboard"></div>
@@ -4039,6 +4041,22 @@ function boot(){
     G=freshGame();G.decklists=dl;G.seats=seats;G.names=names;G.library=lib;if(ds)G.decksize=ds;
     layoutSide("p1");layoutSide("p2");
     pushLog("新規対戦を開始",true);save();
+  };
+  $("#btnHardReset").onclick=async()=>{
+    if(!await uiConfirm("本当に全部リセットします。デッキ・着席・ライブラリ・画像割り当て以外の全データが消えます（画像自体は残ります）。元に戻せません。","完全リセットする"))return;
+    if(!await uiConfirm("もう一度確認：この卓を完全に空の状態に戻します。よろしいですか？","はい、完全リセット"))return;
+    try{LS.removeItem("dorio_dl_p1");LS.removeItem("dorio_dl_p2");}catch(e){}
+    G=freshGame();
+    seedLibrary();layoutSide("p1");layoutSide("p2");
+    pushLog("完全リセットしました",true);save();
+  };
+  $("#btnSwap").onclick=async()=>{
+    if(!await uiConfirm("先攻と後攻を入れ替えます（座席・名前・デッキ・盤面・スコア・TPなど全部まるごと入れ替わります）。","入れ替える"))return;
+    const swap=o=>{if(!o)return;const t=o.p1;o.p1=o.p2;o.p2=t;};
+    swap(G.seats);swap(G.names);swap(G.decklists);swap(G.zones);swap(G.decksize);swap(G.dice);
+    const b=G.board;swap(b.score);swap(b.line);swap(b.outBase);swap(b.tp);swap(b.order);
+    if(b.turn==="p1")b.turn="p2";else if(b.turn==="p2")b.turn="p1";
+    pushLog("先攻・後攻を入れ替えました",true);save();
   };
   $("#btnTheme").onclick=()=>{
     const cur=document.documentElement.getAttribute("data-theme");
