@@ -3094,14 +3094,14 @@ function addRun(p,inn,d){
   b.score[p]=Math.max(0,(b.score[p]||0)+d);
   pushLog(`${teamName(p)} ${inn+1}回 ${d>0?"+1":"-1"}（計${b.score[p]}）`);save();
 }
+function tpCtl(p){const b=G.board;const n=b.tp[p];const toks=h("span",{class:"toks"});
+  for(let i=0;i<Math.min(n,6);i++)toks.append(h("span",{class:"tok"}));
+  return h("div",{class:"sb-tp"},"TP",
+    h("button",{onclick:()=>{b.tp[p]=Math.max(0,n-1);pushLog(`${teamName(p)} TP ${b.tp[p]}`);save();}},"−"),
+    h("b",{class:"mono"},String(n)),toks,
+    h("button",{onclick:()=>{b.tp[p]=n+1;pushLog(`${teamName(p)} TP ${b.tp[p]}`);save();}},"+"));}
 function renderScoreboard(){
   const b=G.board,sb=$("#scoreboard");sb.innerHTML="";
-  const tpCtl=p=>{const n=b.tp[p];const toks=h("span",{class:"toks"});
-    for(let i=0;i<Math.min(n,6);i++)toks.append(h("span",{class:"tok"}));
-    return h("div",{class:"sb-tp"},"TP",
-      h("button",{onclick:()=>{b.tp[p]=Math.max(0,n-1);pushLog(`${teamName(p)} TP ${b.tp[p]}`);save();}},"−"),
-      h("b",{class:"mono"},String(n)),toks,
-      h("button",{onclick:()=>{b.tp[p]=n+1;pushLog(`${teamName(p)} TP ${b.tp[p]}`);save();}},"+"));};
   const team=(p,right)=>h("div",{class:"sb-team"+(right?" right":"")},
     h("div",{class:"sb-name"},h("span",{class:"tag"+(p==="p1"?" acc":"")},p==="p1"?"先攻":"後攻"),
       G.seats[p]?G.seats[p].name:G.names[p]),
@@ -3186,7 +3186,7 @@ function renderPanel(p,mine,flip){
       h("button",{onclick:()=>{G.board.order[p]=(G.board.order[p]+7)%9+1;save();}},"−"),
       h("b",{class:"mono"},String(G.board.order[p])),
       h("button",{onclick:()=>{G.board.order[p]=G.board.order[p]%9+1;save();}},"+")),
-    diceMini(p));
+    diceMini(p),tpCtl(p));
   const wrap=h("div",{class:"panel"},head);
   const fs=h("div",{class:"fieldscroll"});
   fs.append(renderHand(p,mine),renderField(p,flip));
