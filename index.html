@@ -2264,8 +2264,10 @@ T 埼玉西武ライオンズ TEAM-L04
 外崎 修汰 BP03-L12
 `;
 
-/* 共通プロモ戦術（PDO-01〜14）＋各球団プロモ選手・マスコット・大会賞品カード。
-   Vault「共通・大会プロモ_カード画像一覧」＋各球団ノートの「プロモ」節より。名前＋番号のみ。 */
+/* 共通プロモ戦術（PDO-01〜15）＋各球団プロモ選手・マスコット・大会賞品カード。
+   Vault「共通・大会プロモ_カード画像一覧」＋各球団ノートの「プロモ」節より。名前＋番号のみ。
+   PDO-15のみBP03新規＆12球団それぞれ専用の絵柄あり（dreamorder.com/cardlist/?id=5318で確認）。
+   画像は他のPDOと同じくロッテ版で統一（カード番号が同じ＝ゲーム上は同一カードのため）。 */
 const POOL_PROMO=`
 勝負師 PDO-01
 ミートバッティング PDO-02
@@ -2281,6 +2283,7 @@ const POOL_PROMO=`
 不屈 PDO-12
 威圧 PDO-13
 研ぎ澄まされた一振り PDO-14
+強心臓 PDO-15
 MINT PDO-PR01
 MINT PDO-PR02
 ドリオツアー2025 TIME-PR03
@@ -3249,6 +3252,14 @@ function simpleZone(p,key,cls){
   z.append(body);wireDrop(z,p,key);
   return z;
 }
+function sweepRevealedToRest(p,key){
+  const arr=G.zones[p][key]||[];
+  const revealed=arr.filter(c=>c.reveal);
+  if(!revealed.length)return;
+  G.zones[p][key]=arr.filter(c=>!c.reveal);
+  revealed.forEach(c=>{c.down=!!DOWNZ["rest"];delete c.reveal;G.zones[p].rest.push(c);});
+  pushLog(`${teamName(p)} 公開中の${ZL[key]}${revealed.length}枚をレストへ`);save();
+}
 function pileZone(p,key,cls){
   const arr=G.zones[p][key]||[];
   const ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();G.zones[p].md=shuffle(G.zones[p].md);pushLog(`${teamName(p)} 山札シャッフル`);save();}},"混")];
@@ -3257,10 +3268,14 @@ function pileZone(p,key,cls){
   if(!arr.length){body.append(h("div",{class:"stackcard empty2"},"空"));}
   else{
     let shown=0;
-    for(let i=0;i<arr.length&&shown<3;i++){if(arr[i].reveal){body.append(renderCard(p,key,null,i,arr[i]));shown++;}else break;}
+    for(let i=0;i<arr.length&&shown<6;i++){if(arr[i].reveal){body.append(renderCard(p,key,null,i,arr[i]));shown++;}else break;}
     const remain=arr.length-shown;
     body.append(h("div",{class:"stackcard",onclick:e=>{e.stopPropagation();openPileMenu(p,key,e.currentTarget);}},
       h("span",{class:"n"},"×"+remain)));
+    const revealedN=arr.filter(c=>c.reveal).length;
+    if(revealedN)body.append(h("button",{class:"zbtn",style:"align-self:center",
+      title:"効果で「◯枚まで手札に加え、残りをレストに置く」等の“残り”をまとめて処理。手札に取る分は先にカードをタップして個別に移動してから押す",
+      onclick:e=>{e.stopPropagation();sweepRevealedToRest(p,key);}},`残り${revealedN}枚→レスト`));
   }
   z.append(body);wireDrop(z,p,key);
   return z;
@@ -3292,10 +3307,21 @@ function openPileMenu(p,key,anchor){
   pop.style.left=Math.max(8,x)+"px";pop.style.top=Math.max(8,y)+"px";
   popEl=pop;
 }
+function sweepAllToRest(p,key){
+  const arr=G.zones[p][key]||[];
+  if(!arr.length)return;
+  G.zones[p][key]=[];
+  arr.forEach(c=>{c.down=!!DOWNZ["rest"];delete c.reveal;G.zones[p].rest.push(c);});
+  pushLog(`${teamName(p)} ${ZL[key]}${arr.length}枚をレストへ`);save();
+}
 function collapseZone(p,key,cls){
   const arr=G.zones[p][key]||[];
-  const z=h("div",{class:"z "+cls},zoneHead(p,key,ZL[key],
-    arr.length>1?[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();openZoneList(p,key);}},"一覧")]:null));
+  const extras=[];
+  if(arr.length>1)extras.push(h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();openZoneList(p,key);}},"一覧"));
+  if(key==="out"&&arr.length)extras.push(h("button",{class:"zbtn",
+    title:"アウトエリアに残っているカードをまとめてレストへ送ります（例：1枚をイニングエリアへ移した残り）",
+    onclick:e=>{e.stopPropagation();sweepAllToRest(p,key);}},"残り→レスト"));
+  const z=h("div",{class:"z "+cls},zoneHead(p,key,ZL[key],extras.length?extras:null));
   const body=h("div",{class:"zb"});
   if(!arr.length)body.append(h("div",{class:"empty"},"—"));
   else{
@@ -4047,6 +4073,7 @@ function boot(){
     if(!await uiConfirm("もう一度確認：この卓を完全に空の状態に戻します。よろしいですか？","はい、完全リセット"))return;
     try{LS.removeItem("dorio_dl_p1");LS.removeItem("dorio_dl_p2");}catch(e){}
     G=freshGame();
+    G.decklists={p1:"",p2:""};
     seedLibrary();layoutSide("p1");layoutSide("p2");
     pushLog("完全リセットしました",true);save();
   };
