@@ -2713,7 +2713,9 @@ const MOVE=[["lineup","打順"],["mound","登板"],["bench","控え"],["support"
 
 let G=null,db=null,docRef=null,saveTimer=null,sel=null,popEl=null,fieldDrag=null;
 let IMG={},IMGIDX={},IMGwant=new Set(),imgQT=null,renderT=null;   // card no -> data URI; images live under cardimg/<no> in RTDB
-const DOWNZ={md:1,od:1,hand:1,bench:1,support:1};
+const DOWNZ={md:1,od:1,hand:1,bench:1,support:1,out:1};
+// アウトはドラッグ&ドロップ／タップ移動のデフォルトを裏（非公開）にする。
+// 表で送りたい時は移動メニューの「アウト（表）」を明示的に選ぶ（moveCardのforceDown引数）。
 // mound(登板投手) is public; bench reserves + support(勝負まで) stay hidden to the opponent.
 
 /* ---------- library ---------- */
@@ -3353,9 +3355,16 @@ function openZoneList(p,key){
     cell.append(cardMini(c));
     const bar=h("div",{class:"zlbar"});
     [["hand","手札"],["md","山札"],["rest","レスト"],["out","アウト"],["inning","イニング"],["support","サポート"],["main","メイン"],["bench","ベンチ"]]
-      .filter(([k])=>k!==key).forEach(([k,lab])=>bar.append(h("button",{onclick:()=>{
-        moveCard(p,key,null,i,p,k,undefined);openZoneList(p,key);
-      }},"→"+lab)));
+      .filter(([k])=>k!==key).forEach(([k,lab])=>{
+        if(k==="out"){
+          bar.append(h("button",{onclick:()=>{moveCard(p,key,null,i,p,"out",undefined,false);openZoneList(p,key);}},"→アウト（表）"));
+          bar.append(h("button",{onclick:()=>{moveCard(p,key,null,i,p,"out",undefined,true);openZoneList(p,key);}},"→アウト（裏）"));
+          return;
+        }
+        bar.append(h("button",{onclick:()=>{
+          moveCard(p,key,null,i,p,k,undefined);openZoneList(p,key);
+        }},"→"+lab));
+      });
     bar.append(h("button",{onclick:()=>openCardDetail(c.name)},"詳細"));
     cell.append(bar);grid.append(cell);
   });
@@ -3495,12 +3504,16 @@ function onCardClick(p,zk,slot,i,c,anchor){
   sel={p,zk,slot,i};closePop();render();
 }
 function arrOf(p,zk,slot){return zk==="lineup"?G.zones[p].lineup[slot??0]:G.zones[p][zk];}
-function moveCard(fp,fzk,fslot,fi,tp,tzk,tslot){
+function moveCard(fp,fzk,fslot,fi,tp,tzk,tslot,forceDown){
   const from=arrOf(fp,fzk,fslot);if(!from)return;
   const [card]=from.splice(fi,1);if(!card)return;
-  card.down=!!DOWNZ[tzk];delete card.reveal;
+  card.down=forceDown!=null?forceDown:!!DOWNZ[tzk];delete card.reveal;
   arrOf(tp,tzk,tslot).push(card);
-  pushLog(`${teamName(fp)}: 「${card.name}」→ ${tzk==="lineup"?"打順"+((tslot??0)+1):ZL[tzk]}`);
+  // 移動先が非公開ゾーンならログにカード名を出さない。アウトエリアのように移動時に
+  // 公開/非公開を選べるゾーンは forceDown（呼び出し側の明示指定）を優先する。
+  const hidesName=forceDown!=null?forceDown:(tzk!=="od"&&!!DOWNZ[tzk]);
+  const label=hidesName?"カード":`「${card.name}」`;
+  pushLog(`${teamName(fp)}: ${label}→ ${tzk==="lineup"?"打順"+((tslot??0)+1):ZL[tzk]}${forceDown!=null?(forceDown?"（裏）":"（表）"):""}`);
   save();
 }
 function moveSelTo(p,zk,slot){if(!sel)return;const s=sel;sel=null;moveCard(s.p,s.zk,s.slot,s.i,p,zk,slot);}
@@ -3522,11 +3535,17 @@ function openMenu(p,zk,slot,i,c,anchor){
   }
   if(c.zone&&zk==="lineup") act("ZONEをベンチに戻す",()=>{
     G.zones[p].lineup[slot].splice(i,1);c.down=true;G.zones[p].bench.push(c);
-    pushLog(`${teamName(p)} ZONE「${c.name}」をベンチへ`);save();});
+    pushLog(`${teamName(p)} ZONEカードをベンチへ`);save();});
   pop.append(h("div",{class:"sep"}));
   const zrow=h("div",{class:"zrow"});
   MOVE.forEach(([k,lab])=>{
     if(k===zk&&k!=="lineup")return;
+    if(k==="out"){
+      // アウトはカード効果によって公開/非公開どちらもあるので選ばせる
+      zrow.append(h("button",{onclick:()=>{moveCard(p,zk,slot,i,p,"out",undefined,false);closePop();}},"アウト（表）"));
+      zrow.append(h("button",{onclick:()=>{moveCard(p,zk,slot,i,p,"out",undefined,true);closePop();}},"アウト（裏）"));
+      return;
+    }
     zrow.append(h("button",{onclick:()=>{
       const tslot=k==="lineup"?(G.board.order[p]-1):undefined;
       moveCard(p,zk,slot,i,p,k,tslot);closePop();
