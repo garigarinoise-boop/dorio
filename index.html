@@ -117,6 +117,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .minictl button{width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel);font-size:12px;line-height:1}
 .dice-mini{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-soft)}
 .dice-mini .val{font-family:"Oswald",sans-serif;font-weight:700;font-size:17px;color:var(--accent)}
+.dice-mini .val.flash{animation:diceFlash .5s ease}
+@keyframes diceFlash{0%{transform:scale(1.7);color:var(--gold)}100%{transform:scale(1);color:var(--accent)}}
 
 .fieldscroll{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-top:0;
   border-radius:0 0 var(--r) var(--r);box-shadow:var(--shadow);padding:10px}
@@ -2713,6 +2715,7 @@ const MOVE=[["lineup","打順"],["mound","登板"],["bench","控え"],["support"
   ["b3","三塁"],["b2","二塁"],["b1","一塁"],["hand","手札"],["md","Mデッキ"],["od","Oデッキ"]];
 
 let G=null,db=null,docRef=null,saveTimer=null,sel=null,popEl=null,fieldDrag=null;
+let lastDiceTs={p1:0,p2:0};   // ロール結果が前回と同じ数字でも「振った」ことが分かるようフラッシュさせる用
 let IMG={},IMGIDX={},IMGwant=new Set(),imgQT=null,renderT=null;   // card no -> data URI; images live under cardimg/<no> in RTDB
 const DOWNZ={md:1,od:1,hand:1,bench:1,support:1,out:1};
 // アウトはドラッグ&ドロップ／タップ移動のデフォルトを裏（非公開）にする。
@@ -3201,7 +3204,9 @@ function renderPanel(p,mine,flip){
   wrap.append(fs);return wrap;
 }
 function diceMini(p){const d=G.dice[p];
-  return h("div",{class:"dice-mini"},"ダイス",h("span",{class:"val"},d?String(d.total):"—"),
+  const isNewRoll=d&&d.ts&&d.ts!==lastDiceTs[p];
+  if(d&&d.ts)lastDiceTs[p]=d.ts;
+  return h("div",{class:"dice-mini"},"ダイス",h("span",{class:"val"+(isNewRoll?" flash":"")},d?String(d.total):"—"),
     d?h("span",{},`(${d.dice.join("+")}${d.mod?(d.mod>0?"+"+d.mod:d.mod):""})`):"",
     h("button",{style:"width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel)",onclick:()=>rollFor(p)},"🎲"));}
 
@@ -3608,7 +3613,7 @@ function rollFor(p){
   const n=Math.max(1,Math.min(4,+$("#rollN").value||2)),mod=+$("#rollMod").value||0;
   const dice=Array.from({length:n},()=>1+Math.floor(Math.random()*6));
   const total=dice.reduce((a,b)=>a+b,0)+mod;
-  G.dice[p]={dice,mod,total,by:myName};
+  G.dice[p]={dice,mod,total,by:myName,ts:Date.now()};
   pushLog(`🎲 ${teamName(p)}: [${dice.join(", ")}]${mod?(mod>0?" +"+mod:" "+mod):""} = ${total}`);save();
 }
 function coin(){pushLog(`🪙 コイン: ${Math.random()<.5?"表":"裏"}`);save();}
