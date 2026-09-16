@@ -3405,11 +3405,14 @@ function openBench(p){
     const bar=h("div",{class:"zlbar"});
     if(c.zone||L.zone){
       bar.append(h("button",{onclick:()=>{
-        const s=G.board.order[p]-1;
-        G.zones[p].bench.splice(i,1);c.down=false;delete c.reveal;G.zones[p].lineup[s].push(c);
+        G.zones[p].bench.splice(i,1);c.down=false;delete c.reveal;
+        const dest=G.zones[p].main;
+        const batter=dest.find(x=>x&&!x.zone);
+        if(batter){const pk=batter.pairKey||uid();batter.pairKey=pk;c.pairKey=pk;}
+        dest.push(c);
         G.board.tp[p]=Math.max(0,G.board.tp[p]-1);
-        pushLog(`${teamName(p)} ZONE「${c.name}」を打順${s+1}に重ねた（TP-1 → ${G.board.tp[p]}）`);save();openBench(p);
-      }},"→打順に重ねる(TP-1)"));
+        pushLog(`${teamName(p)} ZONE「${c.name}」をメインに重ねた（TP-1 → ${G.board.tp[p]}）`);save();openBench(p);
+      }},"→メインに重ねる(TP-1)"));
     }else if(c.role==="P"||L.role==="P"){
       bar.append(h("button",{onclick:()=>mvBench(p,i,"mound",undefined,true)},"→登板(TP-1)"));
     }else{
@@ -3517,11 +3520,23 @@ function moveCard(fp,fzk,fslot,fi,tp,tzk,tslot,forceDown){
   const from=arrOf(fp,fzk,fslot);if(!from)return;
   const [card]=from.splice(fi,1);if(!card)return;
   card.down=forceDown!=null?forceDown:!!DOWNZ[tzk];delete card.reveal;
-  arrOf(tp,tzk,tslot).push(card);
+  const dest=arrOf(tp,tzk,tslot);
+  dest.push(card);
+  // 重ねたZONEカードは、本体（打者）を動かした時だけ一緒についてくる
+  // （ZONEカード自体を単独でドラッグ/移動した時は今まで通り単独で動く）
+  let partner=null;
+  if(card.pairKey&&!card.zone){
+    const pi=from.findIndex(x=>x&&x.pairKey===card.pairKey);
+    if(pi>=0){
+      partner=from.splice(pi,1)[0];
+      partner.down=forceDown!=null?forceDown:!!DOWNZ[tzk];delete partner.reveal;
+      dest.push(partner);
+    }
+  }
   // 移動先が非公開ゾーンならログにカード名を出さない。アウトエリアのように移動時に
   // 公開/非公開を選べるゾーンは forceDown（呼び出し側の明示指定）を優先する。
   const hidesName=forceDown!=null?forceDown:(tzk!=="od"&&!!DOWNZ[tzk]);
-  const label=hidesName?"カード":`「${card.name}」`;
+  const label=(hidesName?"カード":`「${card.name}」`)+(partner?(hidesName?"":`＋「${partner.name}」`):"");
   pushLog(`${teamName(fp)}: ${label}→ ${tzk==="lineup"?"打順"+((tslot??0)+1):ZL[tzk]}${forceDown!=null?(forceDown?"（裏）":"（表）"):""}`);
   save();
 }
@@ -3532,18 +3547,22 @@ function openMenu(p,zk,slot,i,c,anchor){
   const act=(t,fn)=>pop.append(h("button",{onclick:()=>{fn();closePop();}},t));
   act(c.down?"表にする":"裏にする",()=>{c.down=!c.down;save();});
   act(c.rest?"レスト解除":"レスト（横向き）",()=>{c.rest=!c.rest;save();});
-  if(zk==="lineup"){
+  const ZONE_STACK_ZK=["lineup","main","b1","b2","b3"];
+  if(!c.zone&&ZONE_STACK_ZK.includes(zk)){
     const bz=G.zones[p].bench,zk2=bz.filter(x=>x.zone).length;
     act(`ZONEを重ねる（ベンチ→ここ・TP-1）${zk2?"":" ※ベンチにZONE無し"}`,()=>{
       if(!zk2){toast("ベンチにZONEカードがありません");return;}
       const idx=bz.findIndex(x=>x.zone),zc=bz.splice(idx,1)[0];zc.down=false;
-      G.zones[p].lineup[slot].push(zc);
+      const pk=c.pairKey||uid();c.pairKey=pk;zc.pairKey=pk;
+      arrOf(p,zk,slot).push(zc);
       G.board.tp[p]=Math.max(0,G.board.tp[p]-1);
-      pushLog(`${teamName(p)} ZONE「${zc.name}」を打順${slot+1}に重ねた（TP-1 → ${G.board.tp[p]}）`);save();
+      pushLog(`${teamName(p)} ZONE「${zc.name}」を${zk==="lineup"?"打順"+(slot+1):ZL[zk]}に重ねた（TP-1 → ${G.board.tp[p]}）`);save();
     });
   }
-  if(c.zone&&zk==="lineup") act("ZONEをベンチに戻す",()=>{
-    G.zones[p].lineup[slot].splice(i,1);c.down=true;G.zones[p].bench.push(c);
+  if(c.zone&&ZONE_STACK_ZK.includes(zk)) act("ZONEをベンチに戻す",()=>{
+    const arr=arrOf(p,zk,slot);arr.splice(i,1);
+    if(c.pairKey){const pi=arr.findIndex(x=>x&&x.pairKey===c.pairKey);if(pi>=0)delete arr[pi].pairKey;}
+    c.down=true;delete c.pairKey;G.zones[p].bench.push(c);
     pushLog(`${teamName(p)} ZONEカードをベンチへ`);save();});
   pop.append(h("div",{class:"sep"}));
   const zrow=h("div",{class:"zrow"});
