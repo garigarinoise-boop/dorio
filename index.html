@@ -3394,6 +3394,17 @@ function openZoneList(p,key){
   wrap.append(h("div",{class:"row"},h("button",{onclick:closeModal},"閉じる")));
   modal(wrap);
 }
+function pinchHit(p,i){
+  const bench=G.zones[p].bench,sub=bench[i];if(!sub)return;
+  bench.splice(i,1);sub.down=false;delete sub.reveal;
+  const mainArr=G.zones[p].main;
+  const outgoing=mainArr.splice(0,mainArr.length);  // 今メインにいる選手（重なってたZONEカードも一緒）はオーダーデッキへ
+  outgoing.forEach(c=>{c.down=false;delete c.reveal;G.zones[p].od.push(c);});
+  mainArr.push(sub);
+  G.board.tp[p]=Math.max(0,G.board.tp[p]-1);
+  const outNames=outgoing.map(c=>dispName(c.name)).join("・");
+  pushLog(`${teamName(p)} 代打「${dispName(sub.name)}」${outNames?`（${outNames}と交代→オーダーデッキ）`:""}（TP-1 → ${G.board.tp[p]}）`);save();
+}
 function mvBench(p,i,k,slot,tp){
   if(tp){
     G.board.tp[p]=Math.max(0,(G.board.tp[p]||0)-1);
@@ -3430,7 +3441,7 @@ function openBench(p){
     }else if(c.role==="P"||L.role==="P"){
       bar.append(h("button",{onclick:()=>mvBench(p,i,"mound",undefined,true)},"→登板(TP-1)"));
     }else{
-      bar.append(h("button",{onclick:()=>mvBench(p,i,"lineup",G.board.order[p]-1,true)},"→打順・現(TP-1)"));
+      bar.append(h("button",{onclick:()=>{pinchHit(p,i);openBench(p);}},"→代打（メインと交代・TP-1）"));
     }
     [["support","サポート"],["hand","手札"],["md","山札"]].forEach(([k,lab])=>
       bar.append(h("button",{onclick:()=>mvBench(p,i,k)},"→"+lab)));
