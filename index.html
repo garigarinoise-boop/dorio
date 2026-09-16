@@ -3388,7 +3388,7 @@ function mvBench(p,i,k,slot,tp){
   moveCard(p,"bench",null,i,p,k,slot);openBench(p);
 }
 function openBench(p){
-  const arr=G.zones[p].bench||[],owner=(p===bottomSeat());
+  const arr=G.zones[p].bench||[],owner=soloMode||(p===bottomSeat());
   const wrap=h("div",{});
   wrap.append(h("h2",{},teamName(p)+" ・ 控え（"+arr.length+"枚）"));
   if(!owner){
