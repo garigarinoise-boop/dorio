@@ -1,0 +1,4143 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ドリオ対戦卓</title>
+<meta name="description" content="ドリームオーダーを身内でオンライン対戦するための手動テーブル">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+:root{
+  --bg:#eef1ee; --panel:#ffffff; --panel-2:#f4f6f3; --ink:#17211c; --ink-soft:#55605a;
+  --line:#d3dad3; --line-strong:#b7c1b8;
+  --accent:#c81e2b; --navy:#0d3a6b; --gold:#c8891a;
+  --field-a:#1e7550; --field-b:#124b36;
+  --chip:#ffffff; --chip-line:#c4cdc4;
+  --back:#0d2f57; --back-2:#0a2647;
+  --ok:#1f7a4d; --warn:#b26a00;
+  --shadow:0 1px 2px rgba(20,30,25,.08),0 6px 18px rgba(20,30,25,.06);
+  --r:10px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0c1418; --panel:#131e23; --panel-2:#0f171b; --ink:#e7ede9; --ink-soft:#93a29b;
+  --line:#243138; --line-strong:#33454d;
+  --accent:#e5424c; --navy:#3f7bd0; --gold:#e3a83c;
+  --field-a:#1a6647; --field-b:#0e3d2c;
+  --chip:#18242a; --chip-line:#31424a;
+  --back:#0b2b52; --back-2:#082044;
+  --ok:#4fb381; --warn:#d69336;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+}}
+:root[data-theme="dark"]{
+  --bg:#0c1418; --panel:#131e23; --panel-2:#0f171b; --ink:#e7ede9; --ink-soft:#93a29b;
+  --line:#243138; --line-strong:#33454d;
+  --accent:#e5424c; --navy:#3f7bd0; --gold:#e3a83c;
+  --field-a:#1a6647; --field-b:#0e3d2c;
+  --chip:#18242a; --chip-line:#31424a;
+  --back:#0b2b52; --back-2:#082044;
+  --ok:#4fb381; --warn:#d69336;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:"Zen Kaku Gothic New",system-ui,-apple-system,"Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+  font-size:14px;line-height:1.5;-webkit-text-size-adjust:100%}
+h1,h2,h3{margin:0;font-weight:700}
+button{font:inherit;color:inherit;cursor:pointer}
+.mono{font-variant-numeric:tabular-nums}
+
+.wrap{max-width:1240px;margin:0 auto;padding:12px 12px 60px}
+.topbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 12px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.brand{display:flex;align-items:baseline;gap:8px;margin-right:auto}
+.brand b{font-family:"Oswald",sans-serif;font-weight:700;letter-spacing:.06em;font-size:17px;text-transform:uppercase}
+.brand span{color:var(--ink-soft);font-size:11.5px}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:4px 9px;border-radius:999px;
+  border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink-soft);white-space:nowrap}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--ink-soft)}
+.pill.live .dot{background:var(--ok)} .pill.local .dot{background:var(--warn)}
+.tb-btn{padding:5px 10px;border-radius:8px;border:1px solid var(--line-strong);background:var(--panel-2);font-size:12px}
+.tb-btn:hover{border-color:var(--ink-soft)}
+
+.scoreboard{margin-top:12px;background:linear-gradient(180deg,var(--panel),var(--panel-2));
+  border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);
+  display:grid;grid-template-columns:1fr auto 1fr;gap:10px 18px;align-items:center;padding:12px 16px}
+.sb-team{display:flex;flex-direction:column;gap:5px;min-width:0}
+.sb-team.right{align-items:flex-end;text-align:right}
+.sb-name{display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px}
+.sb-name .tag{font-size:10px;letter-spacing:.06em;color:#fff;background:var(--navy);padding:2px 6px;border-radius:5px}
+.sb-name .tag.acc{background:var(--accent)}
+.sb-runs{font-family:"Oswald",sans-serif;font-weight:700;font-size:42px;line-height:.9}
+.runctl{display:flex;align-items:center;gap:8px}
+.sb-team.right .runctl{flex-direction:row-reverse}
+.runctl button{width:26px;height:26px;border-radius:7px;border:1px solid var(--line-strong);background:var(--panel);
+  font-family:"Oswald",sans-serif;font-size:16px;line-height:1}
+.sb-tp{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--ink-soft);letter-spacing:.04em}
+.sb-team.right .sb-tp{flex-direction:row-reverse}
+.sb-tp .toks{display:flex;gap:2px}
+.sb-tp .tok{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:inset 0 0 0 1px rgba(0,0,0,.15)}
+.sb-tp b{font-family:"Oswald",sans-serif;font-size:13px;color:var(--ink)}
+.sb-tp button{width:18px;height:18px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel);font-size:11px;line-height:1}
+.sb-mid{display:flex;align-items:center;gap:16px}
+.inning{display:flex;align-items:center;gap:7px}
+.inning .num{font-family:"Oswald",sans-serif;font-weight:700;font-size:30px;min-width:30px;text-align:center}
+.inning .half{display:flex;flex-direction:column;gap:2px}
+.inning .half button{font-size:10px;padding:2px 7px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink-soft)}
+.inning .half button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.inning .step{width:22px;height:22px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);font-size:13px;line-height:1}
+.outs{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--ink-soft);letter-spacing:.08em}
+.out-dot{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--line-strong);background:transparent;padding:0}
+.out-dot.on{background:var(--accent);border-color:var(--accent)}
+.change{font-size:10.5px;padding:4px 9px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink-soft)}
+.turnbar{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px 10px;border-top:1px dashed var(--line);padding-top:9px;font-size:12px}
+.turnbar .who{font-weight:700}
+.turnbar button{font-size:11px;padding:4px 10px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel)}
+.linescore{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;gap:5px;padding-top:9px;border-top:1px dashed var(--line);overflow-x:auto}
+.ls-hint{font-size:10px;color:var(--ink-soft)}
+.linescore table{border-collapse:collapse;font-family:"Oswald",sans-serif}
+.linescore th,.linescore td{border:1px solid var(--line);width:30px;height:24px;text-align:center;font-size:13px;padding:0}
+.linescore th{font-size:10px;color:var(--ink-soft);font-weight:600;background:var(--panel-2)}
+.linescore td.tm{width:auto;padding:0 8px;font-size:11px;font-weight:700;font-family:inherit;text-align:right;white-space:nowrap}
+.linescore td.run{cursor:pointer;user-select:none}
+.linescore td.run.cur{background:rgba(214,64,54,.14)}
+.linescore td.run:hover{background:rgba(127,127,127,.15)}
+.linescore td.tot{font-weight:700;font-size:15px;background:var(--panel-2)}
+
+.panel{margin-top:12px}
+.p-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:9px 12px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r) var(--r) 0 0;box-shadow:var(--shadow)}
+.p-head .pn{font-weight:700;display:flex;align-items:center;gap:7px}
+.p-head .tag{font-size:10px;color:#fff;padding:2px 6px;border-radius:5px}
+.seatbtn{font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel-2)}
+.seatbtn.mine{border-color:var(--field-a);color:var(--field-a)}
+.minictl{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-soft)}
+.minictl b{font-family:"Oswald",sans-serif;font-size:15px;color:var(--ink);min-width:16px;text-align:center}
+.minictl button{width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel);font-size:12px;line-height:1}
+.dice-mini{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-soft)}
+.dice-mini .val{font-family:"Oswald",sans-serif;font-weight:700;font-size:17px;color:var(--accent)}
+.dice-mini .val.flash{animation:diceFlash .5s ease}
+@keyframes diceFlash{0%{transform:scale(1.7);color:var(--gold)}100%{transform:scale(1);color:var(--accent)}}
+
+.fieldscroll{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-top:0;
+  border-radius:0 0 var(--r) var(--r);box-shadow:var(--shadow);padding:10px}
+.hand{display:flex;gap:5px;align-items:stretch;min-height:74px;margin:8px 0;padding:7px;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:8px;overflow-x:auto}
+.hand.dropok{outline:2px solid var(--gold);background:rgba(255,220,150,.2)}
+.hand .hlabel{writing-mode:vertical-rl;font-size:10px;font-weight:700;color:var(--ink-soft);letter-spacing:.1em;padding:2px 0;flex:0 0 auto}
+.hand .hend{display:flex;gap:6px;align-items:center;padding-left:4px;flex:0 0 auto}
+.hand .hend button{font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel)}
+
+.field{display:grid;grid-template-columns:88px repeat(9,minmax(70px,1fr));
+  grid-template-rows:minmax(94px,auto) minmax(112px,auto) auto;gap:6px;padding:11px;
+  position:relative;min-width:940px;border-radius:12px;
+  background:linear-gradient(172deg,var(--field-a),var(--field-b));
+  box-shadow:inset 0 0 0 3px rgba(255,255,255,.12),inset 0 0 46px rgba(0,0,0,.28);
+  grid-template-areas:
+    "inn base base base base base rest rest rest rest"
+    "out sup  sup  main main main team md   od   od"
+    "line line line line line line line line line line";}
+.field.flip{grid-template-rows:auto minmax(112px,auto) minmax(94px,auto);
+  grid-template-areas:
+    "line line line line line line line line line line"
+    "out sup  sup  main main main team md   od   od"
+    "inn base base base base base rest rest rest rest";}
+.z{background:rgba(255,255,255,.09);border:1px dashed rgba(255,255,255,.42);border-radius:8px;
+  display:flex;flex-direction:column;min-width:0;position:relative;z-index:1}
+.z>.zh{font-size:9px;letter-spacing:.05em;color:rgba(255,255,255,.92);padding:3px 6px;
+  display:flex;justify-content:space-between;align-items:center;gap:4px;font-weight:700}
+.z>.zh .zt{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.z>.zh .ct{font-family:"Oswald",sans-serif;background:rgba(0,0,0,.28);border-radius:4px;padding:0 4px;flex:0 0 auto}
+.z>.zh .zbtn{font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;border:1px solid rgba(255,255,255,.5);background:rgba(255,255,255,.12);color:#fff;flex:0 0 auto}
+.z>.zb{flex:1;display:flex;flex-wrap:wrap;gap:4px;padding:5px;align-content:flex-start;overflow:auto}
+.z>.zb .empty{font-size:9px;color:rgba(255,255,255,.5);padding:2px}
+.z.dropok,.lslot.dropok,.bslot.dropok,.benchbox.dropok{outline:2px solid var(--gold);outline-offset:-1px;background:rgba(255,220,150,.28)}
+body.selmode .field .z:hover,body.selmode .lslot:hover,body.selmode .bslot:hover,
+body.selmode .benchbox:hover,body.selmode .hand:hover{outline:2px solid var(--gold);outline-offset:-1px;background:rgba(255,220,150,.20);cursor:copy}
+body.selmode .field .z,body.selmode .lslot,body.selmode .bslot,body.selmode .benchbox{outline:1px dashed rgba(240,190,110,.5);outline-offset:-1px}
+.z-inn{grid-area:inn} .z-out{grid-area:out} .z-base{grid-area:base} .z-sup{grid-area:sup}
+.z-main{grid-area:main} .z-team{grid-area:team} .z-rest{grid-area:rest}
+.z-md{grid-area:md} .z-od{grid-area:od} .z-line{grid-area:line}
+.z-main{background:rgba(255,224,160,.15);border-color:rgba(255,228,175,.62)}
+/* main/support are what you're actively resolving — show them bigger */
+.z-main .card,.z-sup .card{width:126px}
+.z-main .card.art img,.z-sup .card.art img{max-height:238px}
+.z-main>.zb,.z-sup>.zb{align-content:flex-start}
+.z-base{background:rgba(190,140,84,.22);border-color:rgba(255,235,205,.5)}
+.z-base::before{content:"";position:absolute;left:50%;top:52%;width:58px;height:58px;
+  transform:translate(-50%,-50%) rotate(45deg);border:2px solid rgba(255,255,255,.28);border-radius:6px;pointer-events:none}
+.z-base>.zb{flex-wrap:nowrap;gap:6px;justify-content:center}
+.bslot{flex:1 1 0;min-width:0;max-width:32%;min-height:78px;border:1px dashed rgba(255,255,255,.4);
+  border-radius:6px;display:flex;flex-direction:column;background:rgba(255,255,255,.06)}
+.bslot .bh{font-size:9px;font-weight:700;color:#fff;text-align:center;padding:2px 0;opacity:.85}
+.bslot .bb{flex:1;padding:3px;display:flex;flex-wrap:wrap;gap:3px;align-content:flex-start;overflow:auto}
+.z-line{background:linear-gradient(180deg,#153f74,#0e2e56);border-color:rgba(255,255,255,.3)}
+.z-line>.zb{flex-wrap:nowrap;gap:5px;padding:6px}
+.benchbox{flex:0 0 80px;border:1px dashed rgba(255,255,255,.42);border-radius:6px;display:flex;flex-direction:column;background:rgba(255,255,255,.06)}
+.benchbox.mound{border-color:var(--gold);border-style:solid;background:rgba(255,220,150,.12)}
+.benchbox .bh{font-size:8px;font-weight:700;color:#fff;text-align:center;padding:2px 1px;opacity:.85;letter-spacing:.02em;line-height:1.15}
+.benchbox.mound .bh{color:var(--gold);opacity:1}
+.benchbox .bb{flex:1;padding:3px;display:flex;flex-wrap:wrap;gap:3px;align-content:flex-start;overflow:auto}
+.benchstack{width:100%;min-height:56px;border-radius:6px;cursor:pointer;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:2px;color:#cdd8ea;font-family:"Oswald",sans-serif;
+  background:repeating-linear-gradient(45deg,var(--back),var(--back) 5px,var(--back-2) 5px,var(--back-2) 10px);
+  border:1px solid var(--back-2)}
+.benchstack:hover{border-color:var(--gold)}
+.benchstack .bs-n{font-size:19px;font-weight:700;line-height:1}
+.benchstack .bs-l{font-size:8px;letter-spacing:.06em;opacity:.85}
+.lslot{flex:1 1 0;min-width:0;border:1px dashed rgba(255,255,255,.34);border-radius:6px;display:flex;flex-direction:column;background:rgba(255,255,255,.05)}
+.lslot .lh{font-family:"Oswald",sans-serif;font-size:10px;color:#fff;text-align:center;padding:1px 0;opacity:.8}
+.lslot.atbat{border-color:var(--gold);background:rgba(255,220,150,.18);box-shadow:0 0 0 1px var(--gold)}
+.lslot .lb{flex:1;padding:3px;display:flex;flex-direction:column;gap:3px;overflow:auto}
+
+.card{position:relative;width:80px;flex:0 0 auto;border-radius:6px;border:1px solid var(--chip-line);
+  background:var(--chip);color:var(--ink);padding:4px 5px;text-align:left;box-shadow:0 1px 1px rgba(0,0,0,.08);
+  transition:transform .1s,box-shadow .1s,border-color .1s}
+.card:hover{transform:translateY(-1px);box-shadow:var(--shadow);z-index:5}
+.card.sel{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.card .nm{font-weight:700;font-size:10.5px;line-height:1.2;word-break:break-word}
+.card .meta{font-size:8.5px;color:var(--ink-soft);margin-top:1px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .eff{font-size:8px;color:var(--ink-soft);margin-top:2px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card.rest{opacity:.6;transform:rotate(-4deg)}
+.card.down{background:repeating-linear-gradient(45deg,var(--back),var(--back) 5px,var(--back-2) 5px,var(--back-2) 10px);
+  color:#cdd8ea;border-color:var(--back-2);min-height:46px;display:flex;align-items:center;justify-content:center}
+.card.down .nm{font-family:"Oswald",sans-serif;letter-spacing:.08em;font-size:9px;opacity:.8;text-align:center}
+.card .role{position:absolute;top:-5px;right:-4px;font-size:8px;font-weight:700;color:#fff;background:var(--field-a);border-radius:3px;padding:0 3px;z-index:2}
+.card .role.p{background:var(--navy)}
+.card.art{padding:0;overflow:hidden}
+.card.art img{width:100%;height:auto;max-height:150px;object-fit:contain;display:block;background:var(--panel-2)}
+.card.art .nmbar{font-size:9px;font-weight:700;line-height:1.2;padding:2px 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--panel)}
+.card.art .apdp{position:absolute;left:2px;top:2px;font-family:"Oswald",sans-serif;font-size:10px;font-weight:700;color:#fff;background:rgba(8,16,12,.72);border-radius:4px;padding:0 4px}
+.lslot .card,.benchbox .card,.bslot .card{width:100%}
+.card.zone{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 2px 6px rgba(0,0,0,.28)}
+.card.zone.down{background:repeating-linear-gradient(45deg,#5a4410,#5a4410 5px,#3d2d09 5px,#3d2d09 10px);border-color:var(--gold)}
+.card .zbadge{position:absolute;top:-6px;left:-4px;font-size:8px;font-weight:800;color:#241a02;background:var(--gold);border-radius:3px;padding:0 4px;z-index:3;letter-spacing:.04em}
+.card .zbadge.tb{background:var(--navy);color:#fff;left:auto;right:-4px}
+.card.tcard{border-color:var(--navy);box-shadow:0 0 0 1px var(--navy),0 2px 6px rgba(0,0,0,.28)}
+.libc .rl.tm{background:var(--navy);color:#fff}
+.lslot .lb{overflow:visible}
+.lslot .lb .card+.card{margin-top:-52px;margin-left:14px}
+.lslot .lb .card+.card.zone{margin-top:-46px}
+.z-md>.zb,.z-od>.zb,.z-rest>.zb,.z-out>.zb{flex-direction:column;align-items:center;justify-content:flex-start;gap:5px}
+.pilecount{font-family:"Oswald",sans-serif;font-size:10.5px;font-weight:700;color:#fff;background:rgba(8,16,12,.55);
+  border:1px solid rgba(255,255,255,.32);border-radius:5px;padding:1px 6px;cursor:pointer;flex:0 0 auto}
+.zlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:8px;margin-top:8px}
+.zlcell{border:1px solid var(--line);border-radius:8px;padding:6px;display:flex;flex-direction:column;gap:5px}
+.cmini{background:var(--panel-2);border-radius:6px;padding:5px;min-height:40px}
+.cmini .t{font-size:11px;font-weight:700;line-height:1.2}
+.cmini .s{font-size:9px;color:var(--ink-soft);margin-top:1px}
+.cmini.art{padding:0;overflow:hidden}
+.cmini.art img{width:100%;height:auto;max-height:150px;object-fit:contain;display:block;background:var(--panel)}
+.cmini.art .t{padding:3px 4px}
+.zlbar{display:flex;flex-wrap:wrap;gap:3px}
+.zlbar button{font-size:9.5px;padding:2px 5px;border-radius:4px;border:1px solid var(--line-strong);background:var(--panel-2)}
+.stackcard{position:relative;width:74px;min-height:96px;border-radius:6px;flex:0 0 auto;
+  background:repeating-linear-gradient(45deg,var(--back),var(--back) 5px,var(--back-2) 5px,var(--back-2) 10px);
+  border:1px solid var(--back-2);color:#dfe8f5;display:flex;align-items:center;justify-content:center;
+  font-family:"Oswald",sans-serif;font-weight:700;cursor:pointer;
+  box-shadow:2px 2px 0 -1px var(--back-2),4px 4px 0 -1px var(--back),6px 6px 0 -1px var(--back-2)}
+.stackcard .n{font-size:15px;letter-spacing:.02em}
+.stackcard.empty2{background:none;border:1px dashed rgba(255,255,255,.3);box-shadow:none;color:rgba(255,255,255,.45);font-size:11px}
+.lslot .card.art img,.benchbox .card.art img,.bslot .card.art img{max-height:120px}
+.hand .card{width:92px}
+.hand .card.art img{max-height:150px}
+
+.pop{position:fixed;z-index:40;background:var(--panel);border:1px solid var(--line-strong);border-radius:9px;
+  box-shadow:var(--shadow);padding:6px;display:grid;gap:3px;min-width:172px;max-width:230px}
+.pop button{text-align:left;padding:5px 8px;border-radius:6px;border:0;background:transparent;font-size:12px}
+.pop button:hover{background:var(--panel-2)}
+.pop .sep{height:1px;background:var(--line);margin:2px 0}
+.pop .zrow{display:flex;flex-wrap:wrap;gap:3px}
+.pop .zrow button{flex:1 0 30%;background:var(--panel-2);text-align:center;font-size:11px;padding:5px 4px}
+
+.logwrap{margin-top:12px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.roll-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;border-bottom:1px solid var(--line);font-size:12px}
+.roll-row button{padding:6px 11px;border-radius:7px;border:1px solid var(--line-strong);background:var(--panel-2)}
+.roll-row .big{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.roll-row input[type=number]{width:50px;padding:5px 6px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);font:inherit}
+.roll-row select{padding:5px 6px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);font:inherit}
+.log{max-height:180px;overflow-y:auto;padding:9px 12px;display:flex;flex-direction:column;gap:4px;font-size:12px}
+.log .e{color:var(--ink-soft)} .log .e .t{opacity:.6;margin-right:6px;font-size:10.5px;font-variant-numeric:tabular-nums}
+.log .e .w{font-weight:700;color:var(--ink);margin-right:5px} .log .e.sys .w{color:var(--accent)}
+.log-in{display:flex;gap:6px;border-top:1px solid var(--line);padding:8px}
+.log-in input{flex:1;padding:7px 9px;border-radius:7px;border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink);font:inherit}
+.log-in button{padding:7px 12px;border-radius:7px;border:1px solid var(--line-strong);background:var(--panel-2);font-size:12px}
+
+.modal{position:fixed;inset:0;z-index:50;background:rgba(10,16,14,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+.modal .box{background:var(--panel);border:1px solid var(--line-strong);border-radius:12px;box-shadow:var(--shadow);width:min(880px,100%);max-height:90vh;overflow:auto;padding:16px}
+.modal .box.sm{width:min(560px,100%)}
+.modal h2{font-size:15px;margin-bottom:4px}
+.modal p.hint{font-size:11.5px;color:var(--ink-soft);margin:0 0 10px}
+.modal textarea{width:100%;min-height:200px;padding:9px;border-radius:8px;border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink);font:12px/1.5 "Zen Kaku Gothic New",monospace;resize:vertical}
+.modal .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.modal .row button{padding:8px 13px;border-radius:8px;border:1px solid var(--line-strong);background:var(--panel-2);font-size:12.5px}
+.modal .row button.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+.modal .presets{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.modal .presets button{font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel-2)}
+.cd-eff{white-space:pre-wrap;font-size:12.5px;margin-top:8px;padding:10px;background:var(--panel-2);border-radius:8px;border:1px solid var(--line)}
+.cd-img{width:100%;max-height:340px;object-fit:contain;border-radius:8px;background:var(--panel-2);margin-top:8px}
+
+.btabs{display:flex;gap:6px;margin-bottom:10px}
+.btabs button{font-size:12px;padding:5px 12px;border-radius:7px;border:1px solid var(--line-strong);background:var(--panel-2)}
+.btabs button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.bsum{font-size:11.5px;color:var(--ink-soft);margin-bottom:8px;font-variant-numeric:tabular-nums}
+.bsum b{color:var(--ink)}
+.bd{display:flex;gap:14px;flex-wrap:wrap}
+.bd .col{flex:1 1 340px;min-width:0}
+.bd h3{font-size:11.5px;margin-bottom:6px;color:var(--ink-soft);letter-spacing:.03em;display:flex;justify-content:space-between}
+.bd .tools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.bd .tools input[type=text]{flex:1;min-width:110px;padding:6px 8px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink);font:inherit}
+.bchip{font-size:11px;padding:3px 9px;border-radius:999px;border:1px solid var(--line-strong);background:var(--panel-2)}
+.bchip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.lib{display:flex;flex-direction:column;gap:5px;max-height:370px;overflow:auto;padding:2px}
+.libgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
+.libgrouph{position:sticky;top:0;z-index:2;font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--ink);
+  background:var(--panel);padding:4px 3px;border-bottom:1px solid var(--line-strong)}
+.libc{border:1px solid var(--chip-line);border-radius:7px;background:var(--chip);overflow:hidden;text-align:left;position:relative;cursor:grab}
+.libc img{width:100%;height:auto;max-height:170px;object-fit:contain;display:block;background:var(--panel-2)}
+.libc .t{font-size:9.5px;font-weight:700;padding:15px 4px 0;line-height:1.2;word-break:break-word}
+.libc img+.t{padding-top:3px}
+.libc .no{font-size:9px;font-weight:700;color:var(--accent);padding:1px 4px 0;letter-spacing:.02em}
+.libc .s{font-size:8.5px;color:var(--ink-soft);padding:0 4px 4px}
+.drow .rowno{font-size:9px;font-weight:700;color:var(--accent);margin-left:6px;letter-spacing:.02em}
+.libc .rl{position:absolute;left:3px;top:3px;font-size:8px;font-weight:700;color:#fff;background:var(--field-a);border-radius:3px;padding:0 3px}
+.libc .rl.p{background:var(--navy)}
+.libc .rl.z{background:var(--gold);color:#241a02}
+.libc .cam{position:absolute;right:3px;top:3px;font-size:10px;padding:0 4px;border-radius:4px;border:1px solid var(--line-strong);background:var(--panel);opacity:.92}
+.libc .add{display:flex;gap:3px;padding:0 4px 4px}
+.libc .add button{flex:1;font-size:9px;padding:2px 0;border-radius:4px;border:1px solid var(--line-strong);background:var(--panel-2)}
+.dcol .lst{display:flex;flex-direction:column;gap:4px;min-height:38px;border:1px dashed var(--line-strong);border-radius:8px;padding:6px;margin-bottom:10px}
+.dcol .lst.over{border-color:var(--accent);background:rgba(200,30,43,.07)}
+.drow{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 6px;background:var(--panel-2);border-radius:6px;cursor:grab}
+.drow .bo{font-family:"Oswald",sans-serif;width:15px;text-align:center;color:var(--ink-soft);flex:0 0 auto}
+.drow .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.drow .num{width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel);font-size:12px;line-height:1;flex:0 0 auto}
+.drow .cnt{font-family:"Oswald",sans-serif;width:14px;text-align:center;flex:0 0 auto}
+.drow .x{color:var(--accent);border:0;background:transparent;font-size:14px;flex:0 0 auto}
+.nc{display:grid;grid-template-columns:1fr 1fr;gap:6px;padding:8px;border:1px solid var(--line);border-radius:8px;margin-bottom:8px}
+.nc input,.nc select{padding:5px 7px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink);font:inherit;font-size:12px}
+.nc .full{grid-column:1/-1}
+a{color:var(--navy)}
+@media (max-width:640px){
+  .scoreboard{grid-template-columns:1fr 1fr}
+  .sb-mid{grid-column:1/-1;order:3;justify-content:center;flex-wrap:wrap}
+  .sb-runs{font-size:34px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     Firebase 設定：下の { ... } を自分のプロジェクトの設定に置き換える。
+     手順は同フォルダの「ドリオ対戦卓_セットアップ.md」参照。
+     databaseURL が空のままだとローカル専用（同期なし）で動く。
+     ============================================================ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.5/firebase-database-compat.js"></script>
+<script>
+window.FIREBASE_CONFIG = {
+  databaseURL: "https://dorio-table-default-rtdb.asia-southeast1.firebasedatabase.app/"
+};
+</script>
+
+<div class="wrap">
+  <div class="topbar">
+    <div class="brand"><b>ドリオ対戦卓</b><span>ドリームオーダー / 身内オンライン卓</span></div>
+    <span id="syncPill" class="pill"><span class="dot"></span><span id="syncTxt">起動中…</span></span>
+    <button class="tb-btn" id="btnShare">卓を共有</button>
+    <button class="tb-btn" id="btnImg">画像一括</button>
+    <button class="tb-btn" id="btnSync">手動同期</button>
+    <button class="tb-btn" id="btnSolo">🃏 一人回し</button>
+    <button class="tb-btn" id="btnSwap">先攻⇄後攻</button>
+    <button class="tb-btn" id="btnReset">新規対戦</button>
+    <button class="tb-btn" id="btnHardReset">完全リセット</button>
+    <button class="tb-btn" id="btnTheme">◐</button>
+  </div>
+  <div class="scoreboard" id="scoreboard"></div>
+  <div id="panelTop"></div>
+  <div id="panelBot"></div>
+  <div class="logwrap">
+    <div class="roll-row">
+      <span>打撃判定</span>
+      <select id="rollWho"></select>
+      <label>ダイス<input type="number" id="rollN" value="2" min="1" max="4"></label>
+      <label>補正<input type="number" id="rollMod" value="0" min="-9" max="9"></label>
+      <button class="big" id="btnRoll">ロール</button>
+      <button id="btnCoin">先攻決め（コイン）</button>
+    </div>
+    <div class="log" id="log"></div>
+    <div class="log-in">
+      <input id="logInput" placeholder="操作メモ / チャット" maxlength="140">
+      <button id="logSend">送信</button>
+    </div>
+  </div>
+  <p style="font-size:11px;color:var(--ink-soft);margin:14px 2px 0">
+    公式マット準拠。カード選択→エリアをタップ / ドラッグで移動。登板投手は公開、控え・手札・裏サポートは相手に非公開。
+    アウトエリアはデフォルト非公開（メニューで「アウト（表）」も選べる）、レストは基本公開。非公開ゾーンへの移動はログにもカード名を出さない。
+    山札は束＋残枚数表示で、束をタップして「トップ○枚を公開／自分だけ確認」。公開したカードは個別に移動、余りは「残り→レスト」で一括処理。サポートは置くと自動で裏、スコアボードの「勝負！サポート公開」で両者一斉公開。
+    ZONEカードは打順の選手をタップ→メニューの「ZONEを重ねる（TP-1）」。TPはダイスの横でも操作可。「デッキ」でビルダー、📷で画像追加。
+  </p>
+</div>
+<div id="modalRoot"></div>
+
+<script>
+(function(){
+"use strict";
+const $=s=>document.querySelector(s);
+const h=(t,a={},...k)=>{const e=document.createElement(t);
+  for(const[p,v]of Object.entries(a)){if(v==null)continue;
+    if(p==="class")e.className=v;else if(p==="html")e.innerHTML=v;
+    else if(p.startsWith("on"))e.addEventListener(p.slice(2),v);else e.setAttribute(p,v);}
+  for(const c of k.flat())if(c!=null)e.append(c.nodeType?c:document.createTextNode(c));return e;};
+const uid=()=>Math.random().toString(36).slice(2,9);
+const now=()=>new Date().toTimeString().slice(0,5);
+const LS=window.localStorage;
+
+let clientId;try{clientId=LS.getItem("dorio_cid")||(LS.setItem("dorio_cid",uid()),LS.getItem("dorio_cid"));}catch(e){clientId=uid();}
+let myName;try{myName=LS.getItem("dorio_name")||"";}catch(e){myName="";}
+let soloMode;try{soloMode=LS.getItem("dorio_solo")==="1";}catch(e){soloMode=false;}
+if(!myName){myName="プレイヤー"+clientId.slice(0,3);try{LS.setItem("dorio_name",myName);}catch(e){}}
+function gameId(){
+  // explicit ?g=name / #g=name lets you run a second table; otherwise everyone
+  // who opens this artifact shares the one "main" table (no URL juggling needed).
+  const m=(location.hash+"&"+location.search).match(/[#&?]g=([\w-]+)/i);
+  return m?m[1]:"main";
+}
+const GID=gameId();
+
+/* DeckLog（ブシロード公式）のデッキコードを取り込むための中継プロキシ（Cloudflare Workers）。
+   decklog.bushiroad.com の API は CORS 非対応のため直接fetchできず、これを経由する。
+   セットアップ手順は Vault の「対戦卓_DeckLog取り込みセットアップ」参照。 */
+const DECKLOG_PROXY="https://dorio-decklog-proxy.gari-gari-noise.workers.dev";
+
+const PRESETS={
+"ロッテ (BP03)":`# オーダー
+T 千葉ロッテマリーンズ | チームカード | 効果・投手/野手コストMAX・メイン枚数はカード参照。オーダーコストは宣言で管理
+投 毛利 海大 BP03-M02 | DP6 c3 先発+7 | 走者2/3塁でDP+1。投手/捕手がサポかイニングにあればDP+1&相手ダイス-1
+投 澤田 圭佑 BP03-M | 投手 | 効果テキスト未公開
+野 藤原 恭大 BP03-M03 | AP6 外野 c3 ミート+1 | サポに"ビハインド時"選手がいればAP+1。打席終了でサポ選手回収(ビハインドで+ドロー)
+野 N.ソト BP03-M06 | AP5 一塁 c2 強振+1 | ビハインド時AP+1&ダイス+1。"ビハインド時"サポでAP+2
+野 寺地 隆成 BP03-M07 | AP5 三塁 c2 | イニングの寺地の本領発揮を有効化。"寺地/ビハインド時"サポでAP+2、ビハインド強振でダイス+1
+野 友杉 篤輝 BP03-M08 | AP5 遊撃 c1 | 起動: 手札1枚をイニングへ→投手/捕手があればAP+1(ビハインドAP+2)→イニングから1枚回収
+野 松川 虎生 BP03-M11 | AP4 捕手 c1 | ZONE3覚醒でAP+2。イニング本領発揮: 登板投手c3以上で1ドロー
+野 西川 史礁 BP03-M14 | AP5 外野 c0 | サポ本領発揮: 投手c3以上でサポに強振DP+3
+野 和田 康士朗 BP03-M15 | AP4 外野 c1 | ビハインド時AP+2
+Z 藤原 恭大 BP03-M01 | ZONE 外野 | メインAP+1。ZONE3: ZONE時 山札上3枚公開→2枚まで手札・残りレスト
+# メイン
+`,
+"楽天 (BP03)":`# オーダー
+T 東北楽天ゴールデンイーグルス | チームカード | 効果・投手/野手コストMAX・メイン枚数はカード参照。オーダーコストは宣言で管理
+投 前田 健太 BP03-E09 | DP7 c3 先発+7 | 特殊能力なし
+投 鈴木 翔天 BP03-E | 投手 | 効果テキスト未公開
+野 辰己 涼介 BP03-E04 | AP6 外野 c3 | サポに本領発揮選手1枚AP+1/2枚AP+2。サポ本領発揮: 他の本領発揮選手で1ドロー
+野 黒川 史陽 BP03-E03 | AP5 三塁 c2 ミート+1 強振+1 | 本領発揮選手1枚AP+1/2枚AP+2。サポ本領発揮でミートDP+1
+野 太田 光 BP03-E06 | AP5 捕手 c2 | 打順6番以降でAP+1&2ドロー。サポ本領発揮: 投手c3以上で強振DP+2
+野 小深田 大翔 BP03-E07 | AP5 二塁 c2 ミート+1 | サポに本領発揮があればAP+2。サポ本領発揮: 打者c2以上でミートのダイス+1
+野 中島 大輔 BP03-E08 | AP5 外野 c2 | サポに本領発揮があればAP+1。サポ本領発揮: 他の本領発揮選手で1ドロー
+野 浅村 栄斗 BP03-E11 | AP5 一塁 c1 | サポに選手2枚以上でAP+1。ZONE3覚醒でAP+1
+野 佐藤 直樹 BP03-E14 | AP5 外野 c1 強振+1 | サポに選手2枚以上でAP+1
+Z 辰己 涼介 BP03-E01 | ZONE 外野 | メインAP+1。ZONE3: ZONE時 山札上3枚公開→2枚まで手札・残りレスト
+# メイン
+`,
+"チャレカ東京ロッテ (GC672)":`# オーダー（DeckLog GC672）
+T 千葉ロッテマリーンズ TEAM-M04
+野 髙部 瑛斗 BP02-M04
+野 藤原 恭大 PDO-M03
+野 寺地 隆成 BP02-M02
+野 藤岡 裕大 BP02-M03
+野 安田 尚憲 BP02-M06
+野 佐藤 都志也 PBP04-M02
+野 小川 龍成 BP01-M08
+野 Ｇ．ポランコ PBP03-M11
+野 Ｎ．ソト BP02-M12
+投 黒木 知宏 TBP01-M01
+投 益田 直也 BP02-M11
+野 角中 勝也 PBP04-M05
+野 石川 慎吾 PBP04-M10
+野 岡 大海 BP02-M15
+Z 【ZONE】藤岡 裕大 BP02-M01
+# メイン
+3x 黒木 知宏 TBP01-M01
+3x 益田 直也 BP02-M11
+3x 佐藤 都志也 PBP04-M02
+3x 佐藤 都志也 TBP01-M08
+3x 寺地 隆成 BP02-M02
+3x 藤岡 裕大 BP02-M03
+3x 安田 尚憲 BP02-M06
+1x 藤原 恭大 PDO-M03
+2x 髙部 瑛斗 BP02-M04
+3x 不屈 PDO-12
+3x ミートバッティング PDO-02
+3x 勝負師 PDO-01
+1x 威圧 PDO-13
+1x 研ぎ澄まされた一振り PDO-14
+1x 内野警戒 PDO-04
+2x 外野警戒 PDO-05
+2x エンドラン PDO-11
+`,
+"チャレカ東京楽天 (1J0QKS)":`# オーダー（DeckLog 1J0QKS）
+T 東北楽天ゴールデンイーグルス TEAM-E03
+野 阿部 寿樹 BP01-E04
+野 島内 宏明 PBP03-E05
+野 小郷 裕哉 PBP04-E02
+野 村林 一輝 BP02-E04
+野 渡邊 佳明 BP02-E08
+野 宗山 塁 BP01-E03
+野 太田 光 TBP01-E15
+野 鈴木 大地 PSD04-E06
+野 小深田 大翔 PBP03-E10
+投 岸 孝之 BP02-E02
+投 鈴木 翔天 TBP01-E14
+投 松井 裕樹 TBP01-E02
+野 石原 彪 PBP04-E08
+野 岡島 豪郎 TBP01-E18
+Z 【ZONE】村林 一輝 BP02-E01
+# メイン
+3x 岸 孝之 BP02-E02
+3x 嶋 基宏 TBP01-E03
+3x 太田 光 TBP01-E15
+3x 太田 光 BP02-E10
+3x 村林 一輝 BP02-E04
+3x 宗山 塁 BP01-E03
+3x 辰己 涼介 PBP03-E02
+1x 島内 宏明 PBP03-E05
+3x 小郷 裕哉 PBP04-E02
+1x 阿部 寿樹 BP01-E04
+1x 渡邊 佳明 PDO-E04
+1x 渡邊 佳明 BP02-E08
+3x 田中 和基 PBP02-E05
+3x ミートバッティング PDO-02
+1x エンドラン PDO-11
+2x 研ぎ澄まされた一振り PDO-14
+3x 勝負師 PDO-01
+`,
+"空の卓":`# オーダー
+# メイン
+`
+};
+
+/* カード画像（カード番号=最低レア度・1枚）。各カードの📷から追加も可。 */
+const SEED_IMG={};
+
+/* 全12球団 全カード（カード番号＋選手名。Vault カード画像一覧より） */
+const POOL2=`
+岡本 和真 CSD04-G01
+戸郷 翔征 CSD04-G02
+中川 皓太 CSD04-G03
+大勢 CSD04-G04
+大城 卓三 CSD04-G05
+吉川 尚輝 CSD04-G06
+坂本 勇人 CSD04-G07
+門脇 誠 CSD04-G08
+長野 久義 CSD04-G09
+丸 佳浩 CSD04-G10
+浅野 翔吾 CSD04-G11
+秋広 優人 CSD04-G12
+読売ジャイアンツ TIME-G01
+T 読売ジャイアンツ TEAM-G01
+大城 卓三 CBP01-G01
+坂本 勇人 CBP01-G02
+山﨑 伊織 CBP01-G03
+中川 皓太 CBP01-G04
+門脇 誠 CBP01-G05
+秋広 優人 CBP01-G06
+高梨 雄平 CBP01-G07
+菊地 大稀 CBP01-G08
+岡本 和真 CBP01-G09
+中山 礼都 CBP01-G10
+梶谷 隆幸 CBP01-G11
+重信 慎之介 CBP01-G12
+戸郷 翔征 CBP02-G01
+吉川 尚輝 CBP02-G02
+菅野 智之 CBP02-G03
+大勢 CBP02-G04
+中山 礼都 CBP02-G05
+長野 久義 CBP02-G06
+横川 凱 CBP02-G07
+今村 信貴 CBP02-G08
+小林 誠司 CBP02-G09
+岸田 行倫 CBP02-G10
+岡田 悠希 CBP02-G11
+浅野 翔吾 CBP02-G12
+岡本 和真 CBP03-G01
+門脇 誠 CBP03-G02
+戸郷 翔征 CBP03-G03
+大城 卓三 CBP03-G04
+坂本 勇人 CBP03-G05
+丸 佳浩 CBP03-G06
+西舘 勇陽 CBP03-G07
+中川 皓太 CBP03-G08
+大勢 CBP03-G09
+吉川 尚輝 CBP03-G10
+梶谷 隆幸 CBP03-G11
+佐々木 俊輔 CBP03-G12
+菅野 智之 CBP04-G01
+小林 誠司 CBP04-G02
+吉川 尚輝 CBP04-G03
+坂本 勇人 CBP04-G04
+長野 久義 CBP04-G05
+佐々木 俊輔 CBP04-G06
+Ａ．バルドナード CBP04-G07
+大城 卓三 CBP04-G08
+岡本 和真 CBP04-G09
+丸 佳浩 CBP04-G10
+萩尾 匡也 CBP04-G11
+オコエ 瑠偉 CBP04-G12
+斎藤 雅樹 TBP01-G01
+岡島 秀樹 TBP01-G02
+山口 鉄也 TBP01-G03
+上原 浩治 TBP01-G04
+阿部 慎之助 TBP01-G05
+王 貞治 TBP01-G06
+篠塚 和典 TBP01-G07
+長嶋 茂雄 TBP01-G08
+原 辰徳 TBP01-G09
+高橋 由伸 TBP01-G10
+松井 秀喜 TBP01-G11
+山﨑 伊織 TBP01-G12
+吉川 尚輝 TBP01-G13
+坂本 勇人 TBP01-G14
+長野 久義 TBP01-G15
+丸 佳浩 TBP01-G16
+戸郷 翔征 TBP01-G17
+井上 温大 TBP01-G18
+大勢 TBP01-G19
+小林 誠司 TBP01-G20
+岡本 和真 TBP01-G21
+中山 礼都 TBP01-G22
+Ｅ．ヘルナンデス TBP01-G23
+オコエ 瑠偉 TBP01-G24
+浅野 翔吾 TBP01-G25
+高橋 礼 TBP01-G26
+Ｆ．グリフィン TBP01-G27
+横川 凱 TBP01-G28
+堀田 賢慎 TBP01-G29
+赤星 優志 TBP01-G30
+Ｋ．ケラー TBP01-G31
+中川 皓太 TBP01-G32
+高梨 雄平 TBP01-G33
+船迫 大雅 TBP01-G34
+泉 圭輔 TBP01-G35
+平内 龍太 TBP01-G36
+Ａ．バルドナード TBP01-G37
+大城 卓三 TBP01-G38
+岸田 行倫 TBP01-G39
+郡 拓也 TBP01-G40
+山瀬 慎之助 TBP01-G41
+秋広 優人 TBP01-G42
+増田 大輝 TBP01-G43
+門脇 誠 TBP01-G44
+泉口 友汰 TBP01-G45
+萩尾 匡也 TBP01-G46
+岡田 悠希 TBP01-G47
+重信 慎之介 TBP01-G48
+佐々木 俊輔 TBP01-G49
+若林 楽人 TBP01-G50
+山﨑 伊織 BP01-G01
+甲斐 拓也 BP01-G02
+吉川 尚輝 BP01-G03
+Ｔ．キャベッジ BP01-G04
+大勢 BP01-G05
+Ｒ．マルティネス BP01-G06
+中山 礼都 BP01-G07
+泉口 友汰 BP01-G08
+若林 楽人 BP01-G09
+T 読売ジャイアンツ TEAM-G03
+ジャビット TIME-G18
+Z 吉川 尚輝 BP02-G01
+岸田 行倫 BP02-G02
+吉川 尚輝 BP02-G03
+泉口 友汰 BP02-G04
+大勢 BP02-G05
+R.マルティネス BP02-G06
+丸 佳浩 BP02-G07
+Ｔ．キャベッジ BP02-G08
+山﨑 伊織 BP02-G09
+田中 瑛斗 BP02-G10
+リチャード BP02-G11
+門脇 誠 BP02-G12
+坂本 勇人 BP02-G13
+中山 礼都 BP02-G14
+若林 楽人 BP02-G15
+T 読売ジャイアンツ TEAM-G04
+ジャビット TIME-G19
+戸郷 翔征 PB01-SJ02
+井上 温大 PB01-SJ05
+大勢 PB01-SJ12
+泉口 友汰 BP03-G03
+T.キャベッジ BP03-G04
+竹丸 和幸 BP03-G05
+岸田 行倫 BP03-G06
+吉川 尚輝 BP03-G07
+坂本 勇人 BP03-G08
+船迫 大雅 BP03-G09
+R.マルティネス BP03-G10
+佐々木 俊輔 BP03-G15
+大山 悠輔 CSD01-T01
+西 勇輝 CSD01-T02
+岩崎 優 CSD01-T03
+湯浅 京己 CSD01-T04
+梅野 隆太郎 CSD01-T05
+原口 文仁 CSD01-T06
+中野 拓夢 CSD01-T07
+佐藤 輝明 CSD01-T08
+木浪 聖也 CSD01-T09
+森下 翔太 CSD01-T10
+近本 光司 CSD01-T11
+Ｓ．ノイジー CSD01-T12
+阪神タイガース TIME-T01
+T 阪神タイガース TEAM-T01
+湯浅 京己 CBP01-T01
+佐藤 輝明 CBP01-T02
+青柳 晃洋 CBP01-T03
+岩貞 祐太 CBP01-T04
+梅野 隆太郎 CBP01-T05
+森下 翔太 CBP01-T06
+伊藤 将司 CBP01-T07
+石井 大智 CBP01-T08
+原口 文仁 CBP01-T09
+渡邉 諒 CBP01-T10
+木浪 聖也 CBP01-T11
+戸井 零士 CBP01-T12
+青柳 晃洋 CBP02-T01
+近本 光司 CBP02-T02
+岩崎 優 CBP02-T03
+坂本 誠志郎 CBP02-T04
+中野 拓夢 CBP02-T05
+糸原 健斗 CBP02-T06
+大竹 耕太郎 CBP02-T07
+加治屋 蓮 CBP02-T08
+大山 悠輔 CBP02-T09
+小幡 竜平 CBP02-T10
+Ｓ．ノイジー CBP02-T11
+島田 海吏 CBP02-T12
+村上 頌樹 CBP03-T01
+中野 拓夢 CBP03-T02
+岩崎 優 CBP03-T03
+大山 悠輔 CBP03-T04
+木浪 聖也 CBP03-T05
+Ｓ．ノイジー CBP03-T06
+桐敷 拓馬 CBP03-T07
+梅野 隆太郎 CBP03-T08
+佐藤 輝明 CBP03-T09
+森下 翔太 CBP03-T10
+近本 光司 CBP03-T11
+前川 右京 CBP03-T12
+才木 浩人 CBP04-T01
+近本 光司 CBP04-T02
+坂本 誠志郎 CBP04-T03
+糸原 健斗 CBP04-T04
+森下 翔太 CBP04-T05
+前川 右京 CBP04-T06
+島本 浩也 CBP04-T07
+大山 悠輔 CBP04-T08
+原口 文仁 CBP04-T09
+中野 拓夢 CBP04-T10
+Ｓ．ノイジー CBP04-T11
+植田 海 CBP04-T12
+井川 慶 TBP01-T01
+藤川 球児 TBP01-T02
+久保田 智之 TBP01-T03
+Ｊ．ウィリアムス TBP01-T04
+鳥谷 敬 TBP01-T05
+糸井 嘉男 TBP01-T06
+西 勇輝 TBP01-T07
+中野 拓夢 TBP01-T08
+佐藤 輝明 TBP01-T09
+森下 翔太 TBP01-T10
+近本 光司 TBP01-T11
+才木 浩人 TBP01-T12
+村上 頌樹 TBP01-T13
+大竹 耕太郎 TBP01-T14
+富田 蓮 TBP01-T15
+石井 大智 TBP01-T16
+梅野 隆太郎 TBP01-T17
+渡邉 諒 TBP01-T18
+糸原 健斗 TBP01-T19
+木浪 聖也 TBP01-T20
+井上 広大 TBP01-T21
+伊藤 将司 TBP01-T22
+髙橋 遥人 TBP01-T23
+門別 啓人 TBP01-T24
+及川 雅貴 TBP01-T25
+Ｊ．ビーズリー TBP01-T26
+岩貞 祐太 TBP01-T27
+西 純矢 TBP01-T28
+漆原 大晟 TBP01-T29
+石黒 佑弥 TBP01-T30
+岡留 英貴 TBP01-T31
+佐藤 蓮 TBP01-T32
+Ｊ．ゲラ TBP01-T33
+岩崎 優 TBP01-T34
+坂本 誠志郎 TBP01-T35
+長坂 拳弥 TBP01-T36
+大山 悠輔 TBP01-T37
+原口 文仁 TBP01-T38
+熊谷 敬宥 TBP01-T39
+小幡 竜平 TBP01-T40
+島田 海吏 TBP01-T41
+小野寺 暖 TBP01-T42
+豊田 寛 TBP01-T43
+植田 海 TBP01-T44
+野口 恭佑 TBP01-T45
+才木 浩人 BP01-T01
+桐敷 拓馬 BP01-T02
+梅野 隆太郎 BP01-T03
+佐藤 輝明 BP01-T04
+岩崎 優 BP01-T05
+坂本 誠志郎 BP01-T06
+中野 拓夢 BP01-T07
+小幡 竜平 BP01-T08
+島田 海吏 BP01-T09
+T 阪神タイガース TEAM-T03
+トラッキー TIME-T04
+Z 森下 翔太 BP02-T01
+村上 頌樹 BP02-T02
+坂本 誠志郎 BP02-T03
+森下 翔太 BP02-T04
+石井 大智 BP02-T05
+大山 悠輔 BP02-T06
+中野 拓夢 BP02-T07
+近本 光司 BP02-T08
+伊原 陵人 BP02-T09
+及川 雅貴 BP02-T10
+佐藤 輝明 BP02-T11
+小幡 竜平 BP02-T12
+前川 右京 BP02-T13
+豊田 寛 BP02-T14
+髙寺 望夢 BP02-T15
+T 阪神タイガース TEAM-T04
+トラッキー TIME-T05
+才木 浩人 PB01-SJ04
+森下 翔太 PB01-SJ24
+才木 浩人 BP03-T02
+中野 拓夢 BP03-T03
+佐藤 輝明 BP03-T04
+髙橋 遥人 BP03-T05
+大山 悠輔 BP03-T06
+木浪 聖也 BP03-T07
+前川 右京 BP03-T08
+岩崎 優 BP03-T10
+坂本 誠志郎 BP03-T11
+伏見 寅威 BP03-T12
+佐野 恵太 CSD03-DB01
+東 克樹 CSD03-DB02
+伊勢 大夢 CSD03-DB03
+山﨑 康晃 CSD03-DB04
+伊藤 光 CSD03-DB05
+牧 秀悟 CSD03-DB06
+宮﨑 敏郎 CSD03-DB07
+林 琢真 CSD03-DB08
+大田 泰示 CSD03-DB09
+桑原 将志 CSD03-DB10
+楠本 泰史 CSD03-DB11
+関根 大気 CSD03-DB12
+横浜DeNAベイスターズ TIME-DB01
+T 横浜DeNAベイスターズ TEAM-DB01
+山﨑 康晃 CBP01-DB01
+牧 秀悟 CBP01-DB02
+濵口 遥大 CBP01-DB03
+入江 大生 CBP01-DB04
+山本 祐大 CBP01-DB05
+佐野 恵太 CBP01-DB06
+大貫 晋一 CBP01-DB07
+伊勢 大夢 CBP01-DB08
+柴田 竜拓 CBP01-DB09
+大和 CBP01-DB10
+Ｔ．オースティン CBP01-DB11
+桑原 将志 CBP01-DB12
+東 克樹 CBP02-DB01
+宮﨑 敏郎 CBP02-DB02
+上茶谷 大河 CBP02-DB03
+戸柱 恭孝 CBP02-DB04
+大田 泰示 CBP02-DB05
+関根 大気 CBP02-DB06
+Ｊ．Ｂ．ウェンデルケン CBP02-DB07
+森原 康平 CBP02-DB08
+松尾 汐恩 CBP02-DB09
+柴田 竜拓 CBP02-DB10
+京田 陽太 CBP02-DB11
+神里 和毅 CBP02-DB12
+度会 隆輝 CBP03-DB01
+筒香 嘉智 CBP03-DB02
+濵口 遥大 CBP03-DB03
+山﨑 康晃 CBP03-DB04
+宮﨑 敏郎 CBP03-DB05
+桑原 将志 CBP03-DB06
+上茶谷 大河 CBP03-DB07
+山本 祐大 CBP03-DB08
+Ｔ．オースティン CBP03-DB09
+佐野 恵太 CBP03-DB10
+牧 秀悟 CBP03-DB11
+石上 泰輝 CBP03-DB12
+大貫 晋一 CBP04-DB01
+佐野 恵太 CBP04-DB02
+山本 祐大 CBP04-DB03
+大和 CBP04-DB04
+神里 和毅 CBP04-DB05
+関根 大気 CBP04-DB06
+徳山 壮磨 CBP04-DB07
+森原 康平 CBP04-DB08
+宮﨑 敏郎 CBP04-DB09
+森 敬斗 CBP04-DB10
+楠本 泰史 CBP04-DB11
+蝦名 達夫 CBP04-DB12
+三浦 大輔 TBP01-DB01
+野村 弘樹 TBP01-DB02
+石井 琢朗 TBP01-DB03
+鈴木 尚典 TBP01-DB04
+佐伯 貴弘 TBP01-DB05
+山本 祐大 TBP01-DB06
+Ｔ．オースティン TBP01-DB07
+牧 秀悟 TBP01-DB08
+宮﨑 敏郎 TBP01-DB09
+桑原 将志 TBP01-DB10
+東 克樹 TBP01-DB11
+伊勢 大夢 TBP01-DB12
+山﨑 康晃 TBP01-DB13
+戸柱 恭孝 TBP01-DB14
+林 琢真 TBP01-DB15
+森 敬斗 TBP01-DB16
+京田 陽太 TBP01-DB17
+梶原 昂希 TBP01-DB18
+筒香 嘉智 TBP01-DB19
+関根 大気 TBP01-DB20
+石田 健大 TBP01-DB21
+大貫 晋一 TBP01-DB22
+吉野 光樹 TBP01-DB23
+Ａ．ジャクソン TBP01-DB24
+石田 裕太郎 TBP01-DB25
+平良 拳太郎 TBP01-DB26
+Ａ．ケイ TBP01-DB27
+徳山 壮磨 TBP01-DB28
+坂本 裕哉 TBP01-DB29
+佐々木 千隼 TBP01-DB30
+京山 将弥 TBP01-DB31
+中川 颯 TBP01-DB32
+Ｒ．ウィック TBP01-DB33
+中川 虎大 TBP01-DB34
+森原 康平 TBP01-DB35
+松尾 汐恩 TBP01-DB36
+伊藤 光 TBP01-DB37
+知野 直人 TBP01-DB38
+柴田 竜拓 TBP01-DB39
+井上 絢登 TBP01-DB40
+度会 隆輝 TBP01-DB41
+佐野 恵太 TBP01-DB42
+神里 和毅 TBP01-DB43
+東 克樹 BP01-DB01
+松尾 汐恩 BP01-DB02
+牧 秀悟 BP01-DB03
+宮﨑 敏郎 BP01-DB04
+入江 大生 BP01-DB05
+山本 祐大 BP01-DB06
+三森 大貴 BP01-DB07
+石上 泰輝 BP01-DB08
+佐野 恵太 BP01-DB09
+T 横浜DeNAベイスターズ TEAM-DB03
+DB.スターマン TIME-DB10
+Z 佐野 恵太 BP02-DB01
+佐野 恵太 BP02-DB02
+筒香 嘉智 BP02-DB03
+蝦名 達夫 BP02-DB04
+伊勢 大夢 BP02-DB05
+松尾 汐恩 BP02-DB06
+牧 秀悟 BP02-DB07
+度会 隆輝 BP02-DB08
+東 克樹 BP02-DB09
+入江 大生 BP02-DB10
+宮城 滝太 BP02-DB11
+林 琢真 BP02-DB12
+京田 陽太 BP02-DB13
+石上 泰輝 BP02-DB14
+神里 和毅 BP02-DB15
+T 横浜DeNAベイスターズ TEAM-DB04
+DB.スターマン TIME-DB11
+牧 秀悟 PB01-SJ17
+佐野 恵太 PB01-SJ26
+桑原 将志 PB01-SJ28
+牧 秀悟 BP03-DB03
+度会 隆輝 BP03-DB04
+石田 裕太郎 BP03-DB05
+佐野 恵太 BP03-DB06
+宮崎 敏郎 BP03-DB07
+C.ヒュンメル BP03-DB08
+平良 拳太郎 BP03-DB09
+松尾 汐恩 BP03-DB11
+梶原 昂希 BP03-DB14
+菊池 涼介 CSD02-C01
+大瀬良 大地 CSD02-C02
+島内 颯太郎 CSD02-C03
+栗林 良吏 CSD02-C04
+坂倉 将吾 CSD02-C05
+田中 広輔 CSD02-C06
+上本 崇司 CSD02-C07
+小園 海斗 CSD02-C08
+秋山 翔吾 CSD02-C09
+野間 峻祥 CSD02-C10
+松山 竜平 CSD02-C11
+大盛 穂 CSD02-C12
+広島東洋カープ TIME-C01
+T 広島東洋カープ TEAM-C01
+森下 暢仁 CBP01-C01
+坂倉 将吾 CBP01-C02
+中﨑 翔太 CBP01-C03
+栗林 良吏 CBP01-C04
+上本 崇司 CBP01-C05
+秋山 翔吾 CBP01-C06
+床田 寛樹 CBP01-C07
+矢崎 拓也 CBP01-C08
+堂林 翔太 CBP01-C09
+菊池 涼介 CBP01-C10
+末包 昇大 CBP01-C11
+松山 竜平 CBP01-C12
+大瀬良 大地 CBP02-C01
+小園 海斗 CBP02-C02
+九里 亜蓮 CBP02-C03
+島内 颯太郎 CBP02-C04
+會澤 翼 CBP02-C05
+田中 広輔 CBP02-C06
+戸根 千明 CBP02-C07
+韮澤 雄也 CBP02-C08
+羽月 隆太郎 CBP02-C09
+矢野 雅哉 CBP02-C10
+野間 峻祥 CBP02-C11
+中村 貴浩 CBP02-C12
+菊池 涼介 CBP03-C01
+堂林 翔太 CBP03-C02
+床田 寛樹 CBP03-C03
+矢崎 拓也 CBP03-C04
+上本 崇司 CBP03-C05
+野間 峻祥 CBP03-C06
+栗林 良吏 CBP03-C07
+坂倉 将吾 CBP03-C08
+田中 広輔 CBP03-C09
+小園 海斗 CBP03-C10
+秋山 翔吾 CBP03-C11
+田村 俊介 CBP03-C12
+床田 寛樹 CBP04-C01
+秋山 翔吾 CBP04-C02
+矢野 雅哉 CBP04-C03
+末包 昇大 CBP04-C04
+松山 竜平 CBP04-C05
+田村 俊介 CBP04-C06
+塹江 敦哉 CBP04-C07
+矢崎 拓也 CBP04-C08
+石原 貴規 CBP04-C09
+堂林 翔太 CBP04-C10
+二俣 翔一 CBP04-C11
+宇草 孔基 CBP04-C12
+黒田 博樹 TBP01-C01
+新井 貴浩 TBP01-C02
+前田 智徳 TBP01-C03
+緒方 孝市 TBP01-C04
+天谷 宗一郎 TBP01-C05
+森下 暢仁 TBP01-C06
+坂倉 将吾 TBP01-C07
+小園 海斗 TBP01-C08
+矢野 雅哉 TBP01-C09
+末包 昇大 TBP01-C10
+大瀬良 大地 TBP01-C11
+森浦 大輔 TBP01-C12
+中﨑 翔太 TBP01-C13
+黒原 拓未 TBP01-C14
+田中 広輔 TBP01-C15
+菊池 涼介 TBP01-C16
+二俣 翔一 TBP01-C17
+野間 峻祥 TBP01-C18
+大盛 穂 TBP01-C19
+田村 俊介 TBP01-C20
+常廣 羽也斗 TBP01-C21
+野村 祐輔 TBP01-C22
+床田 寛樹 TBP01-C23
+アドゥワ 誠 TBP01-C24
+玉村 昇悟 TBP01-C25
+塹江 敦哉 TBP01-C26
+島内 颯太郎 TBP01-C27
+河野 佳 TBP01-C28
+栗林 良吏 TBP01-C29
+會澤 翼 TBP01-C30
+石原 貴規 TBP01-C31
+堂林 翔太 TBP01-C32
+松山 竜平 TBP01-C33
+羽月 隆太郎 TBP01-C34
+佐藤 啓介 TBP01-C35
+上本 崇司 TBP01-C36
+韮澤 雄也 TBP01-C37
+秋山 翔吾 TBP01-C38
+宇草 孔基 TBP01-C39
+中村 健人 TBP01-C40
+中村 奨成 TBP01-C41
+大瀬良 大地 BP01-C01
+菊池 涼介 BP01-C02
+小園 海斗 BP01-C03
+矢野 雅哉 BP01-C04
+塹江 敦哉 BP01-C05
+田村 俊介 BP01-C06
+野間 峻祥 BP01-C07
+末包 昇大 BP01-C08
+二俣 翔一 BP01-C09
+T 広島東洋カープ TEAM-C03
+スラィリー TIME-C12
+Z 末包 昇大 BP02-C01
+床田 寛樹 BP02-C02
+末包 昇大 BP02-C03
+中村 奨成 BP02-C04
+Ｅ．モンテロ BP02-C05
+坂倉 将吾 BP02-C06
+菊池 涼介 BP02-C07
+Ｓ．ファビアン BP02-C08
+森下 暢仁 BP02-C09
+島内 颯太郎 BP02-C10
+前川 誠太 BP02-C11
+佐々木 泰 BP02-C12
+小園 海斗 BP02-C13
+野間 峻祥 BP02-C14
+大盛 穂 BP02-C15
+T 広島東洋カープ TEAM-C04
+スラィリー TIME-C13
+坂倉 将吾 PB01-SJ15
+小園 海斗 PB01-SJ20
+栗林 良吏 BP03-C02
+小園 海斗 BP03-C03
+Ｔ．ハーン BP03-C05
+菊池 涼介 BP03-C06
+大盛 穂 BP03-C07
+中村 奨成 BP03-C08
+森浦 大輔 BP03-C10
+坂倉 将吾 BP03-C11
+平川 蓮 BP03-C14
+山田 哲人 CSD05-S01
+小川 泰弘 CSD05-S02
+清水 昇 CSD05-S03
+田口 麗斗 CSD05-S04
+中村 悠平 CSD05-S05
+Ｊ．オスナ CSD05-S06
+村上 宗隆 CSD05-S07
+長岡 秀樹 CSD05-S08
+塩見 泰隆 CSD05-S09
+青木 宣親 CSD05-S10
+Ｄ．サンタナ CSD05-S11
+山崎 晃大朗 CSD05-S12
+東京ヤクルトスワローズ TIME-S01
+T 東京ヤクルトスワローズ TEAM-S01
+中村 悠平 CBP01-S01
+村上 宗隆 CBP01-S02
+石山 泰稚 CBP01-S03
+田口 麗斗 CBP01-S04
+Ｊ．オスナ CBP01-S05
+塩見 泰隆 CBP01-S06
+石川 雅規 CBP01-S07
+高橋 奎二 CBP01-S08
+星 知弥 CBP01-S09
+宮本 丈 CBP01-S10
+武岡 龍世 CBP01-S11
+濱田 太貴 CBP01-S12
+小川 泰弘 CBP02-S01
+山田 哲人 CBP02-S02
+内山 壮真 CBP02-S03
+川端 慎吾 CBP02-S04
+長岡 秀樹 CBP02-S05
+青木 宣親 CBP02-S06
+吉村 貢司郎 CBP02-S07
+清水 昇 CBP02-S08
+木澤 尚文 CBP02-S09
+北村 恵吾 CBP02-S10
+丸山 和郁 CBP02-S11
+Ｄ．サンタナ CBP02-S12
+長岡 秀樹 CBP03-S01
+塩見 泰隆 CBP03-S02
+小澤 怜史 CBP03-S03
+村上 宗隆 CBP03-S04
+西川 遥輝 CBP03-S05
+Ｄ．サンタナ CBP03-S06
+嘉弥真 新也 CBP03-S07
+田口 麗斗 CBP03-S08
+中村 悠平 CBP03-S09
+Ｊ．オスナ CBP03-S10
+武岡 龍世 CBP03-S11
+石川 雅規 CBP04-S01
+Ｊ．オスナ CBP04-S02
+大西 広樹 CBP04-S03
+川端 慎吾 CBP04-S04
+丸山 和郁 CBP04-S05
+Ｄ．サンタナ CBP04-S06
+サイスニード CBP04-S07
+山本 大貴 CBP04-S08
+松本 直樹 CBP04-S09
+北村 拓己 CBP04-S10
+長岡 秀樹 CBP04-S11
+青木 宣親 CBP04-S12
+伊藤 智仁 TBP01-S01
+五十嵐 亮太 TBP01-S02
+高津 臣吾 TBP01-S03
+宮本 慎也 TBP01-S04
+青木 宣親 TBP01-S05
+高橋 奎二 TBP01-S06
+山田 哲人 TBP01-S07
+村上 宗隆 TBP01-S08
+長岡 秀樹 TBP01-S09
+Ｄ．サンタナ TBP01-S10
+吉村 貢司郎 TBP01-S11
+木澤 尚文 TBP01-S12
+田口 麗斗 TBP01-S13
+山本 大貴 TBP01-S14
+大西 広樹 TBP01-S15
+中村 悠平 TBP01-S16
+川端 慎吾 TBP01-S17
+Ｊ．オスナ TBP01-S18
+西川 遥輝 TBP01-S19
+塩見 泰隆 TBP01-S20
+奥川 恭伸 TBP01-S21
+石川 雅規 TBP01-S22
+山野 太一 TBP01-S23
+小川 泰弘 TBP01-S24
+高梨 裕稔 TBP01-S25
+金久保 優斗 TBP01-S26
+石山 泰稚 TBP01-S27
+原 樹理 TBP01-S28
+清水 昇 TBP01-S29
+星 知弥 TBP01-S30
+長谷川 宙輝 TBP01-S31
+丸山 翔大 TBP01-S32
+小澤 怜史 TBP01-S33
+松本 直樹 TBP01-S34
+内山 壮真 TBP01-S35
+鈴木 叶 TBP01-S36
+武岡 龍世 TBP01-S37
+北村 拓己 TBP01-S38
+並木 秀尊 TBP01-S39
+赤羽 由紘 TBP01-S40
+丸山 和郁 TBP01-S41
+宮本 丈 TBP01-S42
+澤井 廉 TBP01-S43
+太田 賢吾 TBP01-S44
+増田 珠 TBP01-S45
+岩田 幸宏 TBP01-S46
+つば九郎 TBP01-S47
+奥川 恭伸 BP01-S01
+古賀 優大 BP01-S02
+山田 哲人 BP01-S03
+茂木 栄五郎 BP01-S04
+荘司 宏太 BP01-S05
+石山 泰稚 BP01-S06
+長岡 秀樹 BP01-S07
+西川 遥輝 BP01-S08
+岩田 幸宏 BP01-S09
+T 東京ヤクルトスワローズ TEAM-S03
+つば九郎 TIME-S05
+Z 長岡 秀樹 BP02-S01
+吉村 貢司郎 BP02-S02
+長岡 秀樹 BP02-S03
+岩田 幸宏 BP02-S04
+大西 広樹 BP02-S05
+古賀 優大 BP02-S06
+Ｊ．オスナ BP02-S07
+赤羽 由紘 BP02-S08
+星 知弥 BP02-S09
+山田 哲人 BP02-S10
+武岡 龍世 BP02-S11
+茂木 栄五郎 BP02-S12
+並木 秀尊 BP02-S13
+Ｄ．サンタナ BP02-S14
+増田 珠 BP02-S15
+T 東京ヤクルトスワローズ TEAM-S04
+つば九郎 TIME-S06
+山野 太一 BP03-S02
+古賀 優大 BP03-S03
+星 知弥 BP03-S05
+J.オスナ BP03-S06
+武岡 龍世 BP03-S07
+丸山 和郁 BP03-S08
+高梨 裕稔 BP03-S09
+J.キハダ BP03-S11
+鈴木 叶 BP03-S12
+小笠原 慎之介 CSD06-D01
+祖父江 大輔 CSD06-D02
+Ｒ．マルティネス CSD06-D03
+木下 拓哉 CSD06-D04
+Ｄ．ビシエド CSD06-D05
+村松 開人 CSD06-D06
+高橋 周平 CSD06-D07
+石川 昂弥 CSD06-D08
+龍空 CSD06-D09
+細川 成也 CSD06-D10
+大島 洋平 CSD06-D11
+岡林 勇希 CSD06-D12
+中日ドラゴンズ TIME-D01
+T 中日ドラゴンズ TEAM-D01
+Ｒ．マルティネス CBP01-D01
+岡林 勇希 CBP01-D02
+勝野 昌慶 CBP01-D03
+木下 拓哉 CBP01-D04
+福永 裕基 CBP01-D05
+石川 昂弥 CBP01-D06
+柳 裕也 CBP01-D07
+髙橋 宏斗 CBP01-D08
+清水 達也 CBP01-D09
+村松 開人 CBP01-D10
+田中 幹也 CBP01-D11
+大島 洋平 CBP01-D12
+根尾 昂 CBP02-D01
+細川 成也 CBP02-D02
+涌井 秀章 CBP02-D03
+藤嶋 健人 CBP02-D04
+龍空 CBP02-D05
+鵜飼 航丞 CBP02-D06
+祖父江 大輔 CBP02-D07
+加藤 匠馬 CBP02-D08
+高橋 周平 CBP02-D09
+ブライト 健太 CBP02-D10
+加藤 翔平 CBP02-D11
+後藤 駿太 CBP02-D12
+大野 雄大 CBP03-D01
+中田 翔 CBP03-D02
+田中 幹也 CBP03-D03
+高橋 周平 CBP03-D04
+村松 開人 CBP03-D05
+上林 誠知 CBP03-D06
+小笠原 慎之介 CBP03-D07
+勝野 昌慶 CBP03-D08
+Ｒ．マルティネス CBP03-D09
+宇佐見 真吾 CBP03-D10
+三好 大倫 CBP03-D11
+細川 成也 CBP03-D12
+小笠原 慎之介 CBP04-D01
+村松 開人 CBP04-D02
+齋藤 綱記 CBP04-D03
+中島 宏之 CBP04-D04
+Ｏ．カリステ CBP04-D05
+大島 洋平 CBP04-D06
+松葉 貴大 CBP04-D07
+清水 達也 CBP04-D08
+木下 拓哉 CBP04-D09
+山本 泰寛 CBP04-D10
+岡林 勇希 CBP04-D11
+福永 裕基 CBP04-D12
+山本昌 TBP01-D01
+浅尾 拓也 TBP01-D02
+谷繁 元信 TBP01-D03
+荒木 雅博 TBP01-D04
+立浪 和義 TBP01-D05
+井端 弘和 TBP01-D06
+根尾 昂 TBP01-D07
+髙橋 宏斗 TBP01-D08
+石川 昂弥 TBP01-D09
+福永 裕基 TBP01-D10
+細川 成也 TBP01-D11
+梅津 晃大 TBP01-D12
+松葉 貴大 TBP01-D13
+松山 晋也 TBP01-D14
+加藤 匠馬 TBP01-D15
+中田 翔 TBP01-D16
+田中 幹也 TBP01-D17
+岡林 勇希 TBP01-D18
+川越 誠司 TBP01-D19
+板山 祐太郎 TBP01-D20
+Ｏ．カリステ TBP01-D21
+柳 裕也 TBP01-D22
+涌井 秀章 TBP01-D23
+大野 雄大 TBP01-D24
+松木平 優太 TBP01-D25
+橋本 侑樹 TBP01-D26
+岩嵜 翔 TBP01-D27
+祖父江 大輔 TBP01-D28
+福 敬登 TBP01-D29
+梅野 雄吾 TBP01-D30
+清水 達也 TBP01-D31
+藤嶋 健人 TBP01-D32
+齋藤 綱記 TBP01-D33
+木下 拓哉 TBP01-D34
+宇佐見 真吾 TBP01-D35
+石橋 康太 TBP01-D36
+高橋 周平 TBP01-D37
+村松 開人 TBP01-D38
+辻本 倫太郎 TBP01-D39
+土田 龍空 TBP01-D40
+山本 泰寛 TBP01-D41
+尾田 剛樹 TBP01-D42
+鵜飼 航丞 TBP01-D43
+大島 洋平 TBP01-D44
+ブライト 健太 TBP01-D45
+上林 誠知 TBP01-D46
+松葉 貴大 BP01-D01
+石川 昂弥 BP01-D02
+岡林 勇希 BP01-D03
+上林 誠知 BP01-D04
+齋藤 綱記 BP01-D05
+松山 晋也 BP01-D06
+中田 翔 BP01-D07
+板山 祐太郎 BP01-D08
+細川 成也 BP01-D09
+T 中日ドラゴンズ TEAM-D03
+ドアラ TIME-D07
+Z 細川 成也 BP02-D01
+金丸 夢斗 BP02-D02
+田中 幹也 BP02-D03
+細川 成也 BP02-D04
+清水 達也 BP02-D05
+松山 晋也 BP02-D06
+Ｊ．ボスラー BP02-D07
+岡林 勇希 BP02-D08
+藤嶋 健人 BP02-D09
+石伊 雄太 BP02-D10
+福永 裕基 BP02-D11
+森 駿太 BP02-D12
+山本 泰寛 BP02-D13
+ブライト 健太 BP02-D14
+上林 誠知 BP02-D15
+T 中日ドラゴンズ TEAM-D04
+ドアラ TIME-D08
+髙橋 宏斗 PB01-SJ01
+清水 達也 PB01-SJ09
+柳 裕也 BP03-D02
+村松 開人 BP03-D04
+H.メヒア BP03-D05
+高橋 周平 BP03-D06
+細川 成也 BP03-D07
+鵜飼 航丞 BP03-D08
+金丸 夢斗 BP03-D09
+牧野 憲伸 BP03-D11
+福永 裕基 BP03-D14
+柳田 悠岐 PSD03-H01
+和田 毅 PSD03-H02
+Ｌ．モイネロ PSD03-H03
+Ｒ．オスナ PSD03-H04
+甲斐 拓也 PSD03-H05
+中村 晃 PSD03-H06
+牧原 大成 PSD03-H07
+栗原 陵矢 PSD03-H08
+今宮 健太 PSD03-H09
+近藤 健介 PSD03-H10
+周東 佑京 PSD03-H11
+柳町 達 PSD03-H12
+福岡ソフトバンクホークス TIME-H01
+T 福岡ソフトバンクホークス TEAM-H01
+Ｒ．オスナ PBP01-H01
+近藤 健介 PBP01-H02
+松本 裕樹 PBP01-H03
+甲斐 拓也 PBP01-H04
+川瀬 晃 PBP01-H05
+今宮 健太 PBP01-H06
+東浜 巨 PBP01-H07
+石川 柊太 PBP01-H08
+津森 宥紀 PBP01-H09
+牧原 大成 PBP01-H10
+リチャード PBP01-H11
+周東 佑京 PBP01-H12
+和田 毅 PBP02-H01
+柳町 達 PBP02-H02
+有原 航平 PBP02-H03
+Ｌ．モイネロ PBP02-H04
+中村 晃 PBP02-H05
+川瀬 晃 PBP02-H06
+大関 友久 PBP02-H07
+嶺井 博希 PBP02-H08
+三森 大貴 PBP02-H09
+井上 朋也 PBP02-H10
+野村 勇 PBP02-H11
+柳田 悠岐 PBP02-H12
+東浜 巨 PBP03-H01
+山川 穂高 PBP03-H02
+松本 裕樹 PBP03-H03
+牧原 大成 PBP03-H04
+栗原 陵矢 PBP03-H05
+周東 佑京 PBP03-H06
+Ｒ．オスナ PBP03-H07
+甲斐 拓也 PBP03-H08
+今宮 健太 PBP03-H09
+近藤 健介 PBP03-H10
+柳田 悠岐 PBP03-H11
+Ａ．ウォーカー PBP03-H12
+今宮 健太 PBP04-H01
+柳田 悠岐 PBP04-H02
+和田 毅 PBP04-H03
+中村 晃 PBP04-H04
+三森 大貴 PBP04-H05
+近藤 健介 PBP04-H06
+藤井 皓哉 PBP04-H07
+山川 穂高 PBP04-H08
+牧原 大成 PBP04-H09
+リチャード PBP04-H10
+川瀬 晃 PBP04-H11
+川村 友斗 PBP04-H12
+斉藤 和巳 TBP01-H01
+城島 健司 TBP01-H02
+小久保 裕紀 TBP01-H03
+松田 宣浩 TBP01-H04
+松中 信彦 TBP01-H05
+Ｌ．モイネロ TBP01-H06
+松本 裕樹 TBP01-H07
+Ｒ．オスナ TBP01-H08
+山川 穂高 TBP01-H09
+近藤 健介 TBP01-H10
+東浜 巨 TBP01-H11
+有原 航平 TBP01-H12
+津森 宥紀 TBP01-H13
+Ｄ．ヘルナンデス TBP01-H14
+牧原 大成 TBP01-H15
+今宮 健太 TBP01-H16
+柳田 悠岐 TBP01-H17
+周東 佑京 TBP01-H18
+正木 智也 TBP01-H19
+柳町 達 TBP01-H20
+Ｃ．スチュワートJr. TBP01-H21
+大津 亮介 TBP01-H22
+前田 悠伍 TBP01-H23
+大関 友久 TBP01-H24
+大山 凌 TBP01-H25
+又吉 克樹 TBP01-H26
+岩井 俊介 TBP01-H27
+澤柳 亮太郎 TBP01-H28
+尾形 崇斗 TBP01-H29
+杉山 一樹 TBP01-H30
+藤井 皓哉 TBP01-H31
+長谷川 威展 TBP01-H32
+嶺井 博希 TBP01-H33
+海野 隆司 TBP01-H34
+中村 晃 TBP01-H35
+リチャード TBP01-H36
+廣瀨 隆太 TBP01-H37
+野村 勇 TBP01-H38
+栗原 陵矢 TBP01-H39
+井上 朋也 TBP01-H40
+川瀬 晃 TBP01-H41
+佐藤 直樹 TBP01-H42
+笹川 吉康 TBP01-H43
+緒方 理貢 TBP01-H44
+川村 友斗 TBP01-H45
+有原 航平 BP01-H01
+山川 穂高 BP01-H02
+栗原 陵矢 BP01-H03
+柳町 達 BP01-H04
+杉山 一樹 BP01-H05
+海野 隆司 BP01-H06
+廣瀨 隆太 BP01-H07
+野村 勇 BP01-H08
+緒方 理貢 BP01-H09
+T 福岡ソフトバンクホークス TEAM-H03
+ハリーホーク TIME-H04
+Z 柳田 悠岐 BP02-H01
+大関 友久 BP02-H02
+牧原 大成 BP02-H03
+柳田 悠岐 BP02-H04
+中村 晃 BP02-H05
+野村 勇 BP02-H06
+周東 佑京 BP02-H07
+柳町 達 BP02-H08
+杉山 一樹 BP02-H09
+松本 裕樹 BP02-H10
+海野 隆司 BP02-H11
+山川 穂高 BP02-H12
+栗原 陵矢 BP02-H13
+近藤 健介 BP02-H14
+川村 友斗 BP02-H15
+T 福岡ソフトバンクホークス TEAM-H04
+ハリーホーク TIME-H05
+栗原 陵矢 PB01-SJ21
+上沢 直之 BP03-H02
+栗原 陵矢 BP03-H03
+近藤 健介 BP03-H04
+C.スチュワート・ジュニア BP03-H05
+山川 穂高 BP03-H06
+今宮 健太 BP03-H07
+柳町 達 BP03-H08
+木村 光 BP03-H10
+川瀬 晃 BP03-H13
+周東 佑京 BP03-H15
+伊藤 大海 PSD06-F01
+宮西 尚生 PSD06-F02
+田中 正義 PSD06-F03
+Ａ．マルティネス PSD06-F04
+伏見 寅威 PSD06-F05
+野村 佑希 PSD06-F06
+加藤 豪将 PSD06-F07
+清宮 幸太郎 PSD06-F08
+上川畑 大悟 PSD06-F09
+松本 剛 PSD06-F10
+五十幡 亮汰 PSD06-F11
+万波 中正 PSD06-F12
+北海道日本ハムファイターズ TIME-F01
+T 北海道日本ハムファイターズ TEAM-F01
+清宮 幸太郎 PBP01-F01
+松本 剛 PBP01-F02
+加藤 貴之 PBP01-F03
+上原 健太 PBP01-F04
+田中 正義 PBP01-F05
+奈良間 大己 PBP01-F06
+福田 俊 PBP01-F07
+石川 直也 PBP01-F08
+Ａ．マルティネス PBP01-F09
+郡司 裕也 PBP01-F10
+石井 一成 PBP01-F11
+上川畑 大悟 PBP01-F12
+野村 佑希 PBP02-F01
+万波 中正 PBP02-F02
+池田 隆英 PBP02-F03
+清水 優心 PBP02-F04
+細川 凌平 PBP02-F05
+五十幡 亮汰 PBP02-F06
+鈴木 健矢 PBP02-F07
+北山 亘基 PBP02-F08
+玉井 大翔 PBP02-F09
+奈良間 大己 PBP02-F10
+淺間 大基 PBP02-F11
+江越 大賀 PBP02-F12
+加藤 貴之 PBP03-F01
+Ａ．マルティネス PBP03-F02
+河野 竜生 PBP03-F03
+田宮 裕涼 PBP03-F04
+水野 達稀 PBP03-F05
+Ｆ．レイエス PBP03-F06
+田中 正義 PBP03-F07
+細川 凌平 PBP03-F08
+野村 佑希 PBP03-F09
+Ａ．スティーブンソン PBP03-F10
+松本 剛 PBP03-F11
+万波 中正 PBP03-F12
+伊藤 大海 PBP04-F01
+郡司 裕也 PBP04-F02
+加藤 豪将 PBP04-F03
+上川畑 大悟 PBP04-F04
+水谷 瞬 PBP04-F05
+Ｆ．レイエス PBP04-F06
+山﨑 福也 PBP04-F07
+杉浦 稔大 PBP04-F08
+田宮 裕涼 PBP04-F09
+Ａ．マルティネス PBP04-F10
+石井 一成 PBP04-F11
+万波 中正 PBP04-F12
+武田 勝 TBP01-F01
+小笠原 道大 TBP01-F02
+田中 賢介 TBP01-F03
+稲葉 篤紀 TBP01-F04
+森本 稀哲 TBP01-F05
+山﨑 福也 TBP01-F06
+田宮 裕涼 TBP01-F07
+松本 剛 TBP01-F08
+水谷 瞬 TBP01-F09
+万波 中正 TBP01-F10
+伊藤 大海 TBP01-F11
+金村 尚真 TBP01-F12
+宮西 尚生 TBP01-F13
+齋藤 友貴哉 TBP01-F14
+伏見 寅威 TBP01-F15
+Ａ．マルティネス TBP01-F16
+清宮 幸太郎 TBP01-F17
+淺間 大基 TBP01-F18
+五十幡 亮汰 TBP01-F19
+Ｆ．レイエス TBP01-F20
+加藤 貴之 TBP01-F21
+細野 晴希 TBP01-F22
+北山 亘基 TBP01-F23
+福島 蓮 TBP01-F24
+矢澤 宏太 TBP01-F25
+生田目 翼 TBP01-F26
+河野 竜生 TBP01-F27
+Ａ．ザバラ TBP01-F28
+池田 隆英 TBP01-F29
+山本 拓実 TBP01-F30
+柳川 大晟 TBP01-F31
+清水 優心 TBP01-F32
+上川畑 大悟 TBP01-F33
+石井 一成 TBP01-F34
+奈良間 大己 TBP01-F35
+郡司 裕也 TBP01-F36
+中島 卓也 TBP01-F37
+水野 達稀 TBP01-F38
+宮崎 一樹 TBP01-F39
+今川 優馬 TBP01-F40
+伊藤 大海 BP01-F01
+Ｆ．レイエス BP01-F02
+清宮 幸太郎 BP01-F03
+万波 中正 BP01-F04
+生田目 翼 BP01-F05
+吉田 賢吾 BP01-F06
+野村 佑希 BP01-F07
+水野 達稀 BP01-F08
+松本 剛 BP01-F09
+T 北海道日本ハムファイターズ TEAM-F03
+フレップ・ザ・フォックス TIME-F17
+Z 郡司 裕也 BP02-F01
+北山 亘基 BP02-F02
+齋藤 友貴哉 BP02-F03
+郡司 裕也 BP02-F04
+田宮 裕涼 BP02-F05
+水谷 瞬 BP02-F06
+万波 中正 BP02-F07
+Ｆ．レイエス BP02-F08
+河野 竜生 BP02-F09
+柳川 大晟 BP02-F10
+清宮 幸太郎 BP02-F11
+Ａ．マルティネス BP02-F12
+山縣 秀 BP02-F13
+水野 達稀 BP02-F14
+五十幡 亮汰 BP02-F15
+T 北海道日本ハムファイターズ TEAM-F04
+フレップ・ザ・フォックス TIME-F18
+北山 亘基 PB01-SJ11
+清宮 幸太郎 PB01-SJ18
+五十幡 亮汰 PB01-SJ25
+清宮 幸太郎 BP03-F03
+水野 達稀 BP03-F04
+細野 晴希 BP03-F05
+柳川 大晟 BP03-F06
+奈良間 大己 BP03-F07
+西川 遥輝 BP03-F08
+郡司 裕也 BP03-F12
+万波 中正 BP03-F14
+F.レイエス BP03-F15
+小島 和哉 PSD02-M01
+澤村 拓一 PSD02-M02
+益田 直也 PSD02-M03
+佐藤 都志也 PSD02-M04
+山口 航輝 PSD02-M05
+中村 奨吾 PSD02-M06
+安田 尚憲 PSD02-M07
+友杉 篤輝 PSD02-M08
+荻野 貴司 PSD02-M09
+藤原 恭大 PSD02-M10
+角中 勝也 PSD02-M11
+平沢 大河 PSD02-M12
+千葉ロッテマリーンズ TIME-M01
+T 千葉ロッテマリーンズ TEAM-M01
+益田 直也 PBP01-M01
+安田 尚憲 PBP01-M02
+坂本 光士郎 PBP01-M03
+佐藤 都志也 PBP01-M04
+井上 晴哉 PBP01-M05
+友杉 篤輝 PBP01-M06
+小島 和哉 PBP01-M07
+種市 篤暉 PBP01-M08
+西村 天裕 PBP01-M09
+茶谷 健太 PBP01-M10
+藤原 恭大 PBP01-M11
+平沢 大河 PBP01-M12
+佐々木 朗希 PBP02-M01
+荻野 貴司 PBP02-M02
+東妻 勇輔 PBP02-M03
+中村 奨吾 PBP02-M04
+Ｇ．ポランコ PBP02-M05
+和田 康士朗 PBP02-M06
+澤村 拓一 PBP02-M07
+田村 龍弘 PBP02-M08
+山口 航輝 PBP02-M09
+池田 来翔 PBP02-M10
+藤岡 裕大 PBP02-M11
+角中 勝也 PBP02-M12
+藤岡 裕大 PBP03-M01
+中村 奨吾 PBP03-M02
+西野 勇士 PBP03-M03
+国吉 佑樹 PBP03-M04
+友杉 篤輝 PBP03-M05
+荻野 貴司 PBP03-M06
+鈴木 昭汰 PBP03-M07
+佐藤 都志也 PBP03-M08
+Ｎ．ソト PBP03-M09
+角中 勝也 PBP03-M10
+Ｇ．ポランコ PBP03-M11
+山口 航輝 PBP03-M12
+小島 和哉 PBP04-M01
+佐藤 都志也 PBP04-M02
+Ｎ．ソト PBP04-M03
+中村 奨吾 PBP04-M04
+角中 勝也 PBP04-M05
+Ｇ．ポランコ PBP04-M06
+横山 陸人 PBP04-M07
+澤田 圭佑 PBP04-M08
+小川 龍成 PBP04-M09
+石川 慎吾 PBP04-M10
+岡 大海 PBP04-M11
+山口 航輝 PBP04-M12
+黒木 知宏 TBP01-M01
+渡辺 俊介 TBP01-M02
+里崎 智也 TBP01-M03
+福浦 和也 TBP01-M04
+サブロー TBP01-M05
+種市 篤暉 TBP01-M06
+益田 直也 TBP01-M07
+佐藤 都志也 TBP01-M08
+Ｎ．ソト TBP01-M09
+Ｇ．ポランコ TBP01-M10
+小島 和哉 TBP01-M11
+鈴木 昭汰 TBP01-M12
+横山 陸人 TBP01-M13
+小川 龍成 TBP01-M14
+中村 奨吾 TBP01-M15
+友杉 篤輝 TBP01-M16
+藤原 恭大 TBP01-M17
+岡 大海 TBP01-M18
+荻野 貴司 TBP01-M19
+石川 歩 TBP01-M20
+唐川 侑己 TBP01-M21
+西野 勇士 TBP01-M22
+田中 晴也 TBP01-M23
+澤村 拓一 TBP01-M24
+菊地 吏玖 TBP01-M25
+廣畑 敦也 TBP01-M26
+坂本 光士郎 TBP01-M27
+西村 天裕 TBP01-M28
+岩下 大輝 TBP01-M29
+中村 稔弥 TBP01-M30
+中森 俊介 TBP01-M31
+澤田 圭佑 TBP01-M32
+田村 龍弘 TBP01-M33
+大下 誠一郎 TBP01-M34
+上田 希由翔 TBP01-M35
+茶谷 健太 TBP01-M36
+安田 尚憲 TBP01-M37
+池田 来翔 TBP01-M38
+藤岡 裕大 TBP01-M39
+角中 勝也 TBP01-M40
+石川 慎吾 TBP01-M41
+髙部 瑛斗 TBP01-M42
+愛斗 TBP01-M43
+和田 康士朗 TBP01-M44
+小島 和哉 BP01-M01
+Ｎ．ソト BP01-M02
+藤原 恭大 BP01-M03
+西川 史礁 BP01-M04
+鈴木 昭汰 BP01-M05
+Ｔ．ゲレーロ BP01-M06
+寺地 隆成 BP01-M07
+小川 龍成 BP01-M08
+Ｇ．ポランコ BP01-M09
+T 千葉ロッテマリーンズ TEAM-M03
+マーくん TIME-M09
+Z 藤岡 裕大 BP02-M01
+寺地 隆成 BP02-M02
+藤岡 裕大 BP02-M03
+髙部 瑛斗 BP02-M04
+佐藤 都志也 BP02-M05
+安田 尚憲 BP02-M06
+西川 史礁 BP02-M07
+山本 大斗 BP02-M08
+種市 篤暉 BP02-M09
+横山 陸人 BP02-M10
+益田 直也 BP02-M11
+Ｎ．ソト BP02-M12
+小川 龍成 BP02-M13
+藤原 恭大 BP02-M14
+岡 大海 BP02-M15
+T 千葉ロッテマリーンズ TEAM-M04
+マーくん TIME-M10
+鈴木 昭汰 PB01-SJ08
+横山 陸人 PB01-SJ13
+佐藤 都志也 PB01-SJ16
+毛利 海大 BP03-M02
+藤原 恭大 BP03-M03
+N.ソト BP03-M06
+寺地 隆成 BP03-M07
+友杉 篤輝 BP03-M08
+松川 虎生 BP03-M11
+西川 史礁 BP03-M14
+和田 康士朗 BP03-M15
+浅村 栄斗 PSD04-E01
+田中 将大 PSD04-E02
+宋 家豪 PSD04-E03
+渡辺 翔太 PSD04-E04
+安田 悠馬 PSD04-E05
+鈴木 大地 PSD04-E06
+小深田 大翔 PSD04-E07
+山﨑 剛 PSD04-E08
+辰己 涼介 PSD04-E09
+岡島 豪郎 PSD04-E10
+島内 宏明 PSD04-E11
+小郷 裕哉 PSD04-E12
+東北楽天ゴールデンイーグルス TIME-E01
+T 東北楽天ゴールデンイーグルス TEAM-E01
+則本 昂大 PBP01-E01
+太田 光 PBP01-E02
+早川 隆久 PBP01-E03
+伊藤 茉央 PBP01-E04
+伊藤 裕季也 PBP01-E05
+辰己 涼介 PBP01-E06
+酒居 知史 PBP01-E07
+鈴木 翔天 PBP01-E08
+黒川 史陽 PBP01-E09
+阿部 寿樹 PBP01-E10
+村林 一輝 PBP01-E11
+島内 宏明 PBP01-E12
+岸 孝之 PBP02-E01
+小深田 大翔 PBP02-E02
+荘司 康誠 PBP02-E03
+浅村 栄斗 PBP02-E04
+田中 和基 PBP02-E05
+岡島 豪郎 PBP02-E06
+藤平 尚真 PBP02-E07
+宮森 智志 PBP02-E08
+堀内 謙伍 PBP02-E09
+鈴木 大地 PBP02-E10
+山﨑 剛 PBP02-E11
+小郷 裕哉 PBP02-E12
+浅村 栄斗 PBP03-E01
+辰己 涼介 PBP03-E02
+阿部 寿樹 PBP03-E03
+村林 一輝 PBP03-E04
+島内 宏明 PBP03-E05
+小郷 裕哉 PBP03-E06
+早川 隆久 PBP03-E07
+渡辺 翔太 PBP03-E08
+太田 光 PBP03-E09
+小深田 大翔 PBP03-E10
+田中 和基 PBP03-E11
+早川 隆久 PBP04-E01
+小郷 裕哉 PBP04-E02
+酒居 知史 PBP04-E03
+則本 昂大 PBP04-E04
+茂木 栄五郎 PBP04-E05
+鈴木 大地 PBP04-E06
+宋 家豪 PBP04-E07
+石原 彪 PBP04-E08
+小深田 大翔 PBP04-E09
+村林 一輝 PBP04-E10
+阿部 寿樹 PBP04-E11
+岡島 豪郎 PBP04-E12
+岩隈 久志 TBP01-E01
+松井 裕樹 TBP01-E02
+嶋 基宏 TBP01-E03
+山﨑 武司 TBP01-E04
+鉄平 TBP01-E05
+岸 孝之 TBP01-E06
+古謝 樹 TBP01-E07
+安田 悠馬 TBP01-E08
+鈴木 大地 TBP01-E09
+辰己 涼介 TBP01-E10
+早川 隆久 TBP01-E11
+藤井 聖 TBP01-E12
+藤平 尚真 TBP01-E13
+鈴木 翔天 TBP01-E14
+太田 光 TBP01-E15
+小深田 大翔 TBP01-E16
+村林 一輝 TBP01-E17
+岡島 豪郎 TBP01-E18
+伊藤 裕季也 TBP01-E19
+武藤 敦貴 TBP01-E20
+荘司 康誠 TBP01-E21
+瀧中 瞭太 TBP01-E22
+内 星龍 TBP01-E23
+酒居 知史 TBP01-E24
+弓削 隼人 TBP01-E25
+宋 家豪 TBP01-E26
+西垣 雅矢 TBP01-E27
+津留﨑 大成 TBP01-E28
+坂井 陽翔 TBP01-E29
+宮森 智志 TBP01-E30
+則本 昂大 TBP01-E31
+堀内 謙伍 TBP01-E32
+石原 彪 TBP01-E33
+田中 貴也 TBP01-E34
+黒川 史陽 TBP01-E35
+浅村 栄斗 TBP01-E36
+山田 遥楓 TBP01-E37
+入江 大樹 TBP01-E38
+阿部 寿樹 TBP01-E39
+田中 和基 TBP01-E40
+中島 大輔 TBP01-E41
+島内 宏明 TBP01-E42
+渡邊 佳明 TBP01-E43
+小郷 裕哉 TBP01-E44
+早川 隆久 BP01-E01
+浅村 栄斗 BP01-E02
+宗山 塁 BP01-E03
+阿部 寿樹 BP01-E04
+江原 雅裕 BP01-E05
+堀内 謙伍 BP01-E06
+村林 一輝 BP01-E07
+鈴木 大地 BP01-E08
+辰己 涼介 BP01-E09
+T 東北楽天ゴールデンイーグルス TEAM-E03
+クラッチ TIME-E09
+Z 村林 一輝 BP02-E01
+岸 孝之 BP02-E02
+Ｌ．ボイト BP02-E03
+村林 一輝 BP02-E04
+西口 直人 BP02-E05
+浅村 栄斗 BP02-E06
+宗山 塁 BP02-E07
+渡邊 佳明 BP02-E08
+藤平 尚真 BP02-E09
+太田 光 BP02-E10
+鈴木 大地 BP02-E11
+黒川 史陽 BP02-E12
+中島 大輔 BP02-E13
+武藤 敦貴 BP02-E14
+小郷 裕哉 BP02-E15
+T 東北楽天ゴールデンイーグルス TEAM-E04
+クラッチ TIME-E10
+早川 隆久 PB01-SJ03
+藤平 尚真 PB01-SJ07
+鈴木 翔天 PB01-SJ10
+村林 一輝 PB01-SJ19
+辰己 涼介 PB01-SJ27
+黒川 史陽 BP03-E03
+辰己 涼介 BP03-E04
+太田 光 BP03-E06
+小深田 大翔 BP03-E07
+中島 大輔 BP03-E08
+前田 健太 BP03-E09
+浅村 栄斗 BP03-E11
+佐藤 直樹 BP03-E14
+宮城 大弥 PSD01-B01
+山﨑 颯一郎 PSD01-B02
+平野 佳寿 PSD01-B03
+若月 健矢 PSD01-B04
+森 友哉 PSD01-B05
+頓宮 裕真 PSD01-B06
+西野 真弘 PSD01-B07
+宗 佑磨 PSD01-B08
+紅林 弘太郎 PSD01-B09
+茶野 篤政 PSD01-B10
+中川 圭太 PSD01-B11
+杉本 裕太郎 PSD01-B12
+オリックス・バファローズ TIME-B01
+T オリックス・バファローズ TEAM-B01
+森 友哉 PBP01-B01
+頓宮 裕真 PBP01-B02
+田嶋 大樹 PBP01-B03
+宇田川 優希 PBP01-B04
+平野 佳寿 PBP01-B05
+杉本 裕太郎 PBP01-B06
+東 晃平 PBP01-B07
+小木田 敦也 PBP01-B08
+若月 健矢 PBP01-B09
+大城 滉二 PBP01-B10
+宜保 翔 PBP01-B11
+山足 達也 PBP01-B12
+山下 舜平大 PBP02-B01
+紅林 弘太郎 PBP02-B02
+山岡 泰輔 PBP02-B03
+宗 佑磨 PBP02-B04
+小田 裕也 PBP02-B05
+中川 圭太 PBP02-B06
+阿部 翔太 PBP02-B07
+山田 修義 PBP02-B08
+石川 亮 PBP02-B09
+Ｔ－岡田 PBP02-B10
+野口 智哉 PBP02-B11
+茶野 篤政 PBP02-B12
+宗 佑磨 PBP03-B01
+西川 龍馬 PBP03-B02
+田嶋 大樹 PBP03-B03
+山﨑 颯一郎 PBP03-B04
+森 友哉 PBP03-B05
+Ｍ．ゴンザレス PBP03-B06
+平野 佳寿 PBP03-B07
+頓宮 裕真 PBP03-B08
+紅林 弘太郎 PBP03-B09
+廣岡 大志 PBP03-B10
+中川 圭太 PBP03-B11
+杉本 裕太郎 PBP03-B12
+宮城 大弥 PBP04-B01
+L．セデーニョ PBP04-B02
+若月 健矢 PBP04-B03
+西野 真弘 PBP04-B04
+紅林 弘太郎 PBP04-B05
+福田 周平 PBP04-B06
+古田島 成龍 PBP04-B07
+Ａ．マチャド PBP04-B08
+太田 椋 PBP04-B09
+宗 佑磨 PBP04-B10
+西川 龍馬 PBP04-B11
+廣岡 大志 PBP04-B12
+岸田 護 TBP01-B01
+中嶋 聡 TBP01-B02
+坂口 智隆 TBP01-B03
+田口 壮 TBP01-B04
+吉田 正尚 TBP01-B05
+山下 舜平大 TBP01-B06
+Ａ．エスピノーザ TBP01-B07
+山﨑 颯一郎 TBP01-B08
+森 友哉 TBP01-B09
+中川 圭太 TBP01-B10
+東 晃平 TBP01-B11
+田嶋 大樹 TBP01-B12
+山田 修義 TBP01-B13
+古田島 成龍 TBP01-B14
+頓宮 裕真 TBP01-B15
+大里 昂生 TBP01-B16
+来田 涼斗 TBP01-B17
+茶野 篤政 TBP01-B18
+杉本 裕太郎 TBP01-B19
+宮城 大弥 TBP01-B20
+曽谷 龍平 TBP01-B21
+髙島 泰都 TBP01-B22
+宇田川 優希 TBP01-B23
+阿部 翔太 TBP01-B24
+吉田 輝星 TBP01-B25
+本田 仁海 TBP01-B26
+小木田 敦也 TBP01-B27
+井口 和朋 TBP01-B28
+Ｌ．ペルドモ TBP01-B29
+平野 佳寿 TBP01-B30
+Ａ．マチャド TBP01-B31
+若月 健矢 TBP01-B32
+石川 亮 TBP01-B33
+太田 椋 TBP01-B34
+西野 真弘 TBP01-B35
+宗 佑磨 TBP01-B36
+大城 滉二 TBP01-B37
+廣岡 大志 TBP01-B38
+野口 智哉 TBP01-B39
+横山 聖哉 TBP01-B40
+渡部 遼人 TBP01-B41
+福田 周平 TBP01-B42
+西川 龍馬 TBP01-B43
+宮城 大弥 BP01-B01
+頓宮 裕真 BP01-B02
+廣岡 大志 BP01-B03
+杉本 裕太郎 BP01-B04
+九里 亜蓮 BP01-B05
+若月 健矢 BP01-B06
+太田 椋 BP01-B07
+麦谷 祐介 BP01-B08
+山中 稜真 BP01-B09
+バファローブル TIME-B03
+T オリックス・バファローズ TEAM-B03
+Z 紅林 弘太郎 BP02-B01
+九里 亜蓮 BP02-B02
+若月 健矢 BP02-B03
+紅林 弘太郎 BP02-B04
+Ａ．マチャド BP02-B05
+太田 椋 BP02-B06
+西野 真弘 BP02-B07
+中川 圭太 BP02-B08
+才木 海翔 BP02-B09
+森 友哉 BP02-B10
+頓宮 裕真 BP02-B11
+宗 佑磨 BP02-B12
+麦谷 祐介 BP02-B13
+廣岡 大志 BP02-B14
+来田 涼斗 BP02-B15
+バファローブル TIME-B04
+T オリックス・バファローズ TEAM-B04
+紅林 弘太郎 PB01-SJ23
+太田 椋 BP03-B03
+宗 佑磨 BP03-B04
+椋木 蓮 BP03-B05
+渡部 遼人 BP03-B07
+西川 龍馬 BP03-B08
+山﨑 颯一郎 BP03-B10
+森 友哉 BP03-B12
+野口 智哉 BP03-B13
+源田 壮亮 PSD05-L01
+髙橋 光成 PSD05-L02
+水上 由伸 PSD05-L03
+増田 達至 PSD05-L04
+古賀 悠斗 PSD05-L05
+渡部 健人 PSD05-L06
+外崎 修汰 PSD05-L07
+中村 剛也 PSD05-L08
+栗山 巧 PSD05-L09
+蛭間 拓哉 PSD05-L10
+鈴木 将平 PSD05-L11
+岸 潤一郎 PSD05-L12
+埼玉西武ライオンズ TIME-L01
+T 埼玉西武ライオンズ TEAM-L01
+今井 達也 PBP01-L01
+外崎 修汰 PBP01-L02
+平良 海馬 PBP01-L03
+水上 由伸 PBP01-L04
+増田 達至 PBP01-L05
+蛭間 拓哉 PBP01-L06
+青山 美夏人 PBP01-L07
+柘植 世那 PBP01-L08
+渡部 健人 PBP01-L09
+佐藤 龍世 PBP01-L10
+鈴木 将平 PBP01-L11
+長谷川 信哉 PBP01-L12
+髙橋 光成 PBP02-L01
+中村 剛也 PBP02-L02
+隅田 知一郎 PBP02-L03
+平井 克典 PBP02-L04
+古賀 悠斗 PBP02-L05
+栗山 巧 PBP02-L06
+佐藤 隼輔 PBP02-L07
+児玉 亮涼 PBP02-L08
+平沼 翔太 PBP02-L09
+源田 壮亮 PBP02-L10
+金子 侑司 PBP02-L11
+岸 潤一郎 PBP02-L12
+源田 壮亮 PBP03-L01
+栗山 巧 PBP03-L02
+武内 夏暉 PBP03-L03
+甲斐野 央 PBP03-L04
+古賀 悠斗 PBP03-L05
+外崎 修汰 PBP03-L06
+松本 航 PBP03-L07
+Ａ．アブレイユ PBP03-L08
+J.アギラー PBP03-L09
+佐藤 龍世 PBP03-L10
+西川 愛也 PBP03-L11
+Ｆ．コルデロ PBP03-L12
+隅田 知一郎 PBP04-L01
+金子 侑司 PBP04-L02
+佐藤 隼輔 PBP04-L03
+Ａ．アブレイユ PBP04-L04
+炭谷 銀仁朗 PBP04-L05
+Ｊ．アギラー PBP04-L06
+今井 達也 PBP04-L07
+田村 伊知郎 PBP04-L08
+中村 剛也 PBP04-L09
+元山 飛優 PBP04-L10
+滝澤 夏央 PBP04-L11
+平沼 翔太 PBP04-L12
+西口 文也 TBP01-L01
+工藤 公康 TBP01-L02
+片岡 易之 TBP01-L03
+松井 稼頭央 TBP01-L04
+Ｇ．Ｇ．佐藤 TBP01-L05
+髙橋 光成 TBP01-L06
+武内 夏暉 TBP01-L07
+中村 剛也 TBP01-L08
+源田 壮亮 TBP01-L09
+西川 愛也 TBP01-L10
+菅井 信也 TBP01-L11
+今井 達也 TBP01-L12
+平井 克典 TBP01-L13
+平良 海馬 TBP01-L14
+古賀 悠斗 TBP01-L15
+野村 大樹 TBP01-L16
+外崎 修汰 TBP01-L17
+栗山 巧 TBP01-L18
+長谷川 信哉 TBP01-L19
+渡邉 勇太朗 TBP01-L20
+與座 海人 TBP01-L21
+隅田 知一郎 TBP01-L22
+ボー・タカハシ TBP01-L23
+佐藤 隼輔 TBP01-L24
+甲斐野 央 TBP01-L25
+羽田 慎之介 TBP01-L26
+上田 大河 TBP01-L27
+中村 祐太 TBP01-L28
+水上 由伸 TBP01-L29
+豆田 泰志 TBP01-L30
+炭谷 銀仁朗 TBP01-L31
+柘植 世那 TBP01-L32
+平沼 翔太 TBP01-L33
+髙松 渡 TBP01-L34
+村田 怜音 TBP01-L35
+山野辺 翔 TBP01-L36
+児玉 亮涼 TBP01-L37
+元山 飛優 TBP01-L38
+山村 崇嘉 TBP01-L39
+滝澤 夏央 TBP01-L40
+蛭間 拓哉 TBP01-L41
+松原 聖弥 TBP01-L42
+岸 潤一郎 TBP01-L43
+奥村 光一 TBP01-L44
+今井 達也 BP01-L01
+Ｔ．ネビン BP01-L02
+渡部 聖弥 BP01-L03
+西川 愛也 BP01-L04
+平良 海馬 BP01-L05
+古賀 悠斗 BP01-L06
+滝澤 夏央 BP01-L07
+外崎 修汰 BP01-L08
+源田 壮亮 BP01-L09
+T 埼玉西武ライオンズ TEAM-L03
+レオ TIME-L10
+Z 西川 愛也 BP02-L01
+隅田 知一郎 BP02-L02
+滝澤 夏央 BP02-L03
+西川 愛也 BP02-L04
+平良 海馬 BP02-L05
+古賀 悠斗 BP02-L06
+Ｔ．ネビン BP02-L07
+栗山 巧 BP02-L08
+甲斐野 央 BP02-L09
+中村 剛也 BP02-L10
+山村 崇嘉 BP02-L11
+源田 壮亮 BP02-L12
+外崎 修汰 BP02-L13
+渡部 聖弥 BP02-L14
+長谷川 信哉 BP02-L15
+T 埼玉西武ライオンズ TEAM-L04
+レオ TIME-L11
+隅田 知一郎 PB01-SJ06
+古賀 悠斗 PB01-SJ14
+源田 壮亮 PB01-SJ22
+源田 壮亮 BP03-L03
+桑原 将志 BP03-L04
+高橋 光成 BP03-L05
+甲斐野 央 BP03-L06
+小島 大河 BP03-L07
+篠原 響 BP03-L09
+長谷川 信哉 BP03-L11
+外崎 修汰 BP03-L12
+`;
+
+/* 共通プロモ戦術（PDO-01〜15）＋各球団プロモ選手・マスコット・大会賞品カード。
+   Vault「共通・大会プロモ_カード画像一覧」＋各球団ノートの「プロモ」節より。名前＋番号のみ。
+   PDO-15のみBP03新規＆12球団それぞれ専用の絵柄あり（dreamorder.com/cardlist/?id=5318で確認）。
+   画像は他のPDOと同じくロッテ版で統一（カード番号が同じ＝ゲーム上は同一カードのため）。 */
+const POOL_PROMO=`
+勝負師 PDO-01
+ミートバッティング PDO-02
+フルスイング PDO-03
+内野警戒 PDO-04
+外野警戒 PDO-05
+値千金 PDO-06
+全力疾走 PDO-07
+渾身の一球 PDO-08
+好球必打 PDO-09
+内野強打警戒 PDO-10
+エンドラン PDO-11
+不屈 PDO-12
+威圧 PDO-13
+研ぎ澄まされた一振り PDO-14
+強心臓 PDO-15
+MINT PDO-PR01
+MINT PDO-PR02
+ドリオツアー2025 TIME-PR03
+ドリームオーダー日本選手権2024 店舗代表 WIN-PDO01
+ドリームオーダー日本選手権2024 エリア代表 WIN-PDO02
+ドリームオーダー日本選手権2024 FINALIST WIN-PDO03
+ドリームオーダー日本選手権2024 CHAMPIONS WIN-PDO04
+ドリームオーダー学校対抗戦2024 WIN-PDO05
+ドリームオーダー学校対抗戦2024 WIN-PDO06
+プロ野球カードゲーム ドリームオーダー WIN-PDO07
+ドリームオーダー日本選手権2025 店舗代表 WIN-PDO08
+ドリームオーダー日本選手権2025 エリア代表 WIN-PDO09
+ドリームオーダー日本選手権2025 FINALIST WIN-PDO10
+ドリームオーダー日本選手権2025 CHAMPIONS WIN-PDO11
+侍ジャパン WIN-PDO12
+侍ジャパン WIN-PDO13
+竹田 祐 PDO-DB01
+度会 隆輝 PDO-DB02
+三森 大貴 PDO-DB03
+DB.スターマン TIME-DB02
+DB.スターマン TIME-DB03
+牧 秀悟 WIN-DB01
+東 克樹 WIN-DB02
+麦谷 祐介 PDO-B01
+太田 椋 PDO-B02
+紅林 弘太郎 PDO-B03
+バファローブル TIME-B02
+バファローブル TIME-B03
+宮城 大弥 WIN-B01
+村上 泰斗 PDO-H01
+中村 晃 PDO-H02
+周東 佑京 PDO-H03
+ハリーホーク TIME-H02
+ハリーホーク TIME-H03
+近藤 健介 WIN-H01
+周東 佑京 WIN-H02
+山田 哲人 PDO-S01
+中村 優斗 PDO-S02
+岩田 幸宏 PDO-S03
+赤羽 由紘 PDO-S04
+つば九郎 TIME-S02
+つば九郎 TIME-S03
+山田 哲人 WIN-S01
+長岡 秀樹 WIN-S02
+福浦 和也 PDO-M01
+西川 史礁 PDO-M02
+藤原 恭大 PDO-M03
+寺地 隆成 PDO-M04
+マーくん TIME-M02
+マーくん TIME-M03
+小島 和哉 WIN-M01
+山本昌 PDO-D01
+金丸 夢斗 PDO-D02
+上林 誠知 PDO-D03
+大島 洋平 PDO-D04
+ドアラ TIME-D02
+ドアラ TIME-D03
+小笠原 慎之介 WIN-D01
+髙橋 宏斗 WIN-D02
+斎藤 雅樹 PDO-G01
+山口 鉄也 PDO-G02
+上原 浩治 PDO-G03
+阿部 慎之助 PDO-G04
+王 貞治 PDO-G05
+篠塚 和典 PDO-G06
+長嶋 茂雄 PDO-G07
+坂本 勇人 PDO-G08
+高橋 由伸 PDO-G09
+Ｗ．クロマティ PDO-G10
+松井 秀喜 PDO-G11
+石塚 裕惺 PDO-G12
+泉口 友汰 PDO-G13
+増田 陸 PDO-G14
+ジャビット TIME-G02
+ジャビット TIME-G03
+坂本 勇人 WIN-G01
+山﨑 伊織 WIN-G02
+佐々木 泰 PDO-C01
+床田 寛樹 PDO-C02
+島内 颯太郎 PDO-C03
+スラィリー TIME-C02
+スラィリー TIME-C03
+菊池 涼介 WIN-C01
+小園 海斗 WIN-C02
+柴田 獅子 PDO-F01
+野村 佑希 PDO-F02
+達 孝太 PDO-F03
+フレップ・ザ・フォックス TIME-F02
+フレップ・ザ・フォックス TIME-F03
+万波 中正 WIN-F01
+則本 昂大 PDO-E01
+宗山 塁 PDO-E02
+村林 一輝 PDO-E03
+渡邊 佳明 PDO-E04
+クラッチ TIME-E02
+クラッチ TIME-E03
+浅村 栄斗 WIN-E01
+松井 稼頭央 PDO-L01
+斎藤 大翔 PDO-L02
+山田 陽翔 PDO-L03
+隅田 知一郎 PDO-L04
+レオ TIME-L02
+レオ TIME-L03
+源田 壮亮 WIN-L01
+伊原 陵人 PDO-T01
+前川 右京 PDO-T02
+大山 悠輔 PDO-T03
+トラッキー TIME-T02
+トラッキー TIME-T03
+近本 光司 WIN-T01
+佐藤 輝明 WIN-T02
+`;
+
+/* 過去プール（Vault の球団別「過去プールシナジー」ノートより。名前＋カード番号でユニーク化。
+   効果は機能の要約。詳細は公式カードリスト / Vault ノート参照）。ライブラリに読み込まれ、
+   デッキビルダー左の一覧から選べる。 */
+const POOL=`
+# ロッテ 過去プール
+投 黒木 知宏 TBP01-M01 | c4 DP7 投手 先発+8 | アウト→イニング時 イニ⇄レスト入替、イニちょうど2枚同名で2ドロー
+投 種市 篤暉 TBP01-M06 | c3 DP6 投手 先発+7 | サポにDP持ちをプレイ時その元サポにDP+1／山札落ちを引き直し
+投 小島 和哉 PBP04-M01 | c3 DP6 投手 先発+7 | イニに投手/捕手でDP+1／イニorアウト⇄手札を1枚入替
+投 小島 和哉 BP01-M01 | c3 DP6 投手 先発+7 | サポに投手でDP+2&相手強振ダイス-1／降板でレストから投手2枚回収
+投 小島 和哉 PSD02-M01 | c3 DP6 投手 先発 | 相手打撃判定でダイス-1
+投 横山 陸人 BP02-M10 | c2 DP6 投手 中継ぎ+3 | イニにカードでDP+1、イニに投手/捕手で相手ダイス-1
+投 横山 陸人 TBP01-M13 | c2 DP6 投手 中継ぎ+3 | イニに投手2枚で次の本領発揮投手のコスト-3
+投 横山 陸人 PB01-SJ13 | c1 DP7 投手 抑え | 交代出場時 手札3ドロー
+投 横山 陸人 PBP04-M07 | c0 DP6 投手 中継ぎ+1 | 交代出場時リード時ならコスト払いで2ドロー
+投 国吉 佑樹 PBP03-M04 | c2 DP6 投手 中継ぎ+3 | イニの投手1枚につきDP+1
+投 益田 直也 BP02-M11 | c2 DP7 投手 抑え+3 | イニに投手/捕手&相手打撃判定でダイス-1
+投 鈴木 昭汰 PB01-SJ08 | c2 DP6 投手 中継ぎ+3 | イニにカードでDP+1
+投 澤村 拓一 TBP01-M24 | c2 DP6 投手 中継ぎ+3 | 覚醒: この勝負 相手打撃判定でダイス-2
+投 澤田 圭佑 PBP04-M08 | c2 DP7 投手 抑え+4 | 単体クローザー
+野 福浦 和也 TBP01-M04 | c2 AP5 一塁手 | 手札→イニング置き、イニ同名2枚でAP+2→1枚回収
+野 荻野 貴司 PBP03-M06 | c1 AP4 外野手 | イニングと手札を1枚ずつ入替
+野 藤岡 裕大 BP02-M03 | c3 AP5 二塁手 強振+1 | 走者ありAP+1(二三塁AP+2)／単打→二塁打／プレイ時イニ⇄手札入替
+野 藤岡 裕大 PBP03-M01 | c3 AP5 二塁手 | 起動AP+2&1ドロー／覚醒AP+1&ミートでダイス+2
+野 安田 尚憲 BP02-M06 | c2 AP5 三塁手 ミート+1 | 走者ありAP+1／プレイ時レスト→イニング1枚
+野 佐藤 都志也 PBP04-M02 | c2 AP5 捕手 | 覚醒AP+2／イニに置くと2ドロー1捨て
+野 佐藤 都志也 BP02-M05 | c1 AP5 捕手 | レストの投手/捕手と入れ替え
+野 佐藤 都志也 PBP03-M08 | c0 AP5 捕手 | イニに投手でサポに強振DP+2
+野 佐藤 都志也 PBP01-M04 | c2 AP5 捕手 | プレイ時サポに強振DP+2&この勝負相手ダイス-1
+野 佐藤 都志也 TBP01-M08 | c3 AP5 捕手 | 起動AP+1&2ドロー(走者でAP+2&3ドロー)
+野 小川 龍成 BP01-M08 | c1 AP5 遊撃手 ミート+1 | 起動: イニと手札を1枚ずつ入替
+野 小川 龍成 TBP01-M14 | c1 AP5 二塁手 | プレイ時イニに投手/捕手でサポにミートDP+2
+野 小川 龍成 BP02-M13 | c1 AP5 遊撃手 | ZONE3覚醒で1ドロー
+野 寺地 隆成 BP02-M02 | c2 AP5 捕手 強振+1 | イニ置きドロー／イニに投手捕手でAP+1／覚醒AP+1(走者でAP+2)
+野 髙部 瑛斗 BP02-M04 | c2 AP5 外野手 | イニに投手/捕手でAP+1／相手投手c3+でAP+1&アウト→単打
+野 中村 奨吾 PBP03-M02 | c2 AP5 三塁手 強振+1 | イニに投手でAP+2／イニに投手でサポにミートDP+1
+野 G.ポランコ PBP04-M06 | c2 AP6 外野手 | イニに投手&強振でダイス+2
+野 N.ソト BP01-M02 | c3 AP6 一塁手 ミート+1 | 覚醒AP+2&ダイス+1／強振でイニの投手1枚につきダイス+1
+野 N.ソト TBP01-M09 | c2 AP6 一塁手 強振+1 | ミートバッティング・コンボで強振AP+4&ダイス+1
+野 N.ソト PBP04-M03 | c1 AP5 一塁手 強振+1 | 出場一塁手2枚でAP+1
+野 山本 大斗 BP02-M08 | c2 AP5 外野手 ミート+1 強振+1 | 覚醒AP+1
+野 藤原 恭大 BP01-M03 | c2 AP5 外野手 ミート+1 | サポに投手でAP+3
+野 藤原 恭大 TBP01-M17 | c1 AP5 外野手 ミート+1 | デッキ40 守サポ本領発揮: 強振DP+2
+野 里崎 智也 TBP01-M03 | c2 AP5 捕手 | イニ置きでコスト払い2ドロー／相手強振ダイス-1
+野 田村 龍弘 PBP02-M08 | c1 AP4 捕手 ミート+1 | プレイ時サポにミートDP+1・強振DP+2
+野 サブロー TBP01-M05 | c3 AP5 外野手 | 打順4番/走者二三塁でAP+1／出塁でドロー
+野 岡 大海 BP02-M15 | c0 AP5 外野手 代打+1 | 代打&ビハインドで点差ぶんAP+
+野 友杉 篤輝 PBP03-M05 | c1 AP5 遊撃手 | ミートバッティング・コンボで1ドロー
+野 石川 慎吾 TBP01-M41 | c0 AP4 外野手 | イニに投手/捕手&打撃判定でダイス+1
+
+# 楽天 過去プール
+投 岩隈 久志 TBP01-E01 | c4 DP6 投手 先発+8 | サポの本領発揮選手1枚ごとにDP+1／相手チームカードの本塁打→二塁打
+投 岸 孝之 BP02-E02 | c3 DP6 投手 先発+7 | サポに本領発揮でDP+1、2枚でドロー／覚醒: レストから本領発揮回収
+投 岸 孝之 TBP01-E06 | c3 DP6 投手 先発+7 | サポに本領発揮選手でDP+1
+投 古謝 樹 TBP01-E07 | c2 DP6 投手 先発+7 | 覚醒: DP+1&手札から本領発揮選手をサポに表向き
+投 荘司 康誠 PBP02-E03 | c2 DP6 投手 先発+6 | 本領発揮をプレイ中&相手打撃判定でダイス-1
+投 渡辺 翔太 PBP03-E08 | c0 DP5 投手 中継ぎ+2 | サポに本領発揮&相手打撃判定でダイス-1
+投 西口 直人 BP02-E05 | c2 DP6 投手 中継ぎ+4 | イニにカードあり&本領発揮野手5枚以上でDP+1
+投 酒居 知史 PBP04-E03 | c2 DP6 投手 中継ぎ+4 | イニにカード&サポに本領発揮でDP+1
+投 早川 隆久 PBP04-E01 | c2 DP6 投手 先発+6 | プレイ時サポに本領発揮イーグルス2枚以上で1ドロー
+野 太田 光 BP02-E10 | c1 AP4 捕手 | 守サポ本領発揮: 強振DP+2&この勝負相手ダイス-1
+野 太田 光 TBP01-E15 | c1 AP5 捕手 | 守サポ本領発揮: サポに本領発揮2枚以上で強振DP+2
+野 嶋 基宏 TBP01-E03 | c2 AP5 捕手 | 覚醒AP+1／守サポ本領発揮: 自投手が先発なら強振DP+2
+野 堀内 謙伍 TBP01-E32 | c0 AP4 捕手 | 守サポ本領発揮: 強振DP+2
+野 田中 貴也 TBP01-E34 | c0 AP4 捕手 | 守サポ本領発揮: 強振DP+2
+野 石原 彪 TBP01-E33 | c1 AP4 捕手 ミート+1 | 守サポ本領発揮: 強振DP+3
+野 黒川 史陽 BP02-E12 | c1 AP4 二塁手 | 守サポ本領発揮: 相手ミートでアウト時 一塁走者もアウト
+野 小深田 大翔 TBP01-E16 | c1 AP5 二塁手 | 覚醒AP+1／守サポ本領発揮: ミートDP+1
+野 小深田 大翔 PBP02-E02 | c3 AP5 二塁手 ミート+1 | 打撃アウト→単打／守サポ本領発揮: 相手ミートアウトで一塁走者もアウト
+野 鈴木 大地 TBP01-E09 | c2 AP5 一塁手 | 走者ありAP+1／守サポ本領発揮: 相手ミートアウトで一塁走者もアウト
+野 鈴木 大地 PBP04-E06 | c2 AP5 一塁手 ミート+1 | 起動: 山札上3枚公開、本領発揮2枚まで手札
+野 宗山 塁 BP02-E07 | c1 AP5 遊撃手 | サポに本領発揮でAP+1／守サポ本領発揮: ミートDP+1
+野 宗山 塁 BP01-E03 | c2 AP5 遊撃手 ミート+2 | 守サポ本領発揮: ミートDP+2&本領発揮2枚以上で選手回収
+野 村林 一輝 PBP03-E04 | c2 AP5 遊撃手 | サポに本領発揮でAP+1／守サポ本領発揮: 相手ミートでダイス-1
+野 村林 一輝 BP02-E04 | c3 AP6 三塁手 ミート+2 | 出塁でドロー／攻サポ本領発揮: ミート勝負でサポにAP+1
+野 浅村 栄斗 BP01-E02 | c3 AP6 一塁手 強振+1 | 走者二三塁でAP+2／攻サポ本領発揮: 強振勝負でサポにAP+1
+野 田中 和基 PBP02-E05 | c1 AP4 外野手 強振+1 | 守サポ本領発揮: 相手強振でダイス-1
+野 辰己 涼介 PBP03-E02 | c2 AP5 外野手 | 走者なしでAP+1／守サポ本領発揮: 相手強振でダイス-1
+野 辰己 涼介 TBP01-E10 | c3 AP5 外野手 | 打順3番以降&自先発でAP+1&ダイス+1／守サポ本領発揮: 強振DP+1
+野 小郷 裕哉 PBP04-E02 | c2 AP5 外野手 | サポに本領発揮でAP+1／攻サポ本領発揮: ミート勝負でサポにAP+1
+野 小郷 裕哉 PBP03-E06 | c1 AP5 外野手 | サポに本領発揮でAP+1
+野 阿部 寿樹 BP01-E04 | c2 AP5 外野手 ミート+1 強振+1 | サポに本領発揮でAP+2／覚醒AP+1
+野 L.ボイト BP02-E03 | c2 AP6 一塁手 強振+1 | 覚醒: 一塁手2枚でレストの本領発揮をサポ/手札
+野 安田 悠馬 TBP01-E08 | c2 AP5 捕手 ミート+1 強振+1 | 起動: 1ドロー&レストの本領発揮選手を手札
+野 山﨑 武司 TBP01-E04 | c3 AP5 一塁手 | 出場一塁手2枚&打順4番以降でAP+1(強振ダイス+3)／覚醒: 強振でダイス+3
+
+# 広島 過去プール
+投 大瀬良 大地 BP01-C01 | c3 DP6 投手 先発+7 | サポに選手2枚以上でDP+1／出塁&選手2枚以上でドロー
+投 森下 暢仁 TBP01-C06 | c3 DP6 投手 先発+8 強振+1 | 覚醒AP+1／サポに選手2枚以上でDP+1／覚醒DP+1
+投 森下 暢仁 CBP01-C01 | c3 DP7 投手 先発+5 | 覚醒: アウト時 選手2枚プレイ済みで1ドロー
+投 中﨑 翔太 TBP01-C13 | c2 DP6 投手 中継ぎ+4 | サポに選手2枚以上&相手打撃判定でダイス-1
+投 中﨑 翔太 CBP01-C03 | c2 DP6 投手 中継ぎ+4 | 選手2枚プレイ済み&相手打撃判定でダイス-1
+野 會澤 翼 TBP01-C30 | c0 AP4 捕手 | 守サポ本領発揮: 強振DP+2
+野 石原 貴規 TBP01-C31 | c0 AP4 捕手 | 守サポ本領発揮: 強振DP+2
+野 坂倉 将吾 BP02-C06 | c1 AP5 捕手 | 守サポ本領発揮: 強振DP+2&条件でドロー
+野 坂倉 将吾 CBP01-C02 | c3 AP5 捕手 強振+1 | 守サポ本領発揮: 強振DP+2(選手2枚で強振DP+3ミートDP+1)
+野 坂倉 将吾 PB01-SJ15 | c2 AP5 捕手 強振+1 | 起動2ドロー(9番なら3ドロー&AP+2)／守サポ本領発揮: 強振DP+2
+野 會澤 翼 CBP02-C05 | c1 AP5 捕手 | 選手2枚プレイ済みでAP+1／守サポ本領発揮: 強振DP+1
+野 菊池 涼介 TBP01-C16 | c1 AP5 二塁手 | 守サポ本領発揮: 投手AP4以上でミートDP+2
+野 菊池 涼介 BP01-C02 | c3 AP5 二塁手 | サポに菊池でAP+1／覚醒AP+1／ベンチ: サポの菊池の本領発揮を有効化
+野 菊池 涼介 BP02-C07 | c2 AP5 二塁手 | サポに菊池か選手2枚でAP+1／守サポ本領発揮: 出塁時 自身を手札に
+野 菊池 涼介 CBP03-C01 | c2 AP5 二塁手 | 守サポ本領発揮: 他のカープ選手がいれば1ドロー
+野 矢野 雅哉 TBP01-C09 | c2 AP5 遊撃手 | 守サポ本領発揮: 相手ミートアウトで「ドロー」か「一塁走者アウト」
+野 矢野 雅哉 BP01-C04 | c3 AP4 遊撃手 | デッキ40 起動: レストの野手2枚を手札&AP+2／守サポ本領発揮: 選手2枚以上で投手DP+2
+野 矢野 雅哉 CBP04-C03 | c2 AP4 遊撃手 | サポに選手2枚以上でAP+2／守サポ本領発揮: 相手ミートアウトで一塁走者もアウト
+野 田村 俊介 TBP01-C20 | c1 AP5 外野手 ミート+1 | デッキ40 守サポ本領発揮: 強振DP+2
+野 野間 峻祥 TBP01-C18 | c1 AP5 外野手 ミート+1 | 守サポ本領発揮: 投手AP4以上で強振DP+2
+野 天谷 宗一郎 TBP01-C05 | c2 AP5 外野手 ミート+2 | 覚醒AP+1／守サポ本領発揮: アウト2枚&相手強振でダイス-3
+野 末包 昇大 BP02-C03 | c3 AP6 外野手 | 相手投手c3+でAP+1／選手2枚&強振でダイス+1／攻サポ本領発揮: 強振勝負でサポにAP+1
+野 末包 昇大 TBP01-C10 | c3 AP6 外野手 強振+1 | 走者ありAP+1／覚醒: 選手2枚&打撃判定でダイス+2
+野 末包 昇大 CBP04-C04 | c2 AP5 外野手 | 走者ありAP+1／選手2枚以上でAP+1&ダイス+1
+野 末包 昇大 CBP01-C11 | c1 AP5 外野手 | 選手2枚プレイ済みでAP+1
+野 中村 奨成 BP02-C04 | c2 AP5 外野手 ミート+2 | 走者なしでAP+1／選手2枚以上でカードをプレイ時1ドロー
+野 小園 海斗 TBP01-C08 | c3 AP5 三塁手 強振+1 | 走者なしでAP+1／選手プレイ時 選手2枚以上で1ドロー
+野 小園 海斗 CBP02-C02 | c3 AP5 遊撃手 強振+1 | 走者なしでAP+1／選手2枚プレイで1ドロー
+野 S.ファビアン BP02-C08 | c2 AP5 外野手 ミート+1 | デッキ40 起動: 1ドロー&AP+2／サポに選手2枚以上でAP+1
+`;
+
+/* PLAY RE:STYLE(BP03) 全12球団・全180枚（1球団15枚）。
+   出典: 公式サイト dreamorder.com/cardlist（2026-09-14取得、公式カードプール発表に伴い全球団分を取得）
+   ＋ PLAY_RESTYLE_新カード一覧.md（note記事書き起こしベース。効果文はこちらを優先採用、無い分は公式サイトの検索結果テキストを使用）。
+   画像は各カード最低レアリティ1枚（番号ごと、公式直リンクから取得）。
+   メタに位置のみ・効果が空の行＝公式サイトにも特殊能力テキストが無い（またはnote記事が未収録の）量産カード。 */
+const POOL_BP03=`
+Z 佐藤 輝明 BP03-T01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 才木 浩人 BP03-T02 | DP7／投手／コスト4／[先発+8] | ＜守備＞【メイン】自分のサポートエリアかイニングエリアに《投手》または《捕手》があり、相手が打撃判定を行うなら、ダイス-1する。 ／ ＜守備＞【メイン】【覚醒】山札の上から3枚公開する。その中から【覚醒】を持つカードを1枚まで手札に加え、残りをレストエリアに置く。
+野 中野 拓夢 BP03-T03 | AP5／二塁手／コスト2 | ＜攻撃＞【メイン】【覚醒】AP+2する。 ／ ＜守備＞【サポート】【本領発揮】このカードをプレイした時、自分のレストエリアから1枚まで選び、イニングエリアに置く。1枚以上置いたなら、イニングエリアにあるカードを1枚選び、レストエリアに置く。
+野 佐藤 輝明 BP03-T04 | AP6／三塁手／コスト3／[強振+1] | ＜攻撃＞【メイン・起動】【勝負中①】相手は手札からカードを1枚サポートエリアに裏向きで置く。その後、自分は手札からカードを1枚までサポートエリアに裏向きで置く。 ／ ＜攻撃＞【メイン】【覚醒】AP+1する。この勝負中、強振で打撃判定を行うなら、さらにダイス+1する。
+投 髙橋 遥人 BP03-T05 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】【勝負中①】自分がカードをプレイした時、自分のサポートエリアに《投手》または【覚醒】を持つ選手カードがあるなら、DP+1する。2枚以上あるなら、さらに、カードを2枚引き、手札を1枚捨てる。
+野 大山 悠輔 BP03-T06 | AP5／一塁手／コスト2 | ＜攻撃＞【メイン・起動】【勝負中①】手札からカードを1枚イニングエリアに置く。その後、自分のイニングエリアに《投手》または《捕手》があるなら、AP+1する。イニングエリアにあるカードを1枚手札に加える。 ／ ＜攻撃＞【メイン】このカードの1つ前の打順のカードが【覚醒】を持つなら、AP+1する。
+野 木浪 聖也 BP03-T07 | AP5／遊撃手／コスト2 | ＜攻撃＞【メイン・起動】【勝負中①】手札からカードを1枚イニングエリアに置く。その後、自分のイニングエリアに《投手》または《捕手》があるなら、カードを1枚引く。イニングエリアにあるカードを1枚手札に加える。 ／ ＜攻撃＞【メイン】【覚醒】AP+1する。自分のイニングエリアに《投手》または《捕手》があるなら、代わりにAP+2する。
+野 前川 右京 BP03-T08 | AP5／外野手／コスト2 | ＜攻撃＞【メイン】自分のサポートエリアに《投手》または《捕手》があるなら、AP+2する。 ／ ＜攻撃＞【メイン】【覚醒】AP+1する。
+投 Ｄ．モレッタ BP03-T09 | 投手 | 【守備】【メイン】【覚醒】DP+2する。
+投 岩崎 優 BP03-T10 | DP7／投手／コスト1／[抑え+3] | ＜守備＞【メイン】交代で出場した時、手札を1枚捨てる。
+野 坂本 誠志郎 BP03-T11 | AP4／捕手／コスト1 | ＜攻撃＞【メイン】【ZONE3】【覚醒】AP+2する。 ／ ＜攻・守＞【イニング】【本領発揮】このカードがイニングエリアに置かれた時、自分の登板している投手のコストが3以上なら、カードを1枚引く。
+野 伏見 寅威 BP03-T12 | AP5／捕手／コスト1 | ＜攻撃＞【メイン】【覚醒】AP+1する。 ／ ＜守備＞【イニング】【本領発揮】走者がおり、相手が強振で打撃判定を行うなら、ダイス-1する。この特殊能力は他の「伏見 寅威」の特殊能力と重複しない。
+野 森下 翔太 BP03-T13 | 外野手 | 
+野 中川 勇斗 BP03-T14 | 外野手 | 
+野 福島 圭音 BP03-T15 | 外野手 | 
+Z 牧 秀悟 BP03-DB01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 山﨑 康晃 BP03-DB02 | DP6／投手／コスト3／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアのカード1枚につき、DP+1する。
+野 牧 秀悟 BP03-DB03 | AP5／二塁手／コスト3／[強振+1] | ＜攻・守＞【本領発揮】このカードは戦術カードとしても扱う。また、このカードの名称は「フルスイング」としても扱う。 ／ ＜攻撃＞【メイン】自分のサポートエリアのカード2枚につき、AP+1する。 ／ ＜攻撃＞【メイン】【コンボ】フルスイング：山札の上から1枚をサポートエリアに表向きで置く。
+野 度会 隆輝 BP03-DB04 | AP5／外野手／コスト2 | ＜攻撃＞【メイン】このカードがメインエリアに置かれた時、自分のレストエリアから特殊能力を持たない戦術カードを1枚まで手札に加える。 ／ ＜攻撃＞【メイン】自分のサポートエリアにある特殊能力を持たない戦術カードのサポートのDPは、サポートのAPとしても扱う。
+投 石田 裕太郎 BP03-DB05 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】走者がいるなら、DP+1する。走者が二塁または三塁にいて、相手が打撃判定を行うなら、さらにダイス-1する。 ／ ＜守備＞【メイン・起動】【勝負中①】【手札（戦術）①】カードを1枚引く。捨てたカードが特殊能力を持たないなら、代わりに2枚引く。
+野 佐野 恵太 BP03-DB06 | AP5／一塁手／コスト2 | ＜攻撃＞【メイン】自分のサポートエリアにある特殊能力を持たない戦術カードのサポートのDPは、サポートのAPとしても扱う。 ／ ＜攻撃＞【メイン】【覚醒】AP+1する。自分のサポートエリアに戦術カードがあるなら、さらに、カードを1枚引く。
+野 宮﨑 敏郎 BP03-DB07 | AP5／三塁手／コスト2 | ＜攻撃＞【メイン】【勝負中①】【コンボ】フルスイング：この勝負中、強振で勝負を行うなら、AP+3する。さらに、打撃判定でアウトなら、代わりに単打にする。 ／ ＜攻撃＞【メイン・起動】【勝負中①】【手札①】自分のレストエリアにある「フルスイング」を1枚まで手札に加える。
+野 Ｃ．ヒュンメル BP03-DB08 | AP5／外野手／コスト2 | ＜攻撃＞【メイン】自分のサポートエリアにある特殊能力を持たない戦術カードのサポートのDPは、サポートのAPとしても扱う。 ／ ＜攻撃＞【メイン・起動】【勝負中①】【手札①】AP+1する。捨てたカードが戦術カードなら、さらに、カードを1枚引く。
+投 平良 拳太郎 BP03-DB09 | DP6／投手／コスト2／[先発+6] | ＜守備＞【メイン】自分のイニングエリアにカードがないなら、DP+1する。
+投 Ｓ．レイノルズ BP03-DB10 | 投手 | 【守備】【メイン】【覚醒】DP+2する。
+野 松尾 汐恩 BP03-DB11 | AP5／捕手／コスト1 | ＜攻撃＞【メイン】自分のサポートエリアにある特殊能力を持たない戦術カードのサポートのDPは、サポートのAPとしても扱う。 ／ ＜攻撃＞【メイン】【ZONE3】【覚醒】AP+1する。
+野 筒香 嘉智 BP03-DB12 | 一塁手 | 
+野 勝又 温史 BP03-DB13 | 外野手 | 
+野 梶原 昂希 BP03-DB14 | AP5／外野手／コスト1 | ＜攻撃＞【メイン】【勝負中①】【コンボ】フルスイング：この勝負中、強振で勝負を行うなら、AP+2し、打撃判定を行うなら、さらにダイス+1する。
+野 蝦名 達夫 BP03-DB15 | 外野手 | 
+Z 泉口 友汰 BP03-G01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 大勢 BP03-G02 | DP6／投手／コスト3／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアにカードがあり、自分のサポートエリアにコストが3以上のカードがあるなら、DP+2する。
+野 泉口 友汰 BP03-G03 | AP6／遊撃手／コスト3／[ミート+1] | ＜攻撃＞【メイン】自分のサポートエリアにあるカードのコストによって、以下すべてを行う。 ／ 奇数：AP+1する。 ／ 偶数：打撃判定を行うなら、ダイス+1する。 ／ （戦術カードのコストは0として扱う。）
+野 Ｔ．キャベッジ BP03-G04 | AP5／外野手／コスト2／[強振+1] | ＜攻撃＞【メイン】自分のサポートエリアにコストが2以上のカードがあるなら、AP+2する。自分のサポートエリアにあるカードのコストの合計が偶数で、打撃判定を行うなら、さらにダイス+1する。（戦術カードのコストは0として扱う。）
+投 竹丸 和幸 BP03-G05 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】【勝負中①】自分がカードをプレイした時、自分のサポートエリアにコストが2以上のカードがあるなら、DP+1する。2枚以上あるなら、さらに、カードを1枚引く。 ／ ＜守備＞【メイン】勝負が終了した時、打者が出塁しているなら、カードを2枚引いてもよい。そうしたら、手札を2枚捨てる。
+野 岸田 行倫 BP03-G06 | AP5／捕手／コスト2 | ＜攻撃＞【メイン】【勝負中①】【コンボ】フルスイング：この勝負中、強振で勝負を行うなら、AP+3する。さらに、打撃判定でアウトなら、代わりに単打にする。 ／ ＜攻撃＞【メイン・起動】【勝負中①】【手札①】自分のレストエリアにある「フルスイング」を1枚まで手札に加える。
+野 吉川 尚輝 BP03-G07 | AP5／二塁手／コスト2 | ＜攻撃＞【メイン】自分のサポートエリアのカードのコストの合計が偶数なら、AP+2する。 ／ ＜守備＞【サポート】【本領発揮】このカードをプレイした時、自分のサポートエリアに「吉川 尚輝」以外のカードがあり、自分のサポートエリアのカードのコストの合計が偶数なら、カードを1枚引く。（戦術カードのコストは0として扱う。）
+野 坂本 勇人 BP03-G08 | AP5／三塁手／コスト2 | ＜攻撃＞【メイン】自分のサポートエリアに「坂本 勇人」があるなら、AP+2する。 ／ ＜攻撃＞【メイン】自分のサポートエリアのカードのコストの合計が偶数で、打撃判定で単打なら、代わりに二塁打にする。（戦術カードのコストは0として扱う。）
+投 船迫 大雅 BP03-G09 | DP6／投手／コスト1／[中継ぎ+2] | ＜守備＞【メイン】【覚醒】DP+1する。
+投 R.マルティネス BP03-G10 | DP7／投手／コスト2／[抑え+3] | ＜守備＞【メイン】【覚醒】DP+1する。
+野 大城 卓三 BP03-G11 | 捕手 | 
+野 増田 陸 BP03-G12 | 一塁手 | 
+野 Ｂ．ダルベック BP03-G13 | 三塁手 | 
+野 松本 剛 BP03-G14 | 外野手 | 
+野 佐々木 俊輔 BP03-G15 | AP5／外野手／コスト0 | ＜守備＞【メイン】【ZONE3】【本領発揮】このカードをプレイした時、投手のコストが3以上なら、サポートに強振DP+3する。
+Z 村松 開人 BP03-D01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 柳 裕也 BP03-D02 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】このカードがメインエリアに置かれた時、カードを1枚引く。 ／ ＜守備＞【メイン】自分の手札が5枚以上なら、DP+1する。 ／ ＜守備＞【メイン】走者がいて、相手が打撃判定を行うなら、さらにダイス-1する。
+野 石伊 雄太 BP03-D03 | AP5／捕手／コスト2 | ＜攻撃＞【メイン】手札が5枚以上なら、AP+1する。 ／ ＜攻撃＞【メイン・起動】【勝負中①】【タイム①】このカードの打順が6番以降なら、カードを3枚引く。
+野 村松 開人 BP03-D04 | AP6／遊撃手／コスト3／[ミート+1] | ＜攻撃＞【メイン】自分の手札が5枚以上なら、AP+1する。 ／ ＜守備＞【サポート】【本領発揮】この勝負が終了した時、打者が出塁しているなら、自分のサポートエリアにあるこのカードを手札に加える。
+投 Ｈ．メヒア BP03-D05 | DP6／投手／コスト3／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアにカードがあるなら、DP+1する。 ／ ＜守備＞【メイン・起動】【勝負中①】【手札①】カードを1枚引く。
+野 高橋 周平 BP03-D06 | AP5／一塁手／コスト2／[ミート+2] | ＜攻撃＞【メイン】手札が5枚以上なら、AP+1する。 ／ ＜攻撃＞【メイン】このカードが出塁した時、カードを2枚引き、手札を1枚捨てる。
+野 細川 成也 BP03-D07 | AP5／外野手／コスト2／[強振+1] | ＜攻撃＞【メイン】このカードがメインエリアに置かれた時、このカードの打順が4番以降なら、カードを1枚引く。 ／ ＜攻撃＞【メイン】手札が5枚以上なら、AP+1する。
+野 鵜飼 航丞 BP03-D08 | AP5／外野手／コスト2／[ミート+2] | ＜攻撃＞【メイン・起動】【勝負中①】【手札①】捨てたカードがサポートにミートAPを持つなら、レストエリアの「ミートバッティング」を1枚まで手札に加える。 ／ ＜攻撃＞【メイン】【勝負中①】【コンボ】ミートバッティング：この勝負中、ミートで勝負を行うなら、AP+2する。
+投 金丸 夢斗 BP03-D09 | DP6／投手／コスト2／[先発+6] | ＜守備＞【メイン】【覚醒】手札が5枚になるようにカードを引く。
+投 根尾 昂 BP03-D10 | 投手 | 【守備】【メイン】手札が5枚以上あるなら、DP+1する。
+投 牧野 憲伸 BP03-D11 | DP5／投手／コスト0／[中継ぎ+2] | ＜守備＞【メイン】自分のイニングエリアにカードが2枚以上あるなら、DP+1する。
+野 木下 拓哉 BP03-D12 | 捕手 | 【攻撃】【メイン】【覚醒】AP+1する。
+野 田中 幹也 BP03-D13 | 二塁手 | 
+野 福永 裕基 BP03-D14 | AP5／三塁手／コスト1 | ＜攻撃＞【メイン】手札が5枚以上なら、AP+1する。 ／ ＜守備＞【サポート】【ZONE3】【本領発揮】このカードをプレイした時、投手のコストが3以上なら、サポートにミートDP+3する。
+野 Ｏ．カリステ BP03-D15 | 外野手 | 
+Z 小園 海斗 BP03-C01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 栗林 良吏 BP03-C02 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】自分のサポートエリアに【本領発揮】を持つカードがあるなら、DP+1する。 ／ ＜守備＞【メイン】自分のサポートエリアに選手カードが2枚以上あるなら、DP+1する。 ／ ＜守備＞【メイン】【勝負中①】自分がカードをプレイした時、【本領発揮】を持つカードが2枚あるなら、カードを1枚引く。
+野 小園 海斗 BP03-C03 | AP6／遊撃手／コスト3 | ＜攻撃＞【メイン】自分のサポートエリアに【本領発揮】を持つカードがあるなら、AP+1する。打撃判定を行うなら、さらにダイス+1する。 ／ ＜攻撃＞【サポート】【本領発揮】このカードをプレイした時、打者のコストが2以上で、この勝負中、強振で打撃判定を行うなら、ダイス+1する。
+野 佐々木 泰 BP03-C04 | 三塁手 | 【攻撃】【メイン】自分のサポートエリアに【本領発揮】を持つカードがあるなら、AP+1する。2枚以上あり、この勝負中、打撃判定を行うなら、さらに【ダイス】+1する。 ／ 【攻撃】【サポート】【本領発揮】このカードをプレイした時、強振で勝負を行うなら、サポートにAP+1する。
+投 Ｔ．ハーン BP03-C05 | DP6／投手／コスト2／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアにカードがあり、自分の出場している【本領発揮】を持つ《野手》が5枚以上なら、DP+1する。
+野 菊池 涼介 BP03-C06 | AP5／二塁手／コスト2／[ミート+1] | ＜攻撃＞【メイン】自分のサポートエリアに「菊池 涼介」か【本領発揮】を持つカードがあるなら、AP+2する。
+野 大盛 穂 BP03-C07 | AP5／外野手／コスト2 | ＜攻撃＞【メイン】自分のサポートエリアに選手カードが2枚以上あるなら、AP+1する。 ／ ＜攻撃＞【メイン】【勝負中①】自分がカードをプレイした時、本領発揮を持つカードが2枚以上なら、カードを1枚引く。 ／ 【デッキ40】＜守備＞【サポート】【本領発揮】このカードをプレイした時、サポートに強振DP+2する。
+野 中村 奨成 BP03-C08 | AP5／外野手／コスト2／[ミート+2] | ＜攻撃＞【メイン・起動】【勝負中①】【手札①】捨てたカードがサポートにミートAPを持つなら、レストエリアの「ミートバッティング」を1枚まで手札に加える。 ／ ＜攻撃＞【メイン】【勝負中①】【コンボ】ミートバッティング：この勝負中、ミートで勝負を行うなら、AP+2する。
+投 Ｆ．ターノック BP03-C09 | 投手 | 
+投 森浦 大輔 BP03-C10 | DP6／投手／コスト1／[中継ぎ+2] | ＜守備＞【メイン】走者が二塁または三塁にいて、相手が打撃判定を行うなら、ダイス-1する。自分のサポートエリアに選手カードが2枚以上あるなら、代わりに、ダイス-2する。
+野 坂倉 将吾 BP03-C11 | AP5／捕手／コスト1 | ＜攻撃＞【メイン】走者がいるなら、AP+1する。 ／ ＜守備＞【サポート】【ZONE3】【本領発揮】このカードをプレイした時、投手のDP+2する。
+野 Ｅ．モンテロ BP03-C12 | 一塁手 | 
+野 勝田 成 BP03-C13 | 二塁手 | 
+野 平川 蓮 BP03-C14 | AP5／外野手／コスト1／[ミート+1] | ＜守備＞【サポート】【本領発揮】このカードをプレイした時、投手のコストが3以上で[先発]を持つなら、サポートに強振DP+2する。
+野 Ｓ．ファビアン BP03-C15 | 外野手 | 
+Z 古賀 優大 BP03-S01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 山野 太一 BP03-S02 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】このカードがメインエリアに置かれた時、自分のイニングエリアにカードがないか、ビハインド時なら、タイムポイントを1つ獲得する。 ／ ＜守備＞【メイン】走者がいるなら、DP+1する。ビハインド時なら、さらに、DP+1する。 ／ ＜守備＞【メイン】自分のイニングエリアにカードがあり、相手が打撃判定を行うなら、ダイス-1する。
+野 古賀 優大 BP03-S03 | AP6／捕手／コスト3 | ＜攻撃＞【メイン】走者がいるなら、AP+1する。 ／ ＜攻撃＞【メイン・起動】【勝負中①】山札の上から2枚を公開する。公開したカードに《野手》があるなら、タイムポイントを1つ獲得する。2枚以上あるなら、さらに、AP+2する。公開したカードをレストエリアに置く。
+野 Ｄ．サンタナ BP03-S04 | AP6／外野手／コスト2 | ＜攻撃＞【メイン】このカードがメインエリアに置かれた時、タイムポイントを1つ獲得する。 ／ ＜攻撃＞【メイン】ビハインド時なら、AP+1する。
+投 星 知弥 BP03-S05 | DP6／投手／コスト3／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアにカードがあるか、ビハインド時なら、DP+1する。 ／ ＜守備＞【メイン・起動】【勝負中①】【手札①】捨てたカードが"ビハインド時"に有効になる特殊能力を持つ選手カードなら、カードを1枚引く。ビハインド時なら、さらに、DP+1する。
+野 Ｊ．オスナ BP03-S06 | AP5／一塁手／コスト2 | ＜攻撃＞【メイン・起動】【勝負中①】【タイム①】山札の上から自分の持つタイムポイントの数だけ公開する。その中から1枚まで手札に加え、残りをレストエリアに置く。3枚以上公開していたなら、さらに、AP+2する。 ／ ＜攻撃＞【メイン】【覚醒】AP+1し、この勝負中、打撃判定を行うなら、さらにダイス+1する。
+野 武岡 龍世 BP03-S07 | AP5／三塁手／コスト2 | ＜攻撃＞【メイン・起動】【勝負中①】【タイム①】山札の上から自分の持つタイムポイントの数だけ公開する。その中から1枚まで手札に加え、残りをレストエリアに置く。3枚以上公開していたなら、さらに、カードを1枚引く。 ／ ＜攻撃＞【メイン】【覚醒】AP+1する。
+野 丸山 和郁 BP03-S08 | AP5／外野手／コスト2 | ＜攻撃＞【メイン】【覚醒】カードを2枚引き、手札を1枚捨てる。捨てたカードが《野手》なら、AP+1する。ビハインド時なら、代わりに、AP+2する。 ／ ＜攻・守＞【デッキ】【本領発揮】山札にあるこのカードが公開された時、カードを1枚引く。
+投 高梨 裕稔 BP03-S09 | DP6／投手／コスト2／[先発+6] | ＜守備＞【メイン】相手が打撃判定を行うなら、自分のサポートエリアのカード1枚につき、ダイス-1する。
+投 木澤 尚文 BP03-S10 | 投手 | 
+投 Ｊ．キハダ BP03-S11 | DP7／投手／コスト2／[抑え+3] | ＜守備＞【メイン】【覚醒】DP+1する。
+野 鈴木 叶 BP03-S12 | AP5／捕手／コスト1 | ＜攻撃＞【メイン】自分と相手の持つタイムポイントの数が異なるなら、AP+1する。 ／ ＜守備＞【サポート】【ZONE3】【本領発揮】このカードをプレイした時、投手のDP+2する。
+野 伊藤 琉偉 BP03-S13 | 二塁手 | 【攻撃】【メイン・起動】【勝負中①】【タイム①】AP+2する。
+野 長岡 秀樹 BP03-S14 | 遊撃手 | 
+野 岩田 幸宏 BP03-S15 | 外野手 | 
+Z 近藤 健介 BP03-H01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 上沢 直之 BP03-H02 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】【勝負中①】自分がカードをプレイした時、自分のサポートエリアにコストが3以上のカードがあるなら、DP+1する。2枚以上あるなら、さらに、カードを1枚引く。 ／ ＜守備＞【メイン・起動】【イニング中①】【タイム①】自分のレストエリアから選手カードを1枚まで手札に加える。加えたカードがコストが3以上のカードなら、DP+1する。
+野 栗原 陵矢 BP03-H03 | AP5／三塁手／コスト2 | ＜攻撃＞【メイン】【勝負中①】【コンボ】フルスイング：この勝負中、強振で勝負を行うなら、AP+3する。強振の打撃判定で二塁打なら、代わりに本塁打にする。
+野 近藤 健介 BP03-H04 | AP6／外野手／コスト3／[強振+1] | ＜攻撃＞【メイン】走者がいるなら、AP+1する。 ／ ＜攻撃＞【メイン】自分のサポートエリアにコストが3以上のカードがあるなら、AP+1する。
+投 Ｃ．スチュワート・ジュニア BP03-H05 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】自分の持つタイムポイントの数が奇数なら、DP+1する。 ／ ＜守備＞【メイン】【勝負中①】自分がカードをプレイした時、自分のサポートエリアのコストの合計が、相手のサポートエリアのコストの合計以上なら、カードを1枚引く。
+野 山川 穂高 BP03-H06 | AP5／一塁手／コスト2 | ＜攻撃＞【メイン】【勝負中①】【コンボ】フルスイング：この勝負中、強振で勝負を行うなら、AP+3する。さらに、打撃判定でアウトなら、代わりに単打にする。 ／ ＜攻撃＞【メイン・起動】【勝負中①】【手札①】自分のレストエリアにある「フルスイング」を1枚まで手札に加える。
+野 今宮 健太 BP03-H07 | AP5／遊撃手／コスト2 | ＜攻・守＞【グラウンド】このカードの1つ前の打順のカードのコストが3以上なら、自分のサポートエリアの《今宮 健太》のコストは3として扱う。 ／ ＜攻撃＞【メイン】自分のサポートエリアにコストが3以上のカードがあるなら、AP+2する。
+野 柳町 達 BP03-H08 | AP5／外野手／コスト1 | ＜攻撃＞【メイン】自分のサポートエリアにあるカードのコストの合計だけAPをプラスする。（戦術カードのコストは0として扱う。）
+投 松本 晴 BP03-H09 | 投手 | 
+投 木村 光 BP03-H10 | DP6／投手／コスト2／[中継ぎ+4] | ＜守備＞【メイン】【覚醒】DP+2する。
+野 海野 隆司 BP03-H11 | 捕手 | 
+野 牧原 大成 BP03-H12 | 二塁手 | 
+野 川瀬 晃 BP03-H13 | AP5／遊撃手／コスト0 | ＜攻撃＞【メイン】このカードが出塁した時、自分のレストエリアにあるコストが3以上の《野手》を1枚まで手札に加える。 ／ ＜攻撃＞【メイン】【ZONE3】【覚醒】AP+1する。
+野 柳田 悠岐 BP03-H14 | 外野手 | 
+野 周東 佑京 BP03-H15 | AP6／外野手／コスト3／[ミート+1] | （特殊能力なし ※note記事に効果テキスト記載なし）
+Z 清宮 幸太郎 BP03-F01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 田中 正義 BP03-F02 | DP6／投手／コスト3／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアにカードがあるなら、DP+1する。【覚醒】を持つ選手カードが2枚以上あるなら、代わりに、DP+2する。 ／ ＜守備＞【メイン】【覚醒】カードを1枚引く。
+野 清宮 幸太郎 BP03-F03 | AP6／一塁手／コスト3／[強振+1] | ＜攻撃＞【メイン】相手の投手のコストが3以上なら、AP+1する。 ／ ＜攻撃＞【メイン・起動】【勝負中①】【手札①】自分のレストエリアから【覚醒】を持つ選手カードを1枚まで手札に加える。 ／ ＜攻撃＞【メイン】【覚醒】自分のレストエリアから「値千金」または「好球必打」を1枚までサポートエリアに置く。
+野 水野 達稀 BP03-F04 | AP5／遊撃手／コスト2／[強振+1] | ＜攻撃＞【メイン】【覚醒】AP+2し、この勝負中、強振で打撃判定を行うなら、ダイス+1する。 ／ ＜攻撃＞【メイン】このカードがアウトになった時、自分のレストエリアの【覚醒】を持つ《野手》を1枚まで手札に加える。
+投 細野 晴希 BP03-F05 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン・起動】【勝負中①】【手札①】捨てたカードが【覚醒】を持つなら、そのカードのコストだけDPをプラスする。 ／ ＜守備＞【メイン】【覚醒】カードを2枚引き、手札を1枚捨てる。捨てたカードが戦術カードなら、自分のレストエリアから【覚醒】を持つ《野手》を1枚まで手札に加える。
+投 柳川 大晟 BP03-F06 | DP7／投手／コスト1／[抑え+2] | ＜守備＞【メイン】【覚醒】DP+1する。
+野 奈良間 大己 BP03-F07 | AP5／二塁手／コスト2 | ＜攻撃＞【メイン】【勝負中①】【コンボ】フルスイング：この勝負中、強振で勝負を行うなら、AP+3する。さらに、打撃判定でアウトなら、代わりに単打にする。 ／ ＜攻撃＞【メイン・起動】【勝負中①】【手札①】自分のレストエリアにある「フルスイング」を1枚まで手札に加える。
+野 西川 遥輝 BP03-F08 | AP5／外野手／コスト2 | ＜攻撃＞【メイン】【覚醒】AP+1する。相手の投手のコストが3以上なら、さらに、AP+1し、自分のレストエリアから「値千金」または「好球必打」を1枚までサポートエリアに置く。 ／ ＜攻撃＞【メイン】このカードがアウトになった時、自分のレストエリアの【覚醒】を持つ《野手》を1枚まで手札に加える。
+投 有原 航平 BP03-F09 | 投手 | 
+投 山﨑 福也 BP03-F10 | 投手 | 【守備】【メイン】【覚醒】カードを1枚引き、手札を1枚捨て、DP+1する。
+野 田宮 裕涼 BP03-F11 | 捕手 | 
+野 郡司 裕也 BP03-F12 | AP6／三塁手／コスト2 | ＜攻撃＞【メイン】【覚醒】この勝負中、打撃判定を行うなら、ダイス+1する。
+野 野村 佑希 BP03-F13 | 外野手 | 
+野 万波 中正 BP03-F14 | AP5／外野手／コスト1 | ＜攻撃＞【メイン】【覚醒】AP+1し、この勝負中、強振で打撃判定を行うなら、ダイス+1する。
+野 Ｆ．レイエス BP03-F15 | AP5／外野手／コスト1 | ＜攻撃＞【メイン】このカードが出塁した時、自分のレストエリアのサポートを持つ戦術カードを1枚まで手札に加える。 ／ ＜攻撃＞【メイン】【ZONE3】【覚醒】AP+1する。
+Z 太田 椋 BP03-B01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 Ａ．エスピノーザ BP03-B02 | DP6／投手／コスト3（※画像はコスト2表記だがカード記載優先）／[先発+8] | ＜守備＞【メイン・起動】【勝負中①】【手札①】DP+2する。 ／ ＜守備＞【メイン】アウトエリアにカードが置かれた時、自分のアウトエリアのカードが2枚以下なら、レストエリアの「フルスイング」を1枚まで手札に加える。
+野 太田 椋 BP03-B03 | AP6／一塁手／コスト3 | ＜攻撃＞【メイン】自分のサポートエリアにコストが2以上のカードがあるなら、AP+1する。 ／ ＜攻撃＞【メイン】【覚醒】山札の上から1枚を公開し、以下を1つ行う。 ／ 公開したカードを手札に加える。 ／ 公開したカードを自分のサポートエリアに表向きで置く。
+野 宗 佑磨 BP03-B04 | AP5／三塁手／コスト2 | ＜攻撃＞【メイン】【勝負中①】【コンボ】フルスイング：この勝負中、強振で勝負を行うなら、AP+2し、打撃判定を行うなら、さらにダイス+2する。 ／ ＜攻・守＞【レスト】【本領発揮】このカードが《バファローズ》のカードの特殊能力で手札から捨てられた時、カードを1枚引く。
+投 椋木 蓮 BP03-B05 | DP6／投手／コスト3／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアにカードがあるなら、DP+1する。 ／ ＜守備＞【メイン・起動】【勝負中①】【手札①】DP+1する。捨てたカードが「フルスイング」なら、さらに、カードを1枚引く。
+野 Ｂ．シーモア BP03-B06 | AP5／一塁手／コスト2 | ＜攻撃＞【メイン】自分の出場している《野手》のコストに『1』と『2』と『3』がそれぞれあるなら、AP+1する。コストが『3』の《野手》が2枚以上あるなら、代わりに、AP+2する。
+野 渡部 遼人 BP03-B07 | AP5／外野手／コスト2／[強振+1] | ＜攻撃＞【メイン】自分のサポートエリアにコストが2以上のカードがあるなら、AP+1する。 ／ ＜攻・守＞【レスト】【本領発揮】このカードが《バファローズ》のカードの特殊能力で手札から捨てられた時、自分のレストエリアから「フルスイング」を1枚まで手札に加える。
+野 西川 龍馬 BP03-B08 | AP5／外野手／コスト2／[ミート+1]／[強振+1] | ＜攻撃＞【メイン・起動】【勝負中①】【手札①】AP+2する。捨てたカードが「フルスイング」なら、さらに、カードを1枚引く。 ／ ＜攻撃＞【メイン】このカードが出塁した時、カードを1枚引く。
+投 九里 亜蓮 BP03-B09 | 投手 | 
+投 山﨑 颯一郎 BP03-B10 | DP6／投手／コスト1／[中継ぎ+2] | ＜守備＞【メイン】自分の出場している《野手》のコストに『1』と『2』と『3』がそれぞれあるなら、DP+1する。
+野 若月 健矢 BP03-B11 | 捕手 | 
+野 森 友哉 BP03-B12 | AP5／捕手／コスト1 | ＜攻撃＞【メイン】走者がいるなら、AP+1する。 ／ ＜守備＞【サポート】【ZONE3】【本領発揮】このカードをプレイした時、投手のDP+2する。
+野 野口 智哉 BP03-B13 | AP5／二塁手／コスト1 | ＜守備＞【サポート】【本領発揮】このカードをプレイした時、【手札①】することで、サポートにミートDP+4する。
+野 紅林 弘太郎 BP03-B14 | 遊撃手 | 
+野 中川 圭太 BP03-B15 | 外野手 | 
+Z 辰己 涼介 BP03-E01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 荘司 康誠 BP03-E02 | DP7／投手／コスト4／[先発+8] | ＜攻撃＞【サポート】【本領発揮】この勝負が終了した時、自分のサポートエリアに「荘司 康誠」以外の選手カードがあるなら、このカードを手札に加える。 ／ ＜守備＞【メイン】【覚醒】カードを2枚引き、1枚捨てる。
+野 黒川 史陽 BP03-E03 | AP5／三塁手／コスト2／[ミート+1]／[強振+1] | ＜攻撃＞【メイン】自分のサポートエリアに【本領発揮】を持つ選手カードがあるなら、AP+1する。2枚以上あるなら、代わりに、AP+2する。 ／ ＜守備＞【サポート】【本領発揮】このカードをプレイした時、サポートにミートDP+1する。
+野 辰己 涼介 BP03-E04 | AP6／外野手／コスト3 | ＜攻撃＞【メイン】自分のサポートエリアに【本領発揮】を持つ選手カードがあるなら、AP+1する。2枚以上あるなら、代わりに、AP+2する。 ／ ＜守備＞【サポート】【本領発揮】このカードをプレイした時、自分のサポートエリアに「辰己 涼介」以外の【本領発揮】を持つ選手カードがあるなら、カードを1枚引く。
+投 鈴木 翔天 BP03-E05 | DP6／投手／コスト3／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアにカードがあるなら、DP+1する。 ／ ＜守備＞【メイン】アウトエリアにカードが置かれた時、アウトエリアのカードが2枚以下なら【手札①】してもよい。そうしたら、カードを1枚引く。捨てたカードが【本領発揮】を持つなら、さらに、カードを1枚引く。
+野 太田 光 BP03-E06 | AP5／捕手／コスト2 | ＜攻撃＞【メイン・起動】【勝負中①】【タイム①】このカードの打順が6番以降なら、AP+1し、カードを2枚引く。 ／ ＜守備＞【サポート】【本領発揮】このカードをプレイした時、投手のコストが3以上なら、サポートに強振DP+2する。
+野 小深田 大翔 BP03-E07 | AP5／二塁手／コスト2／[ミート+1] | ＜攻撃＞【メイン】自分のサポートエリアに【本領発揮】を持つカードがあるなら、AP+2する。 ／ ＜攻撃＞【サポート】【本領発揮】このカードをプレイした時、打者のコストが2以上で、この勝負中、ミートで打撃判定を行うなら、ダイス+1する。
+野 中島 大輔 BP03-E08 | AP5／外野手／コスト2 | ＜攻撃＞【メイン】自分のサポートエリアに【本領発揮】を持つカードがあるなら、AP+1する。 ／ ＜攻撃＞【サポート】【本領発揮】このカードをプレイした時、自分のサポートエリアに「中島 大輔」以外の【本領発揮】を持つ選手カードがあるなら、カードを1枚引く。
+投 前田 健太 BP03-E09 | DP7／投手／コスト3／[先発+7] | （特殊能力なし ※note記事に効果テキスト記載なし）
+投 田中 千晴 BP03-E10 | 投手 | 
+野 浅村 栄斗 BP03-E11 | AP5／一塁手／コスト1 | ＜攻撃＞【メイン】自分のサポートエリアに選手カードが2枚以上あるなら、AP+1する。 ／ ＜攻撃＞【メイン】【ZONE3】【覚醒】AP+1する。
+野 Ｌ．ボイト BP03-E12 | 一塁手 | 
+野 村林 一輝 BP03-E13 | 遊撃手 | 
+野 小郷 裕哉 BP03-E14 | AP5／外野手／コスト1／[強振+1] | ＜攻撃＞【メイン】自分のサポートエリアに選手カードが2枚以上あるなら、AP+1する。
+野 佐藤 直樹 BP03-E15 | 外野手 | 【攻撃】【メイン】自分のサポートエリアに選手カードが2枚以上あるなら、AP+1する。
+Z 源田 壮亮 BP03-L01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 平良 海馬 BP03-L02 | DP6／投手／コスト4／[先発+8] | ＜守備＞【メイン】自分のイニングエリアのカードの枚数により、以下を行う。 ／ 0枚：DP+2する。 ／ 1枚以上：DP+1する。相手が強振で打撃判定を行うなら、さらにダイス-1する。
+野 源田 壮亮 BP03-L03 | AP5／遊撃手／コスト3 | ＜攻撃＞【メイン】【覚醒】AP+2する。 ／ ＜攻撃＞【ベース・起動】【勝負中①】1つ前の勝負で、このカードが出塁していたなら、山札の上から1枚を自分のサポートエリアに表向きで置く。 ／ ＜守備＞【ベンチ】自分のサポートエリアの「源田 壮亮」の【本領発揮】を有効にする。
+野 桑原 将志 BP03-L04 | AP5／外野手／コスト2 | ＜攻撃＞【メイン】走者がいないなら、AP+1する。 ／ ＜攻撃＞【メイン】ミートで勝負を行うなら、AP+1する。
+投 髙橋 光成 BP03-L05 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】自分の出場しているコストが2以上の《捕手》がいるなら、DP+1する。 ／ ＜守備＞【メイン】相手の打者のコストが2以上で打撃判定を行うなら、ダイス-1する。コストが3以上で、強振で打撃判定を行うなら、さらにダイス-1する。
+投 甲斐野 央 BP03-L06 | DP6／投手／コスト3／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアにカードがあるなら、DP+1する。 ／ ＜守備＞【メイン・起動】【勝負中①】【手札①】1つ前の勝負で、相手の打者が出塁していたなら、自分のレストエリアからサポートにミートAPを持つ《野手》を1枚まで手札に加え、DP+1する。
+野 小島 大河 BP03-L07 | AP6／捕手／コスト2 | ＜攻撃＞【メイン】1つ前の勝負で、自分の打者が出塁していたなら、AP+1する。この勝負中、強振で打撃判定を行うなら、さらにダイス+1する。 ／ ＜守備＞【サポート】【本領発揮】このカードをプレイした時、投手のコストが2以上なら、投手のDP+2する。
+野 渡部 聖弥 BP03-L08 | AP5／三塁手／コスト2／[強振+1] | ＜攻撃＞【メイン】走者がいるなら、AP+1する。 ／ ＜攻撃＞【メイン】1つ前の勝負で、自分の打者が出塁していたなら、AP+1する。
+投 篠原 響 BP03-L09 | DP6／投手／コスト1／[中継ぎ+2] | ＜守備＞【メイン】自分の出場しているコストが2以上の《捕手》がいるなら、DP+1する。
+投 岩城 颯空 BP03-L10 | 投手 | 【守備】【メイン】【覚醒】DP+1する。
+野 長谷川 信哉 BP03-L11 | AP5／一塁手／コスト1 | ＜攻撃＞【ベース・起動】【勝負中①】1つ前の勝負で、このカードが出塁していたなら、山札の上から1枚を自分のサポートエリアに表向きで置く。
+野 外崎 修汰 BP03-L12 | AP5／二塁手／コスト1 | ＜攻撃＞【メイン】走者がいるなら、AP+1する。 ／ ＜守備＞【サポート】【ZONE3】【本領発揮】このカードをプレイした時、投手のコストが3以上なら、サポートにミートDP+3する。
+野 滝澤 夏央 BP03-L13 | 二塁手 | 
+野 Ａ．カナリオ BP03-L14 | 外野手 | 
+野 林 安可 BP03-L15 | 外野手 | 【攻撃】【メイン】1つ前の勝負で、自分の打者が出塁していたなら、AP+1する。
+Z 藤原 恭大 BP03-M01 | ZONE／ | 【攻撃】【メイン】AP+1する。 ／ 【攻撃】【メイン】【ZONE③】ZONE状態になった時、山札の上から3枚公開する。その中から2枚まで手札に加え、残りをレストエリアに置く。
+投 毛利 海大 BP03-M02 | DP6／投手／コスト3／[先発+7] | ＜守備＞【メイン】走者が二塁または三塁にいるなら、DP+1する。 ／ ＜守備＞【メイン】自分のサポートエリアかイニングエリアに《投手》か《捕手》があるなら、DP+1する。相手が打撃判定を行うなら、さらにダイス-1する。
+野 藤原 恭大 BP03-M03 | AP6／外野手／コスト3／[ミート+1] | ＜攻撃＞【メイン】自分のサポートエリアに"ビハインド時"に有効になる特殊能力を持つ選手カードがあるなら、AP+1する。 ／ ＜攻撃＞【グラウンド】このカードが打者になった勝負が終了した時、自分のサポートエリアにある選手カードを1枚まで手札に加える。ビハインド時なら、さらに、カードを1枚引く。
+野 Ｇ．ポランコ BP03-M04 | 外野手 | 【攻撃】【メイン・起動】【勝負中①】手札からカードを1枚イニングエリアに置く。その後、自分のイニングエリアに《投手》または《捕手》があるなら、AP+1する。イニングエリアにあるカードを1枚手札に加える。 ／ 【攻撃】【メイン】自分のサポートエリアに《投手》または《捕手》があるなら、AP+2する。
+投 澤田 圭佑 BP03-M05 | DP6／投手／コスト2／[中継ぎ+4] | ＜守備＞【メイン】自分のイニングエリアに《投手》または《捕手》があるなら、DP+1する。2枚以上あり、相手が打撃判定を行うなら、さらに、ダイス-1する。
+野 Ｎ．ソト BP03-M06 | AP5／一塁手／コスト2／[強振+1] | ＜攻撃＞【メイン】ビハインド時なら、AP+1する。打撃判定を行うなら、さらにダイス+1する。 ／ ＜攻撃＞【メイン】自分のサポートエリアに"ビハインド時"に有効になる特殊能力を持つ選手カードがあるなら、AP+2する。
+野 寺地 隆成 BP03-M07 | AP5／三塁手／コスト2 | ＜攻・守＞【グラウンド】自分のイニングエリアの「寺地 隆成」の【本領発揮】を有効にする。 ／ ＜攻撃＞【メイン】自分のサポートエリアに「寺地 隆成」か"ビハインド時"に有効になる特殊能力を持つ選手カードがあるなら、AP+2する。ビハインド時に強振で打撃判定を行うなら、さらにダイス+1する。
+野 友杉 篤輝 BP03-M08 | AP5／遊撃手／コスト1 | ＜攻撃＞【メイン・起動】【勝負中①】手札からカードを1枚イニングエリアに置く。その後、自分のイニングエリアに《投手》または《捕手》があるなら、AP+1する。ビハインド時なら、代わりにAP+2する。イニングエリアからカードを1枚選び、手札に加える。
+投 田中 晴也 BP03-M09 | 投手 | 【守備】【メイン】走者がいないなら、DP+2する。
+投 Ｓ．ロング BP03-M10 | 投手 | 【守備】【メイン】自分のイニングエリアにカードが2枚以上あるなら、DP+1する。
+野 松川 虎生 BP03-M11 | AP4／捕手／コスト1 | ＜攻撃＞【メイン】【ZONE3】【覚醒】AP+2する。 ／ ＜攻・守＞【イニング】【本領発揮】このカードがイニングエリアに置かれた時、自分の登板している投手のコストが3以上なら、カードを1枚引く。
+野 上田 希由翔 BP03-M12 | 二塁手 | 
+野 髙部 瑛斗 BP03-M13 | 外野手 | 
+野 西川 史礁 BP03-M14 | AP5／外野手／コスト0 | ＜守備＞【サポート】【ZONE3】【本領発揮】このカードをプレイした時、投手のコストが3以上なら、サポートに強振DP+3する。
+野 和田 康士朗 BP03-M15 | AP4／外野手／コスト1 | ＜攻撃＞【メイン】ビハインド時なら、AP+2する。
+`;
+
+const CARDZ=["main","support","inning","out","rest","team","md","od","mound","bench","b1","b2","b3"];
+function emptyZones(){const z={lineup:[[],[],[],[],[],[],[],[],[]],hand:[]};CARDZ.forEach(k=>z[k]=[]);return z;}
+const ZL={main:"メインエリア",support:"サポートエリア",inning:"イニングエリア",out:"アウトエリア",
+  rest:"レストエリア",team:"チームエリア",md:"メインデッキ",od:"オーダーデッキ",mound:"登板投手",bench:"ベンチ",
+  b1:"一塁",b2:"二塁",b3:"三塁",hand:"手札",lineup:"打順"};
+const MOVE=[["lineup","打順"],["mound","登板"],["bench","控え"],["support","サポート"],["main","メイン"],
+  ["inning","イニング"],["out","アウト"],["rest","レスト"],["team","チーム"],
+  ["b3","三塁"],["b2","二塁"],["b1","一塁"],["hand","手札"],["md","Mデッキ"],["od","Oデッキ"]];
+
+let G=null,db=null,docRef=null,saveTimer=null,sel=null,popEl=null,fieldDrag=null;
+let lastDiceTs={p1:0,p2:0};   // ロール結果が前回と同じ数字でも「振った」ことが分かるようフラッシュさせる用
+let IMG={},IMGIDX={},IMGwant=new Set(),imgQT=null,renderT=null;   // card no -> data URI; images live under cardimg/<no> in RTDB
+const DOWNZ={md:1,od:1,hand:1,bench:1,support:1,out:1};
+// アウトはドラッグ&ドロップ／タップ移動のデフォルトを裏（非公開）にする。
+// 表で送りたい時は移動メニューの「アウト（表）」を明示的に選ぶ（moveCardのforceDown引数）。
+// mound(登板投手) is public; bench reserves + support(勝負まで) stay hidden to the opponent.
+
+/* ---------- library ---------- */
+function parseMeta(meta){
+  const s=meta||"";
+  const ap=(s.match(/AP\s*(\d+)/i)||[])[1];
+  const dp=(s.match(/DP\s*(\d+)/i)||[])[1];
+  const cost=(s.match(/(?:コスト|c)\s*(\d+)/i)||[])[1];
+  const pos=(s.match(/捕手|一塁手?|二塁手?|三塁手?|遊撃手?|外野手?|指名打者|DH|投手/)||[])[0]||"";
+  return {ap:ap?+ap:null,dp:dp?+dp:null,cost:cost!=null?+cost:null,pos};
+}
+function registerLib(c){
+  if(!c||!c.name)return;
+  if(!G.library)G.library={};
+  const ex=G.library[c.name]||{};
+  const m=parseMeta(c.meta!=null?c.meta:ex.meta);
+  G.library[c.name]={name:c.name,role:c.role||ex.role||null,
+    meta:c.meta!=null&&c.meta!==""?c.meta:(ex.meta||""),
+    eff:c.eff!=null&&c.eff!==""?c.eff:(ex.eff||""),
+    pos:m.pos||ex.pos||"",ap:m.ap!=null?m.ap:(ex.ap!=null?ex.ap:null),
+    dp:m.dp!=null?m.dp:(ex.dp!=null?ex.dp:null),
+    cost:m.cost!=null?m.cost:(ex.cost!=null?ex.cost:null),
+    zone:!!(c.zone||ex.zone),tcard:!!(c.tcard||ex.tcard),img:ex.img||null};
+}
+let SEEDED=null;
+function seedLibrary(){
+  invalidateNum2Key();
+  if(SEEDED){
+    G.library=JSON.parse(JSON.stringify(SEEDED));
+    applySeedImg();return;
+  }
+  G.library={};
+  parseDecklist(POOL2).order.forEach(registerLib);
+  parseDecklist(POOL_PROMO).order.forEach(registerLib);
+  ["ロッテ (BP03)","楽天 (BP03)"].forEach(k=>{
+    const d=parseDecklist(PRESETS[k]);d.order.concat(d.main).forEach(registerLib);
+  });
+  parseDecklist(POOL).order.forEach(registerLib);
+  parseDecklist(POOL_BP03).order.forEach(registerLib);
+  pruneLibrary();
+  CODE_KEYS.clear();Object.keys(G.library).forEach(k=>CODE_KEYS.add(k));
+  SEEDED=JSON.parse(JSON.stringify(G.library));
+  applySeedImg();
+}
+function pruneLibrary(){
+  if(!G.library)return;
+  const keys=Object.keys(G.library);
+  const byDisp={};keys.forEach(k=>{const d=dispName(k);(byDisp[d]=byDisp[d]||[]).push(k);});
+  keys.forEach(k=>{
+    if(cardNo(k))return;
+    if(G.library[k]&&G.library[k].img)return;
+    if((byDisp[k]||[]).some(k2=>k2!==k&&cardNo(k2)))delete G.library[k];
+  });
+}
+const SETRANK=[[/^CSD|^PSD/,0],[/^CBP01|^PBP01/,1],[/^CBP02|^PBP02/,2],[/^CBP03|^PBP03/,3],[/^CBP04|^PBP04/,4],[/^TBP01/,5],[/^BP01/,6],[/^BP02/,7],[/^PB01/,8],[/^BP03/,9],[/^TIME|^TEAM/,15]];
+function setRank(no){for(const[re,r]of SETRANK)if(re.test(no||""))return r;return 19;}
+function libSort(a,b){return setRank(cardNo(a))-setRank(cardNo(b))||cardNo(a).localeCompare(cardNo(b))||dispName(a).localeCompare(dispName(b),"ja");}
+function scheduleRender(){clearTimeout(renderT);renderT=setTimeout(()=>{try{render();}catch(e){}},80);}
+function libImg(name){
+  const no=normNo(cardNo(name));
+  if(no&&IMG[no])return IMG[no];
+  if(no&&IMGIDX[no]&&!IMGwant.has(no)){IMGwant.add(no);queueImgFetch();}
+  return (G.library&&G.library[name]&&G.library[name].img)||null;
+}
+function queueImgFetch(){clearTimeout(imgQT);imgQT=setTimeout(flushImgQueue,60);}
+function flushImgQueue(){
+  if(!db)return;
+  const batch=[...IMGwant].filter(no=>!IMG[no]&&IMGIDX[no]).slice(0,24);
+  batch.forEach(no=>{
+    db.ref("cardimg/"+no).once("value").then(s=>{const v=s.val();if(v)IMG[no]=v;IMGwant.delete(no);scheduleRender();})
+      .catch(()=>{IMGwant.delete(no);});
+  });
+  if(IMGwant.size>batch.length&&batch.length)setTimeout(flushImgQueue,400);
+}
+function prefetchInPlay(){
+  if(!db||!G)return;
+  try{deckCardNos().forEach(no=>{if(!IMG[no]&&IMGIDX[no])IMGwant.add(no);});}catch(e){}
+  queueImgFetch();
+}
+async function loadCardImages(){
+  if(!db)return;
+  db.ref("cardimg_idx").on("value",s=>{IMGIDX=s.val()||{};prefetchInPlay();},()=>{});
+  db.ref("cardimg").on("child_changed",s=>{IMG[s.key]=s.val();scheduleRender();},()=>{});
+  db.ref("cardimg").on("child_removed",s=>{delete IMG[s.key];scheduleRender();},()=>{});
+}
+let WEBP_OK=null;
+function webpSupported(){
+  if(WEBP_OK!==null)return WEBP_OK;
+  try{const c=document.createElement("canvas");c.width=c.height=1;
+    WEBP_OK=c.toDataURL("image/webp").indexOf("data:image/webp")===0;}
+  catch(e){WEBP_OK=false;}
+  return WEBP_OK;
+}
+function downscaleDataURI(file,maxW){
+  return new Promise(resolve=>{
+    const url=URL.createObjectURL(file),im=new Image();
+    im.onload=()=>{
+      URL.revokeObjectURL(url);
+      const sc=Math.min(1,maxW/(im.naturalWidth||maxW));
+      const c=document.createElement("canvas");
+      c.width=Math.max(1,Math.round((im.naturalWidth||maxW)*sc));
+      c.height=Math.max(1,Math.round((im.naturalHeight||maxW)*sc));
+      const webp=webpSupported();
+      try{c.getContext("2d").drawImage(im,0,0,c.width,c.height);
+        resolve(c.toDataURL(webp?"image/webp":"image/jpeg",webp?0.72:0.78));}
+      catch(e){resolve(null);}
+    };
+    im.onerror=()=>{URL.revokeObjectURL(url);resolve(null);};
+    im.src=url;
+  });
+}
+async function putCardImg(no,uri){
+  if(!uri||uri.length>700000)return false;
+  const ts=Date.now();
+  await db.ref("cardimg/"+no).set(uri);
+  await db.ref("cardimg_idx/"+no).set(ts);
+  IMG[no]=uri;IMGIDX[no]=ts;return true;
+}
+async function removeCardImg(no){
+  if(!db)return;
+  try{await db.ref("cardimg/"+no).remove();await db.ref("cardimg_idx/"+no).remove();}catch(e){}
+  delete IMG[no];delete IMGIDX[no];
+}
+async function setCardImg(name,file){
+  const no=normNo(cardNo(name));
+  if(!no){toast("このカードには番号が無いため画像を保存できません（番号付きで登録してください）");return false;}
+  if(!db){toast("同期に接続していません（Firebase未設定）。");return false;}
+  const uri=await downscaleDataURI(file,300);
+  if(!uri){toast("画像を読み込めませんでした");return false;}
+  if(!await putCardImg(no,uri)){toast("画像が大きすぎます");return false;}
+  render();return true;
+}
+function deckCardNos(){
+  const s=new Set();const add=nm=>{const n=cardNo(nm);if(n)s.add(normNo(n));};
+  ["p1","p2"].forEach(p=>{
+    const d=parseDecklist(G.decklists[p]||"");d.order.concat(d.main).forEach(c=>add(c.name));
+    const z=G.zones[p]||{};
+    (z.lineup||[]).forEach(sl=>(sl||[]).forEach(c=>c&&add(c.name)));
+    ["hand","md","od","mound","bench","main","support","inning","out","rest","team","b1","b2","b3"].forEach(k=>(z[k]||[]).forEach(c=>c&&add(c.name)));
+  });
+  return s;
+}
+async function clearAllCardImgs(onProg){
+  if(!db){toast("同期に接続していません。");return {done:0,left:-1};}
+  const n=Object.keys(IMGIDX).length;
+  if(onProg)onProg(0,"…");
+  try{await db.ref("cardimg").remove();await db.ref("cardimg_idx").remove();}catch(e){}
+  IMG={};IMGIDX={};IMGwant.clear();render();
+  return {done:n,left:0};
+}
+const NOre=/\s+([A-Z][A-Z0-9]*-[A-Z0-9]+)$/;
+function dispName(name){return (name||"").replace(NOre,"");}
+function cardNo(name){const m=(name||"").match(NOre);return m?m[1]:"";}
+const TEAMS={F:"日本ハム",M:"ロッテ",DB:"DeNA",S:"ヤクルト",E:"楽天",H:"ソフトバンク",C:"広島",D:"中日",B:"オリックス",L:"西武",G:"巨人",T:"阪神",SJ:"侍ジャパン",_:"その他"};
+function teamCode(name){const m=cardNo(name).match(/-([A-Z]+)\d*/);return (m&&TEAMS[m[1]])?m[1]:"_";}
+function teamCodeFromNo(no){const m=normNo(no).match(/-([A-Z]+)\d*/);return (m&&TEAMS[m[1]])?m[1]:"_";}
+async function clearTeamCardImgs(teamKey,onProg){
+  if(!db){toast("同期に接続していません。");return {done:0};}
+  const nos=Object.keys(IMGIDX).filter(no=>teamCodeFromNo(no)===teamKey);
+  let done=0;
+  for(const no of nos){
+    try{await db.ref("cardimg/"+no).remove();await db.ref("cardimg_idx/"+no).remove();}catch(e){}
+    delete IMG[no];delete IMGIDX[no];done++;
+    if(onProg)onProg(done,nos.length);
+  }
+  render();
+  return {done};
+}
+
+/* ---------- deck parsing ---------- */
+let NUM2KEY=null;
+function invalidateNum2Key(){NUM2KEY=null;}
+function num2key(no){
+  if(!NUM2KEY){NUM2KEY={};const lib=(G&&G.library)||{};
+    Object.keys(lib).forEach(k=>{const n=cardNo(k);if(n){const nn=normNo(n);if(!NUM2KEY[nn])NUM2KEY[nn]=k;}});}
+  return NUM2KEY[normNo(no)]||null;
+}
+function parseDecklist(txt){
+  const order=[],main=[];let bucket=order;
+  (txt||"").split(/\r?\n/).forEach(line=>{
+    const s=line.trim();if(!s)return;
+    if(/^#/.test(s)){bucket=/メイン|main/i.test(s)?main:order;return;}
+    let n=1,body=s;const mm=s.match(/^(\d+)\s*[x×]\s*(.+)$/i);if(mm){n=Math.min(9,+mm[1]);body=mm[2].trim();}
+    let role=null,zone=false,tcard=false;
+    // a whole-line bare card number (TEAM-M04, TBP01-M08 等) is never a role-prefix line —
+    // checking this first stops "T"/"Z" from being misread as 役割指定 and eating the card number's leading letter
+    const wholeBare=body.match(/^[A-Za-z][A-Za-z0-9]*[-_][A-Za-z0-9]+$/);
+    if(!wholeBare){
+      const rm=body.match(/^(投|野|Z|ゾーン|ZONE|T|チーム|TEAM|先発|投手|野手)\s*[:：]?\s*(.+)$/i);
+      if(rm){
+        if(/^(z|ゾーン|zone)$/i.test(rm[1])){zone=true;role="F";}
+        else if(/^(t|チーム|team)$/i.test(rm[1])){tcard=true;}
+        else role=/投/.test(rm[1])?"P":"F";
+        body=rm[2].trim();
+      }
+    }
+    const parts=body.split("|").map(x=>x.trim());
+    let nm=parts[0]||"（無名）";const meta=parts[1]||"",eff=parts.slice(2).join(" | ")||"";
+    // a bare card number (BP03-M06 etc.) resolves to the matching library card
+    const bare=nm.match(/^([A-Za-z][A-Za-z0-9]*[-_][A-Za-z0-9]+)$/);
+    if(bare){const k=num2key(bare[1]);if(k)nm=k;}
+    // when no role given, borrow it from the library entry
+    if(!role&&!zone&&!tcard){
+      const L=(G&&G.library&&G.library[nm])||null;
+      if(L){if(L.tcard)tcard=true;else if(L.zone){zone=true;role="F";}else if(L.role)role=L.role;}
+    }
+    for(let i=0;i<n;i++)bucket.push({name:nm,meta,eff,role,zone,tcard});
+  });
+  return {order,main};
+}
+/* DeckLogのJSON（プロキシ経由）→ このツールのデッキテキスト形式に変換。
+   カード番号だけ渡せば parseDecklist 側がライブラリから役割/名前を解決する。 */
+function decklogJsonToText(j){
+  const team=(j.sub_list||[])[0];
+  const order=(j.p_list||[]).slice().sort((a,b)=>(a.slot||0)-(b.slot||0));
+  const main=j.list||[];
+  let s="# オーダー（DeckLog "+(j.deck_id||"")+"）\n";
+  if(team)s+=team.card_number+"\n";
+  order.forEach(c=>{for(let i=0;i<(c.num||1);i++)s+=c.card_number+"\n";});
+  s+="# メイン\n";
+  main.forEach(c=>{const n=c.num||1;s+=(n>1?n+"x ":"")+c.card_number+"\n";});
+  return s;
+}
+async function fetchDecklogDeck(code){
+  code=(code||"").trim().toUpperCase();
+  if(!/^[A-Z0-9]{3,12}$/.test(code))throw new Error("デッキコードの形式が変です（例: GC672）");
+  if(!DECKLOG_PROXY||DECKLOG_PROXY.includes("REPLACE_ME"))throw new Error("DeckLog取り込み用プロキシが未設定です");
+  const r=await fetch(DECKLOG_PROXY.replace(/\/$/,"")+"/"+encodeURIComponent(code));
+  if(!r.ok)throw new Error("取得失敗（"+r.status+"）");
+  const j=await r.json();
+  if(!j||!j.list)throw new Error("このコードのデッキが見つかりません");
+  return decklogJsonToText(j);
+}
+function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+function mkCard(c,down){const L=G.library[c.name]||{};
+  return {iid:uid(),name:c.name,meta:c.meta||"",eff:c.eff||"",role:c.role||L.role||null,
+    zone:!!(c.zone||L.zone),tcard:!!(c.tcard||L.tcard),down:!!down,rest:false};}
+function layoutSide(p){
+  const {order,main}=parseDecklist(G.decklists[p]||"");
+  order.concat(main).forEach(registerLib);
+  const z=emptyZones();
+  const bat=order.filter(c=>c.role!=="P"&&!c.zone&&!c.tcard),pit=order.filter(c=>c.role==="P"),zon=order.filter(c=>c.zone),tc=order.filter(c=>c.tcard);
+  bat.forEach((c,i)=>{if(i<9)z.lineup[i].push(mkCard(c,false));else z.bench.push(mkCard(c,true));});
+  pit.forEach((c,i)=>(i===0?z.mound:z.bench).push(mkCard(c,i!==0)));
+  zon.forEach(c=>z.bench.push(mkCard(c,true)));
+  tc.forEach(c=>z.team.push(mkCard(c,false)));
+  z.md=shuffle(main.map(c=>mkCard(c,true)));
+  G.zones[p]=z;G.board.order[p]=1;
+}
+
+/* ---------- persistence / sync ---------- */
+const CODE_KEYS=new Set();
+function computeLibExtra(){
+  // only user-added custom cards live in the game doc; images live in cardimg/all
+  const ex={};let n=0;
+  Object.keys(G.library||{}).forEach(k=>{
+    const v=G.library[k];if(!v||CODE_KEYS.has(k))return;
+    if(n++>=200)return;
+    ex[k]={name:v.name,role:v.role||null,meta:v.meta||"",eff:v.eff||"",zone:!!v.zone,tcard:!!v.tcard};
+  });
+  return ex;
+}
+function snapshotG(){
+  const s=JSON.parse(JSON.stringify(G));
+  delete s.library;
+  s.libExtra=computeLibExtra();
+  return s;
+}
+function syncOuts(){
+  const b=G.board;if(!b)return;
+  if(!b.outBase)b.outBase={p1:0,p2:0};
+  const atk=b.half==="top"?"p1":"p2";
+  const cur=(G.zones[atk]&&G.zones[atk].out)?G.zones[atk].out.length:0;
+  b.outs=Math.max(0,Math.min(3,cur-(b.outBase[atk]||0)));
+}
+function save(){
+  G.rev=(G.rev||0)+1;G.updatedBy=clientId;
+  syncOuts();
+  const snap=snapshotG();
+  try{LS.setItem("dorio_g_"+GID,JSON.stringify(snap));
+    LS.setItem("dorio_dl_p1",G.decklists.p1);LS.setItem("dorio_dl_p2",G.decklists.p2);}catch(e){}
+  if(docRef){clearTimeout(saveTimer);
+    saveTimer=setTimeout(()=>{docRef.set(JSON.stringify(snap)).catch(()=>flashSync("同期エラー",true));},170);}
+  render();
+}
+function pushLog(msg,sys){G.log.push({id:uid(),t:now(),who:sys?"":myName,sys:!!sys,msg});if(G.log.length>60)G.log=G.log.slice(-60);}
+function flashSync(txt,warn){const p=$("#syncPill");p.className="pill"+(warn?" local":(db?" live":" local"));$("#syncTxt").textContent=txt;}
+async function initSync(){
+  const cfg=window.FIREBASE_CONFIG||{};
+  if(!cfg.databaseURL||!window.firebase){
+    db=null;flashSync("Firebase未設定 — ローカル専用（セットアップ手順参照）",true);return;
+  }
+  try{
+    firebase.initializeApp(cfg);
+    db=firebase.database();
+    docRef=db.ref("games/"+GID+"/state");
+  }catch(e){db=null;flashSync("Firebase接続エラー",true);return;}
+  flashSync("接続済み・ライブ");
+  loadCardImages();
+  try{
+    const cur=await docRef.get();
+    if(cur.exists())applyRemote(cur.val());
+    else await docRef.set(JSON.stringify(snapshotG()));
+  }catch(e){flashSync("同期エラー・ローカル継続",true);}
+  docRef.on("value",s=>{
+    if(!s.exists())return;
+    let d;try{d=JSON.parse(s.val());}catch(e){return;}
+    if(!d||!d.zones)return;
+    if(d.updatedBy===clientId&&d.rev===G.rev)return;
+    if((d.rev||0)<(G.rev||0))return;
+    applyRemote(d);
+  },()=>flashSync("同期切断・ローカル継続",true));
+}
+function applyRemote(d){
+  if(typeof d==="string"){try{d=JSON.parse(d);}catch(e){return;}}
+  try{G=JSON.parse(JSON.stringify(d));}catch(e){G=d;}
+  migrate();sel=null;render();prefetchInPlay();
+}
+function migrate(){
+  if(!G.zones)return;
+  const wasV=G.v||0;
+  G.v=3;if(!G.library)G.library={};
+  if(!G.board.tp)G.board.tp={p1:3,p2:3};
+  if(!G.board.line)G.board.line={p1:[],p2:[]};
+  if(!G.board.outBase)G.board.outBase={p1:0,p2:0};
+  ["p1","p2"].forEach(q=>{if(!Array.isArray(G.board.line[q]))G.board.line[q]=[];});
+  if(!G.decksize)G.decksize={p1:40,p2:40};
+  ["p1","p2"].forEach(q=>{if(typeof G.decksize[q]!=="number")G.decksize[q]=40;});
+  ["p1","p2"].forEach(p=>{const z=G.zones[p];if(!z)return;
+    if(!Array.isArray(z.lineup)||z.lineup.length!==9)z.lineup=[[],[],[],[],[],[],[],[],[]];
+    if(!z.hand)z.hand=[];CARDZ.forEach(k=>{if(!z[k])z[k]=[];});
+    if(z.order&&z.lineup.every(a=>!a.length)){
+      const bat=z.order.filter(c=>c&&c.role!=="P"),pit=z.order.filter(c=>c&&c.role==="P");
+      bat.forEach((c,i)=>z.lineup[Math.min(8,i)].push(c));pit.forEach(c=>z.bench.push(c));delete z.order;
+    }
+    if(z.deck&&!z.md.length){z.md=z.deck;delete z.deck;}
+    if(!z.mound)z.mound=[];
+    if(wasV<3&&z.mound.length===0&&z.bench.length){
+      const k=z.bench.findIndex(c=>c&&(c.role==="P"||(G.library[c.name]||{}).role==="P"));
+      if(k>=0){const m=z.bench.splice(k,1)[0];m.down=false;z.mound.push(m);}
+    }
+    z.bench.forEach(c=>{if(c&&(wasV<3||c.down==null))c.down=true;});
+    z.mound.forEach(c=>{if(c)c.down=false;});
+  });
+  const raw=G.libExtra||G.library||{};   // legacy docs stored full G.library here
+  const big=Object.keys(raw).length>400;
+  G.library={};
+  seedLibrary();                          // rebuilds from code, populates CODE_KEYS
+  Object.keys(raw).forEach(k=>{
+    const v=raw[k];if(!v)return;
+    if(big&&CODE_KEYS.has(k))return;       // discard bloated legacy seed copy
+    const img=v.img;                       // legacy: image was inline on the entry
+    G.library[k]={...(G.library[k]||{name:k}),...v};delete G.library[k].img;
+    if(img){const no=cardNo(k);if(no&&!IMG[no])IMG[no]=img;}
+  });
+  delete G.libExtra;
+}
+function applySeedImg(){
+  if(!G.library)return;
+  Object.keys(SEED_IMG).forEach(n=>{const no=cardNo(n);if(no&&!IMG[no])IMG[no]=SEED_IMG[n];});
+}
+
+/* ---------- perspective ---------- */
+function mySeat(){if(G.seats.p1&&G.seats.p1.cid===clientId)return"p1";if(G.seats.p2&&G.seats.p2.cid===clientId)return"p2";return null;}
+function bottomSeat(){return mySeat()||"p1";}
+function other(p){return p==="p1"?"p2":"p1";}
+function teamName(p){const s=G.seats[p];return(s?s.name:G.names[p])+"("+(p==="p1"?"先攻":"後攻")+")";}
+
+/* ================= RENDER ================= */
+function render(){
+  if(!G)return;
+  document.body.classList.toggle("selmode",!!sel);
+  renderScoreboard();
+  const me=mySeat();
+  $("#panelTop").innerHTML="";$("#panelTop").append(renderPanel("p1",me==="p1",true));
+  $("#panelBot").innerHTML="";$("#panelBot").append(renderPanel("p2",me==="p2",false));
+  renderLog();renderRollWho();
+}
+function addRun(p,inn,d){
+  const b=G.board;if(inn<0)inn=0;
+  const L=b.line[p]||(b.line[p]=[]);while(L.length<=inn)L.push(0);
+  L[inn]=Math.max(0,(L[inn]||0)+d);
+  b.score[p]=Math.max(0,(b.score[p]||0)+d);
+  pushLog(`${teamName(p)} ${inn+1}回 ${d>0?"+1":"-1"}（計${b.score[p]}）`);save();
+}
+function tpCtl(p){const b=G.board;const n=b.tp[p];const toks=h("span",{class:"toks"});
+  for(let i=0;i<Math.min(n,6);i++)toks.append(h("span",{class:"tok"}));
+  return h("div",{class:"sb-tp"},"TP",
+    h("button",{onclick:()=>{b.tp[p]=Math.max(0,n-1);pushLog(`${teamName(p)} TP ${b.tp[p]}`);save();}},"−"),
+    h("b",{class:"mono"},String(n)),toks,
+    h("button",{onclick:()=>{b.tp[p]=n+1;pushLog(`${teamName(p)} TP ${b.tp[p]}`);save();}},"+"));}
+function renderScoreboard(){
+  const b=G.board,sb=$("#scoreboard");sb.innerHTML="";
+  const team=(p,right)=>h("div",{class:"sb-team"+(right?" right":"")},
+    h("div",{class:"sb-name"},h("span",{class:"tag"+(p==="p1"?" acc":"")},p==="p1"?"先攻":"後攻"),
+      G.seats[p]?G.seats[p].name:G.names[p]),
+    h("div",{class:"runctl"},
+      h("button",{title:`${b.inning}回の得点−1`,onclick:()=>addRun(p,b.inning-1,-1)},"−"),
+      h("div",{class:"sb-runs mono"},String(b.score[p])),
+      h("button",{title:`${b.inning}回の得点+1`,onclick:()=>addRun(p,b.inning-1,1)},"+")),
+    tpCtl(p));
+  sb.append(team("p1",false));
+  syncOuts();
+  const atkS=b.half==="top"?"p1":"p2";
+  const outs=h("div",{class:"outs"},h("span",{title:"アウトエリアの枚数から自動カウント。ズレたらドットをクリックで補正"},"OUT"));
+  for(let i=0;i<3;i++)outs.append(h("button",{class:"out-dot"+(b.outs>i?" on":""),
+    onclick:()=>{
+      const target=(b.outs===i+1)?i:i+1;
+      const cur=((G.zones[atkS]&&G.zones[atkS].out)||[]).length;
+      b.outBase[atkS]=cur-target;
+      pushLog(`アウト ${target}（補正）`);save();
+    }}));
+  sb.append(h("div",{class:"sb-mid"},
+    h("div",{class:"inning"},
+      h("button",{class:"step",onclick:()=>{b.inning=Math.max(1,b.inning-1);save();}},"‹"),
+      h("div",{class:"num mono"},String(b.inning)),
+      h("div",{class:"half"},
+        h("button",{class:b.half==="top"?"on":"",onclick:()=>{b.half="top";save();}},"表"),
+        h("button",{class:b.half==="bot"?"on":"",onclick:()=>{b.half="bot";save();}},"裏")),
+      h("button",{class:"step",onclick:()=>{b.inning++;save();}},"›")),
+    outs,
+    h("button",{class:"change",onclick:()=>{
+      b.outs=0;b.swing=null;if(b.half==="top")b.half="bot";else{b.half="top";b.inning++;}
+      const na=b.half==="top"?"p1":"p2";
+      if(b.outBase)b.outBase[na]=(G.zones[na].out||[]).length;
+      pushLog(`チェンジ → ${b.inning}回${b.half==="top"?"表":"裏"}`);save();}},"チェンジ ⟳")));
+  sb.append(team("p2",true));
+  // line score (innings 1-5, more if extra innings)
+  const cols=Math.min(15,Math.max(3,b.inning));
+  const tbl=h("table");
+  const hr=h("tr",{},h("th",{}," "));
+  for(let i=1;i<=cols;i++)hr.append(h("th",{},String(i)));
+  hr.append(h("th",{},"R"));
+  tbl.append(hr);
+  ["p1","p2"].forEach(p=>{
+    const tr=h("tr",{});
+    tr.append(h("td",{class:"tm"},p==="p1"?"先攻":"後攻"));
+    for(let i=0;i<cols;i++){
+      const v=(b.line[p]||[])[i]||0;
+      tr.append(h("td",{class:"run"+(i===b.inning-1?" cur":""),title:`${p==="p1"?"先攻":"後攻"} ${i+1}回 — クリック+1 / 長押し・右クリック−1`,
+        onclick:()=>addRun(p,i,1),
+        oncontextmenu:e=>{e.preventDefault();addRun(p,i,-1);}},String(v)));
+    }
+    tr.append(h("td",{class:"tot"},String(b.score[p]||0)));
+    tbl.append(tr);
+  });
+  sb.append(h("div",{class:"linescore"},tbl,
+    h("div",{class:"ls-hint"},"セル: クリックで+1 / 右クリック（長押し）で−1。スコアボードの −／＋ は現在の回。")));
+  const t=b.turn;
+  sb.append(h("div",{class:"turnbar"},"手番: ",h("span",{class:"who"},teamName(t)),
+    h("button",{onclick:()=>{b.turn=other(t);pushLog(`手番 → ${teamName(other(t))}`);save();}},"手番を渡す"),
+    h("button",{style:"background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700",
+      onclick:()=>showdownSupport(true)},"勝負！サポート公開"),
+    h("button",{onclick:()=>showdownSupport(false)},"サポートを伏せる")));
+  const atk=b.half==="top"?"p1":"p2";
+  const swBtn=(v,lab)=>h("button",{
+    style:b.swing===v?"background:var(--gold);border-color:var(--gold);color:#241a02;font-weight:800":"",
+    onclick:()=>{b.swing=(b.swing===v?null:v);pushLog(`${teamName(atk)} 宣言: ${b.swing==="meet"?"ミート":b.swing==="power"?"強振":"取消"}`);save();}},lab);
+  sb.append(h("div",{class:"turnbar"},
+    h("span",{class:"who"},teamName(atk)+" 打撃宣言"),
+    swBtn("meet","ミート"),swBtn("power","強振"),
+    h("span",{style:"font-size:11px;color:var(--ink-soft)"},b.swing?"":"（未宣言）")));
+}
+function renderPanel(p,mine,flip){
+  const seat=G.seats[p],iAm=seat&&seat.cid===clientId;
+  const head=h("div",{class:"p-head"},
+    h("div",{class:"pn"},
+      h("span",{class:"tag",style:"background:"+(p==="p1"?"var(--accent)":"var(--navy)")},p==="p1"?"先攻":"後攻"),
+      seat?seat.name:G.names[p],mine?"（あなた）":""),
+    h("button",{class:"seatbtn"+(iAm?" mine":""),onclick:()=>toggleSeat(p)},
+      iAm?"席を立つ":(seat?"着席: "+seat.name:"この席に座る")),
+    h("button",{class:"seatbtn",onclick:()=>openDeck(p)},"デッキ"),
+    h("button",{class:"seatbtn",onclick:()=>setup(p)},"配置し直す"),
+    h("div",{class:"minictl"},"打順",
+      h("button",{onclick:()=>{G.board.order[p]=(G.board.order[p]+7)%9+1;save();}},"−"),
+      h("b",{class:"mono"},String(G.board.order[p])),
+      h("button",{onclick:()=>{G.board.order[p]=G.board.order[p]%9+1;save();}},"+")),
+    diceMini(p),tpCtl(p));
+  const wrap=h("div",{class:"panel"},head);
+  const fs=h("div",{class:"fieldscroll"});
+  fs.append(renderHand(p,mine),renderField(p,flip));
+  wrap.append(fs);return wrap;
+}
+function diceMini(p){const d=G.dice[p];
+  const isNewRoll=d&&d.ts&&d.ts!==lastDiceTs[p];
+  if(d&&d.ts)lastDiceTs[p]=d.ts;
+  return h("div",{class:"dice-mini"},"ダイス",h("span",{class:"val"+(isNewRoll?" flash":"")},d?String(d.total):"—"),
+    d?h("span",{},`(${d.dice.join("+")}${d.mod?(d.mod>0?"+"+d.mod:d.mod):""})`):"",
+    h("button",{style:"width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel)",onclick:()=>rollFor(p)},"🎲"));}
+
+function wireDrop(el,tp,tzk,tslot){
+  el.addEventListener("dragover",e=>{if(fieldDrag){e.preventDefault();el.classList.add("dropok");}});
+  el.addEventListener("dragleave",()=>el.classList.remove("dropok"));
+  el.addEventListener("drop",e=>{e.preventDefault();el.classList.remove("dropok");
+    const d=fieldDrag;fieldDrag=null;if(!d)return;
+    if(d.p===tp&&d.zk===tzk&&d.slot===tslot)return;
+    moveCard(d.p,d.zk,d.slot,d.i,tp,tzk,tslot);});
+  if(sel)el.addEventListener("click",e=>{if(e.target.closest(".card"))return;moveSelTo(tp,tzk,tslot);});
+}
+function renderHand(p,mine){
+  const arr=G.zones[p].hand||[];
+  const el=h("div",{class:"hand"},h("div",{class:"hlabel"},"手札 "+arr.length));
+  wireDrop(el,p,"hand");
+  if(!arr.length)el.append(h("div",{style:"font-size:10px;color:var(--ink-soft);align-self:center;padding:0 6px"},
+    mine?"山札から引いたカードはここに入ります":"（相手の手札）"));
+  arr.forEach((c,i)=>el.append(renderCard(p,"hand",null,i,c)));
+  el.append(h("div",{class:"hend"},
+    h("button",{onclick:()=>draw(p,1)},"山札から1枚"),
+    h("button",{onclick:async()=>{const v=await uiPrompt("何枚引く？","5");const n=+v;if(n>0)draw(p,n);}},"N枚"),
+    h("button",{onclick:()=>resetHand(p)},"手札リセット")));
+  return el;
+}
+function renderField(p,flip){
+  const f=h("div",{class:"field"+(flip?" flip":"")});
+  [["inning","z-inn"],["support","z-sup"],["main","z-main"],["team","z-team"]].forEach(([key,cls])=>f.append(simpleZone(p,key,cls)));
+  f.append(collapseZone(p,"out","z-out"));f.append(collapseZone(p,"rest","z-rest"));f.append(collapseZone(p,"od","z-od"));
+  f.append(pileZone(p,"md","z-md"));
+  f.append(baseZone(p));f.append(lineZone(p));
+  return f;
+}
+function zoneHead(p,key,label,extra){
+  const arr=key==="lineup"?G.zones[p].lineup.flat():(G.zones[p][key]||[]);
+  return h("div",{class:"zh"},h("span",{class:"zt",title:label},label),
+    h("span",{style:"display:flex;gap:3px;align-items:center"},extra||"",h("span",{class:"ct"},String(arr.length))));
+}
+function simpleZone(p,key,cls){
+  const arr=G.zones[p][key]||[];
+  let ex=null;
+  if(key==="md")ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();G.zones[p].md=shuffle(G.zones[p].md);pushLog(`${teamName(p)} 山札シャッフル`);save();}},"混")];
+  if(key==="support"&&arr.length)ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();
+    const n=G.zones[p].support.length;
+    G.zones[p].support.forEach(c=>{c.down=false;delete c.reveal;c.rest=false;G.zones[p].rest.push(c);});
+    G.zones[p].support=[];pushLog(`${teamName(p)} サポート${n}枚をレストへ`);save();}},"→レスト")];
+  const z=h("div",{class:"z "+cls},zoneHead(p,key,ZL[key],ex));
+  const body=h("div",{class:"zb"});
+  if(!arr.length)body.append(h("div",{class:"empty"},"—"));
+  arr.forEach((c,i)=>body.append(renderCard(p,key,null,i,c)));
+  z.append(body);wireDrop(z,p,key);
+  return z;
+}
+function sweepRevealedToRest(p,key){
+  const arr=G.zones[p][key]||[];
+  const revealed=arr.filter(c=>c.reveal);
+  if(!revealed.length)return;
+  G.zones[p][key]=arr.filter(c=>!c.reveal);
+  revealed.forEach(c=>{c.down=!!DOWNZ["rest"];delete c.reveal;G.zones[p].rest.push(c);});
+  pushLog(`${teamName(p)} 公開中の${ZL[key]}${revealed.length}枚をレストへ`);save();
+}
+function pileZone(p,key,cls){
+  const arr=G.zones[p][key]||[];
+  const ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();G.zones[p].md=shuffle(G.zones[p].md);pushLog(`${teamName(p)} 山札シャッフル`);save();}},"混")];
+  const z=h("div",{class:"z "+cls},zoneHead(p,key,ZL[key],ex));
+  const body=h("div",{class:"zb"});
+  if(!arr.length){body.append(h("div",{class:"stackcard empty2"},"空"));}
+  else{
+    let shown=0;
+    for(let i=0;i<arr.length&&shown<6;i++){if(arr[i].reveal){body.append(renderCard(p,key,null,i,arr[i]));shown++;}else break;}
+    const remain=arr.length-shown;
+    body.append(h("div",{class:"stackcard",onclick:e=>{e.stopPropagation();openPileMenu(p,key,e.currentTarget);}},
+      h("span",{class:"n"},"×"+remain)));
+    const revealedN=arr.filter(c=>c.reveal).length;
+    if(revealedN)body.append(h("button",{class:"zbtn",style:"align-self:center",
+      title:"効果で「◯枚まで手札に加え、残りをレストに置く」等の“残り”をまとめて処理。手札に取る分は先にカードをタップして個別に移動してから押す",
+      onclick:e=>{e.stopPropagation();sweepRevealedToRest(p,key);}},`残り${revealedN}枚→レスト`));
+  }
+  z.append(body);wireDrop(z,p,key);
+  return z;
+}
+function openPileMenu(p,key,anchor){
+  closePop();
+  const pop=h("div",{class:"pop"});
+  const act=(t,fn)=>pop.append(h("button",{onclick:()=>{fn();closePop();}},t));
+  const arr=G.zones[p][key];
+  act("1枚引く（→手札）",()=>draw(p,1));
+  act("N枚引く",async()=>{const v=await uiPrompt("何枚引く？","5");const n=+v;if(n>0)draw(p,n);});
+  act("トップ1枚をアウトへ（裏・自分だけ）",()=>{
+    const c=G.zones[p].md.shift();if(!c)return;
+    c.down=true;c.reveal="me";G.zones[p].out.push(c);
+    pushLog(`${teamName(p)} 山札トップを裏でアウトへ`);save();
+  });
+  act("シャッフル（reveal解除）",()=>{G.zones[p].md=shuffle(G.zones[p].md);G.zones[p].md.forEach(c=>delete c.reveal);pushLog(`${teamName(p)} 山札シャッフル`);save();});
+  pop.append(h("div",{class:"sep"}));
+  pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを公開（両者）"));
+  pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"all");closePop();}},n+"枚"))));
+  pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを自分だけ確認"));
+  pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"me");closePop();}},n+"枚"))));
+  act("伏せ直す",()=>{arr.forEach(c=>delete c.reveal);save();});
+  document.body.append(pop);
+  const r=anchor.getBoundingClientRect();
+  let x=r.left,y=r.bottom+4;
+  if(x+pop.offsetWidth>innerWidth-8)x=innerWidth-pop.offsetWidth-8;
+  if(y+pop.offsetHeight>innerHeight-8)y=r.top-pop.offsetHeight-4;
+  pop.style.left=Math.max(8,x)+"px";pop.style.top=Math.max(8,y)+"px";
+  popEl=pop;
+}
+function sweepAllToRest(p,key){
+  const arr=G.zones[p][key]||[];
+  if(!arr.length)return;
+  G.zones[p][key]=[];
+  arr.forEach(c=>{c.down=!!DOWNZ["rest"];delete c.reveal;G.zones[p].rest.push(c);});
+  pushLog(`${teamName(p)} ${ZL[key]}${arr.length}枚をレストへ`);save();
+}
+function collapseZone(p,key,cls){
+  const arr=G.zones[p][key]||[];
+  const extras=[];
+  if(arr.length>1)extras.push(h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();openZoneList(p,key);}},"一覧"));
+  if(key==="out"&&arr.length)extras.push(h("button",{class:"zbtn",
+    title:"アウトエリアに残っているカードをまとめてレストへ送ります（例：1枚をイニングエリアへ移した残り）",
+    onclick:e=>{e.stopPropagation();sweepAllToRest(p,key);}},"残り→レスト"));
+  const z=h("div",{class:"z "+cls},zoneHead(p,key,ZL[key],extras.length?extras:null));
+  const body=h("div",{class:"zb"});
+  if(!arr.length)body.append(h("div",{class:"empty"},"—"));
+  else{
+    const i=arr.length-1;
+    body.append(renderCard(p,key,null,i,arr[i]));
+    if(arr.length>1)body.append(h("div",{class:"pilecount",onclick:e=>{e.stopPropagation();openZoneList(p,key);}},"全"+arr.length+"枚 ▶"));
+  }
+  z.append(body);wireDrop(z,p,key);
+  return z;
+}
+function cardMini(c){
+  const L=G.library[c.name]||{},img=libImg(c.name),dn=dispName(c.name);
+  if(img)return h("div",{class:"cmini art"},h("img",{src:img,alt:dn}),h("div",{class:"t"},dn));
+  return h("div",{class:"cmini"},h("div",{class:"t"},dn),h("div",{class:"s"},[cardNo(c.name),c.meta||L.meta].filter(Boolean).join(" ")||"—"));
+}
+function openZoneList(p,key){
+  const arr=G.zones[p][key]||[];
+  const wrap=h("div",{});
+  wrap.append(h("h2",{},teamName(p)+" ・ "+ZL[key]+"（"+arr.length+"枚）"));
+  wrap.append(h("p",{class:"hint"},"公開情報。カードごとに移動先を選べます。"));
+  if(arr.length){
+    wrap.append(h("div",{class:"row",style:"margin-top:0"},
+      h("button",{onclick:()=>{G.zones[p][key].forEach(c=>{c.down=true;delete c.reveal;G.zones[p].md.push(c);});G.zones[p][key]=[];G.zones[p].md=shuffle(G.zones[p].md);pushLog(`${teamName(p)} ${ZL[key]}を山札へ戻してシャッフル`);save();closeModal();}},"全部を山札へ戻す（シャッフル）")));
+  }
+  const grid=h("div",{class:"zlist"});
+  if(!arr.length)grid.append(h("div",{style:"font-size:12px;color:var(--ink-soft)"},"（空）"));
+  arr.forEach((c,i)=>{
+    const cell=h("div",{class:"zlcell"});
+    cell.append(cardMini(c));
+    const bar=h("div",{class:"zlbar"});
+    [["hand","手札"],["md","山札"],["rest","レスト"],["out","アウト"],["inning","イニング"],["support","サポート"],["main","メイン"],["bench","ベンチ"]]
+      .filter(([k])=>k!==key).forEach(([k,lab])=>{
+        if(k==="out"){
+          bar.append(h("button",{onclick:()=>{moveCard(p,key,null,i,p,"out",undefined,false);openZoneList(p,key);}},"→アウト（表）"));
+          bar.append(h("button",{onclick:()=>{moveCard(p,key,null,i,p,"out",undefined,true);openZoneList(p,key);}},"→アウト（裏）"));
+          return;
+        }
+        bar.append(h("button",{onclick:()=>{
+          moveCard(p,key,null,i,p,k,undefined);openZoneList(p,key);
+        }},"→"+lab));
+      });
+    bar.append(h("button",{onclick:()=>openCardDetail(c.name)},"詳細"));
+    cell.append(bar);grid.append(cell);
+  });
+  wrap.append(grid);
+  wrap.append(h("div",{class:"row"},h("button",{onclick:closeModal},"閉じる")));
+  modal(wrap);
+}
+function mvBench(p,i,k,slot,tp){
+  if(tp){
+    G.board.tp[p]=Math.max(0,(G.board.tp[p]||0)-1);
+    pushLog(`${teamName(p)} 控え→${k==="mound"?"登板":"打順"} TP-1（→${G.board.tp[p]}）`);
+  }
+  moveCard(p,"bench",null,i,p,k,slot);openBench(p);
+}
+function openBench(p){
+  const arr=G.zones[p].bench||[],owner=(p===bottomSeat());
+  const wrap=h("div",{});
+  wrap.append(h("h2",{},teamName(p)+" ・ 控え（"+arr.length+"枚）"));
+  if(!owner){
+    wrap.append(h("p",{class:"hint"},"相手の非公開領域です。枚数のみ。"),
+      h("div",{class:"row"},h("button",{onclick:closeModal},"閉じる")));
+    modal(wrap);return;
+  }
+  wrap.append(h("p",{class:"hint"},"あなただけに表示。出場（→打順／→登板）は自動でTP-1。無償で出す場合はスコアボードのTPを+1で戻す。"));
+  const grid=h("div",{class:"zlist"});
+  if(!arr.length)grid.append(h("div",{style:"font-size:12px;color:var(--ink-soft)"},"（空）"));
+  arr.forEach((c,i)=>{
+    const cell=h("div",{class:"zlcell"}),L=G.library[c.name]||{};
+    cell.append(cardMini(c));
+    const bar=h("div",{class:"zlbar"});
+    if(c.zone||L.zone){
+      bar.append(h("button",{onclick:()=>{
+        const s=G.board.order[p]-1;
+        G.zones[p].bench.splice(i,1);c.down=false;delete c.reveal;G.zones[p].lineup[s].push(c);
+        G.board.tp[p]=Math.max(0,G.board.tp[p]-1);
+        pushLog(`${teamName(p)} ZONE「${c.name}」を打順${s+1}に重ねた（TP-1 → ${G.board.tp[p]}）`);save();openBench(p);
+      }},"→打順に重ねる(TP-1)"));
+    }else if(c.role==="P"||L.role==="P"){
+      bar.append(h("button",{onclick:()=>mvBench(p,i,"mound",undefined,true)},"→登板(TP-1)"));
+    }else{
+      bar.append(h("button",{onclick:()=>mvBench(p,i,"lineup",G.board.order[p]-1,true)},"→打順・現(TP-1)"));
+    }
+    [["support","サポート"],["hand","手札"],["md","山札"]].forEach(([k,lab])=>
+      bar.append(h("button",{onclick:()=>mvBench(p,i,k)},"→"+lab)));
+    bar.append(h("button",{onclick:()=>openCardDetail(c.name)},"詳細"));
+    cell.append(bar);grid.append(cell);
+  });
+  wrap.append(grid,h("div",{class:"row"},h("button",{onclick:closeModal},"閉じる")));
+  modal(wrap);
+}
+function baseZone(p){
+  const z=h("div",{class:"z z-base"},zoneHead(p,"b2","ベースエリア"));
+  const body=h("div",{class:"zb"});
+  [["b3","三塁"],["b2","二塁"],["b1","一塁"]].forEach(([k,lab])=>{
+    const arr=G.zones[p][k]||[];
+    const slot=h("div",{class:"bslot"},h("div",{class:"bh"},lab));
+    const bb=h("div",{class:"bb"});
+    if(!arr.length)bb.append(h("div",{class:"empty"},"—"));
+    arr.forEach((c,i)=>bb.append(renderCard(p,k,null,i,c)));
+    slot.append(bb);wireDrop(slot,p,k);body.append(slot);
+  });
+  z.append(body);return z;
+}
+function lineZone(p){
+  const z=h("div",{class:"z z-line"},h("div",{class:"zh"},h("span",{class:"zt"},"打順 / 投手 / ベンチ"),
+    h("span",{class:"ct"},String(G.zones[p].lineup.flat().length+G.zones[p].mound.length+G.zones[p].bench.length))));
+  const body=h("div",{class:"zb"});
+  const pbox=(key,label,extra)=>{
+    const arr=G.zones[p][key]||[];
+    const bx=h("div",{class:"benchbox"+(key==="mound"?" mound":"")},h("div",{class:"bh"},label));
+    const bb=h("div",{class:"bb"});
+    if(!arr.length)bb.append(h("div",{class:"empty"},extra||"—"));
+    arr.forEach((c,i)=>bb.append(renderCard(p,key,null,i,c)));
+    bx.append(bb);wireDrop(bx,p,key);return bx;
+  };
+  const benchBox=()=>{
+    const arr=G.zones[p].bench||[];
+    const bx=h("div",{class:"benchbox"},h("div",{class:"bh"},"控え（非公開）"));
+    const bb=h("div",{class:"bb"});
+    if(!arr.length)bb.append(h("div",{class:"empty"},"—"));
+    else bb.append(h("div",{class:"benchstack",title:"控え（相手には非公開）",
+      onclick:e=>{e.stopPropagation();openBench(p);}},
+      h("span",{class:"bs-n"},String(arr.length)),h("span",{class:"bs-l"},"控え ▶")));
+    bx.append(bb);wireDrop(bx,p,"bench");return bx;
+  };
+  body.append(pbox("mound","登板投手"),benchBox());
+  for(let s=0;s<9;s++){
+    const arr=G.zones[p].lineup[s]||[];
+    const slot=h("div",{class:"lslot"+(G.board.order[p]===s+1?" atbat":"")},h("div",{class:"lh"},String(s+1)));
+    const lb=h("div",{class:"lb"});
+    if(!arr.length)lb.append(h("div",{class:"empty"},"—"));
+    arr.forEach((c,i)=>lb.append(renderCard(p,"lineup",s,i,c)));
+    slot.append(lb);wireDrop(slot,p,"lineup",s);body.append(slot);
+  }
+  z.append(body);return z;
+}
+const OWNZ={hand:1,bench:1,support:1,out:1,rest:1};
+function cardFaceDown(p,zk,c){
+  if(soloMode)return false;  // 一人回しモード：両サイドとも全部表にして1人で操作できるようにする
+  const owner=(p===bottomSeat());
+  if(zk==="mound"||zk==="od")return false;
+  if(c.reveal==="all")return false;
+  if(zk==="md")return !(owner&&c.reveal==="me");
+  return c.down&&!(owner&&(c.reveal==="me"||OWNZ[zk]));
+}
+function renderCard(p,zk,slot,i,c){
+  const faceDown=cardFaceDown(p,zk,c);
+  const L=G.library[c.name]||{},isZone=c.zone||L.zone,isTeam=c.tcard||L.tcard;
+  const isSel=sel&&sel.p===p&&sel.zk===zk&&sel.slot===slot&&sel.i===i;
+  const el=h("button",{class:"card"+(faceDown?" down":"")+(c.rest?" rest":"")+(isSel?" sel":"")+(isZone?" zone":"")+(isTeam?" tcard":""),draggable:"true",
+    onclick:e=>{e.stopPropagation();onCardClick(p,zk,slot,i,c,el);},
+    ondragstart:e=>{fieldDrag={p,zk,slot,i};try{e.dataTransfer.setData("text/plain",c.name);e.dataTransfer.effectAllowed="move";}catch(x){}},
+    ondragend:()=>{fieldDrag=null;document.querySelectorAll(".dropok").forEach(x=>x.classList.remove("dropok"));}});
+  if(faceDown){el.append(h("div",{class:"nm"},zk==="hand"?"HAND":(zk==="bench"?(isZone?"ZONE":"BENCH"):(zk==="support"?"SUPPORT":"DREAM ORDER"))));return el;}
+  if(isZone)el.append(h("span",{class:"zbadge"},"ZONE"));
+  if(isTeam)el.append(h("span",{class:"zbadge tb"},"TEAM"));
+  const img=libImg(c.name),dn=dispName(c.name),no=cardNo(c.name);
+  if(img){
+    el.classList.add("art");
+    el.append(h("img",{src:img,alt:dn,draggable:"false"}));
+    const badge=(c.role==="P"||L.role==="P")?(L.dp!=null?"DP"+L.dp:"投"):(L.ap!=null?"AP"+L.ap:"");
+    if(badge)el.append(h("div",{class:"apdp"},badge));
+    el.append(h("div",{class:"nmbar"},dn));
+    return el;
+  }
+  if(!isZone&&!isTeam&&(c.role||L.role))el.append(h("span",{class:"role"+((c.role==="P"||L.role==="P")?" p":"")},(c.role==="P"||L.role==="P")?"投":"野"));
+  el.append(h("div",{class:"nm"},dn));
+  const meta=[no,c.meta||L.meta].filter(Boolean).join("  ");if(meta)el.append(h("div",{class:"meta"},meta));
+  const eff=c.eff||L.eff;if(eff)el.append(h("div",{class:"eff"},eff));
+  return el;
+}
+
+/* ---------- interaction ---------- */
+document.addEventListener("click",e=>{if(popEl&&!popEl.contains(e.target))closePop();});
+function closePop(){if(popEl){popEl.remove();popEl=null;}}
+function onCardClick(p,zk,slot,i,c,anchor){
+  if(sel&&sel.p===p&&sel.zk===zk&&sel.slot===slot&&sel.i===i){openMenu(p,zk,slot,i,c,anchor);return;}
+  sel={p,zk,slot,i};closePop();render();
+}
+function arrOf(p,zk,slot){return zk==="lineup"?G.zones[p].lineup[slot??0]:G.zones[p][zk];}
+function moveCard(fp,fzk,fslot,fi,tp,tzk,tslot,forceDown){
+  const from=arrOf(fp,fzk,fslot);if(!from)return;
+  const [card]=from.splice(fi,1);if(!card)return;
+  card.down=forceDown!=null?forceDown:!!DOWNZ[tzk];delete card.reveal;
+  arrOf(tp,tzk,tslot).push(card);
+  // 移動先が非公開ゾーンならログにカード名を出さない。アウトエリアのように移動時に
+  // 公開/非公開を選べるゾーンは forceDown（呼び出し側の明示指定）を優先する。
+  const hidesName=forceDown!=null?forceDown:(tzk!=="od"&&!!DOWNZ[tzk]);
+  const label=hidesName?"カード":`「${card.name}」`;
+  pushLog(`${teamName(fp)}: ${label}→ ${tzk==="lineup"?"打順"+((tslot??0)+1):ZL[tzk]}${forceDown!=null?(forceDown?"（裏）":"（表）"):""}`);
+  save();
+}
+function moveSelTo(p,zk,slot){if(!sel)return;const s=sel;sel=null;moveCard(s.p,s.zk,s.slot,s.i,p,zk,slot);}
+function openMenu(p,zk,slot,i,c,anchor){
+  closePop();
+  const pop=h("div",{class:"pop"});
+  const act=(t,fn)=>pop.append(h("button",{onclick:()=>{fn();closePop();}},t));
+  act(c.down?"表にする":"裏にする",()=>{c.down=!c.down;save();});
+  act(c.rest?"レスト解除":"レスト（横向き）",()=>{c.rest=!c.rest;save();});
+  if(zk==="lineup"){
+    const bz=G.zones[p].bench,zk2=bz.filter(x=>x.zone).length;
+    act(`ZONEを重ねる（ベンチ→ここ・TP-1）${zk2?"":" ※ベンチにZONE無し"}`,()=>{
+      if(!zk2){toast("ベンチにZONEカードがありません");return;}
+      const idx=bz.findIndex(x=>x.zone),zc=bz.splice(idx,1)[0];zc.down=false;
+      G.zones[p].lineup[slot].push(zc);
+      G.board.tp[p]=Math.max(0,G.board.tp[p]-1);
+      pushLog(`${teamName(p)} ZONE「${zc.name}」を打順${slot+1}に重ねた（TP-1 → ${G.board.tp[p]}）`);save();
+    });
+  }
+  if(c.zone&&zk==="lineup") act("ZONEをベンチに戻す",()=>{
+    G.zones[p].lineup[slot].splice(i,1);c.down=true;G.zones[p].bench.push(c);
+    pushLog(`${teamName(p)} ZONEカードをベンチへ`);save();});
+  pop.append(h("div",{class:"sep"}));
+  const zrow=h("div",{class:"zrow"});
+  MOVE.forEach(([k,lab])=>{
+    if(k===zk&&k!=="lineup")return;
+    if(k==="out"){
+      // アウトはカード効果によって公開/非公開どちらもあるので選ばせる
+      zrow.append(h("button",{onclick:()=>{moveCard(p,zk,slot,i,p,"out",undefined,false);closePop();}},"アウト（表）"));
+      zrow.append(h("button",{onclick:()=>{moveCard(p,zk,slot,i,p,"out",undefined,true);closePop();}},"アウト（裏）"));
+      return;
+    }
+    zrow.append(h("button",{onclick:()=>{
+      const tslot=k==="lineup"?(G.board.order[p]-1):undefined;
+      moveCard(p,zk,slot,i,p,k,tslot);closePop();
+    }},lab));
+  });
+  pop.append(zrow,h("div",{class:"sep"}));
+  act("カード詳細・画像",()=>openCardDetail(c.name));
+  document.body.append(pop);
+  const r=anchor.getBoundingClientRect();
+  let x=r.left,y=r.bottom+4;
+  if(x+pop.offsetWidth>innerWidth-8)x=innerWidth-pop.offsetWidth-8;
+  if(y+pop.offsetHeight>innerHeight-8)y=r.top-pop.offsetHeight-4;
+  pop.style.left=Math.max(8,x)+"px";pop.style.top=Math.max(8,y)+"px";
+  popEl=pop;
+}
+
+/* ---------- actions ---------- */
+async function toggleSeat(p){
+  const seat=G.seats[p];
+  if(seat&&seat.cid===clientId){G.seats[p]=null;pushLog(`${myName} が${p==="p1"?"先攻":"後攻"}席を離れました`,true);}
+  else if(seat){toast(seat.name+" が着席中です");return;}
+  else{
+    const raw=await uiPrompt("表示名",myName);
+    const nm=((raw==null?myName:raw)||myName).trim()||myName;
+    myName=nm;try{LS.setItem("dorio_name",nm);}catch(e){}
+    if(G.seats.p1&&G.seats.p1.cid===clientId)G.seats.p1=null;
+    if(G.seats.p2&&G.seats.p2.cid===clientId)G.seats.p2=null;
+    G.seats[p]={cid:clientId,name:nm};pushLog(`${nm} が${p==="p1"?"先攻":"後攻"}席に着席`,true);
+  }
+  save();
+}
+function draw(p,n){
+  let c=0;for(let k=0;k<n;k++){const card=G.zones[p].md.shift();if(!card)break;card.down=true;delete card.reveal;G.zones[p].hand.push(card);c++;}
+  pushLog(`${teamName(p)} ${c}ドロー（山札${G.zones[p].md.length}）`);save();
+}
+function revealTop(p,key,n,mode){
+  const arr=G.zones[p][key]||[];
+  arr.forEach((c,idx)=>{if(idx<n)c.reveal=mode;else delete c.reveal;});
+  pushLog(`${teamName(p)} ${ZL[key]}トップ${Math.min(n,arr.length)}枚を${mode==="all"?"公開":"自分だけ確認"}`);save();
+}
+function showdownSupport(open){
+  ["p1","p2"].forEach(q=>(G.zones[q].support||[]).forEach(c=>c.down=!open));
+  pushLog(open?"勝負：両者サポートエリアを公開":"サポートエリアを伏せた",true);save();
+}
+async function setup(p){
+  if(!await uiConfirm(`${p==="p1"?"先攻":"後攻"}側をデッキリストから再配置します。\n打順・ベンチ・山札・手札を組み直します（場のカードは戻ります）。`,"配置し直す"))return;
+  layoutSide(p);pushLog(`${teamName(p)} セットアップ`,true);save();
+}
+async function resetHand(p){
+  const arr=G.zones[p].hand||[];
+  if(!arr.length){toast("手札は空です");return;}
+  if(!await uiConfirm(`${p==="p1"?"先攻":"後攻"}側の手札${arr.length}枚を山札へ戻してシャッフルします。`,"手札をリセット"))return;
+  arr.forEach(c=>{c.down=true;delete c.reveal;c.rest=false;G.zones[p].md.push(c);});
+  G.zones[p].hand=[];
+  G.zones[p].md=shuffle(G.zones[p].md);
+  pushLog(`${teamName(p)} 手札をリセット（山札へ戻してシャッフル）`,true);save();
+}
+function rollFor(p){
+  const n=Math.max(1,Math.min(4,+$("#rollN").value||2)),mod=+$("#rollMod").value||0;
+  const dice=Array.from({length:n},()=>1+Math.floor(Math.random()*6));
+  const total=dice.reduce((a,b)=>a+b,0)+mod;
+  G.dice[p]={dice,mod,total,by:myName,ts:Date.now()};
+  pushLog(`🎲 ${teamName(p)}: [${dice.join(", ")}]${mod?(mod>0?" +"+mod:" "+mod):""} = ${total}`);save();
+}
+function coin(){pushLog(`🪙 コイン: ${Math.random()<.5?"表":"裏"}`);save();}
+
+/* ---------- log ---------- */
+function renderLog(){
+  const el=$("#log");el.innerHTML="";
+  G.log.forEach(e=>el.append(h("div",{class:"e"+(e.sys?" sys":"")},
+    h("span",{class:"t"},e.t),
+    e.who?h("span",{class:"w"},e.who+":"):(e.sys?h("span",{class:"w"},"卓"):""),e.msg)));
+  el.scrollTop=el.scrollHeight;
+}
+function renderRollWho(){
+  const s=$("#rollWho");if(!s)return;const cur=s.value;s.innerHTML="";
+  ["p1","p2"].forEach(p=>s.append(h("option",{value:p},teamName(p))));
+  s.value=cur||bottomSeat();
+}
+function sendLog(){const v=$("#logInput").value.trim();if(!v)return;$("#logInput").value="";pushLog(v);save();}
+
+/* ---------- modal ---------- */
+let modalLock=false;
+function modal(node,sm){const root=$("#modalRoot");root.innerHTML="";modalLock=false;
+  const m=h("div",{class:"modal",onclick:e=>{if(e.target===m&&!modalLock)root.innerHTML="";}},h("div",{class:"box"+(sm?" sm":"")},node));
+  root.append(m);return()=>root.innerHTML="";}
+function closeModal(){if(modalLock)return;$("#modalRoot").innerHTML="";}
+/* sandbox-safe replacements for window.alert/confirm/prompt (blocked in the artifact iframe) */
+function syncSoloBtn(){
+  const b=$("#btnSolo");if(!b)return;
+  b.style.cssText=soloMode?"background:var(--gold);border-color:var(--gold);color:#241a02;font-weight:700":"";
+}
+function toast(msg){
+  let t=document.getElementById("toastEl");
+  if(!t){t=h("div",{id:"toastEl",style:"position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1830ee;color:#fff;border:1px solid #ffffff22;padding:10px 16px;border-radius:9px;font-size:13px;z-index:10001;max-width:82vw;box-shadow:0 6px 24px #0008;white-space:pre-wrap;transition:opacity .25s"});document.body.append(t);}
+  t.textContent=msg;t.style.opacity="1";
+  clearTimeout(t._h);t._h=setTimeout(()=>{t.style.opacity="0";},3400);
+}
+function uiConfirm(msg,okLabel){
+  return new Promise(res=>{
+    const ov=h("div",{class:"modal",style:"z-index:10000"});
+    const done=v=>{ov.remove();res(v);};
+    ov.append(h("div",{class:"box sm"},
+      h("div",{style:"white-space:pre-wrap;margin-bottom:14px;font-size:14px;line-height:1.5"},msg),
+      h("div",{class:"row"},
+        h("button",{class:"pri",onclick:()=>done(true)},okLabel||"OK"),
+        h("button",{onclick:()=>done(false)},"キャンセル"))));
+    ov.addEventListener("click",e=>{if(e.target===ov)done(false);});
+    document.body.append(ov);
+  });
+}
+function uiPrompt(msg,def){
+  return new Promise(res=>{
+    const ov=h("div",{class:"modal",style:"z-index:10000"});
+    const inp=h("input",{type:"text",value:(def==null?"":String(def)),style:"width:100%;padding:7px;margin:10px 0;box-sizing:border-box"});
+    const done=v=>{ov.remove();res(v);};
+    inp.addEventListener("keydown",e=>{if(e.key==="Enter")done(inp.value);if(e.key==="Escape")done(null);});
+    ov.append(h("div",{class:"box sm"},
+      h("div",{style:"font-size:14px;line-height:1.5"},msg),inp,
+      h("div",{class:"row"},
+        h("button",{class:"pri",onclick:()=>done(inp.value)},"OK"),
+        h("button",{onclick:()=>done(null)},"キャンセル"))));
+    ov.addEventListener("click",e=>{if(e.target===ov)done(null);});
+    document.body.append(ov);setTimeout(()=>inp.focus(),40);
+  });
+}
+
+async function pickImgFor(name,after){
+  const inp=h("input",{type:"file",accept:"image/*"});
+  inp.addEventListener("change",async()=>{
+    const f=inp.files&&inp.files[0];if(!f)return;
+    try{const ok=await setCardImg(name,f);if(ok){pushLog(`「${dispName(name)}」に画像を追加`,true);render();if(after)after();}}
+    catch(e){toast("アップロード失敗: "+((e&&(e.code||e.message))||e));}
+  });
+  inp.click();
+}
+
+/* ---------- deck builder ---------- */
+function openDeck(p){
+  const cur=parseDecklist(G.decklists[p]||"");
+  cur.order.concat(cur.main).forEach(c=>{if(!G.library[c.name])registerLib(c);});
+  const upg=n=>{if(cardNo(n))return n;const c=Object.keys(G.library).filter(k=>k!==n&&cardNo(k)&&dispName(k)===n);return c.length===1?c[0]:n;};
+  let bat=cur.order.filter(c=>c.role!=="P"&&!c.zone&&!c.tcard).map(c=>upg(c.name));
+  let pit=cur.order.filter(c=>c.role==="P").map(c=>upg(c.name));
+  let zon=cur.order.filter(c=>c.zone).map(c=>upg(c.name));
+  let tc=cur.order.filter(c=>c.tcard).map(c=>upg(c.name));
+  const mn=[];const seen={};
+  cur.main.forEach(c=>{const nm=upg(c.name);if(seen[nm]!=null)mn[seen[nm]].n++;else{seen[nm]=mn.length;mn.push({name:nm,n:1});}});
+  let dsize=G.decksize&&G.decksize[p]||40;
+  const _tc={};[...bat,...pit,...zon,...tc,...mn.map(m=>m.name)].forEach(n=>{const t=teamCode(n);if(t!=="_")_tc[t]=(_tc[t]||0)+1;});
+  let mode="build",q="",filt="all",tfilt=Object.keys(_tc).sort((a,b)=>_tc[b]-_tc[a])[0]||"all",newForm=false;
+  const box=h("div",{});
+  function role(n){return (G.library[n]||{}).role;}
+  function isZone(n){return !!(G.library[n]||{}).zone;}
+  function isTeam(n){return !!(G.library[n]||{}).tcard;}
+  function serialize(){
+    const L=n=>G.library[n]||{};
+    let s="# オーダー\n";
+    tc.forEach(n=>s+="T "+n+(L(n).meta?" | "+L(n).meta:"")+(L(n).eff?" | "+L(n).eff:"")+"\n");
+    bat.forEach(n=>s+="野 "+n+(L(n).meta?" | "+L(n).meta:"")+(L(n).eff?" | "+L(n).eff:"")+"\n");
+    pit.forEach(n=>s+="投 "+n+(L(n).meta?" | "+L(n).meta:"")+(L(n).eff?" | "+L(n).eff:"")+"\n");
+    zon.forEach(n=>s+="Z "+n+(L(n).meta?" | "+L(n).meta:"")+(L(n).eff?" | "+L(n).eff:"")+"\n");
+    s+="# メイン\n";
+    mn.forEach(m=>s+=(m.n>1?m.n+"x ":"")+m.name+"\n");
+    return s;
+  }
+  function commitSize(){if(!G.decksize)G.decksize={};G.decksize[p]=dsize;}
+  function addOrder(n){
+    if(isTeam(n)){tc=[n];}
+    else if(isZone(n)){if(!zon.includes(n))zon.push(n);}
+    else if(role(n)==="P"){if(!pit.includes(n))pit.push(n);}
+    else{if(!bat.includes(n)&&bat.length<9)bat.push(n);}
+    rr();
+  }
+  function addMain(n){const e=mn.find(m=>m.name===n);if(e){if(e.n<3)e.n++;}else mn.push({name:n,n:1});rr();}
+  function smart(n){
+    if(isTeam(n)||isZone(n)||role(n)==="P")addOrder(n);
+    else if(bat.length<9&&!bat.includes(n))addOrder(n);
+    else addMain(n);}
+  function rr(){box.innerHTML="";box.append(ui());}
+  function libList(){
+    const names=Object.keys(G.library).sort(libSort);
+    return names.filter(n=>{
+      if(filt==="P"&&(role(n)!=="P"||isZone(n)||isTeam(n)))return false;
+      if(filt==="F"&&(role(n)==="P"||isZone(n)||isTeam(n)))return false;
+      if(filt==="Z"&&!isZone(n))return false;
+      if(filt==="T"&&!isTeam(n))return false;
+      if(tfilt!=="all"&&teamCode(n)!==tfilt)return false;
+      if(q&&!dispName(n).toLowerCase().includes(q.toLowerCase())&&!n.toLowerCase().includes(q.toLowerCase()))return false;
+      return true;
+    });
+  }
+  function libCard(n){
+    const L=G.library[n]||{},no=cardNo(n),img=libImg(n);
+    const el=h("div",{class:"libc",draggable:"true",
+      ondragstart:e=>{fieldDrag={build:"lib",name:n};try{e.dataTransfer.setData("text/plain",n);}catch(x){}},
+      ondragend:()=>{fieldDrag=null;}});
+    if(img)el.append(h("img",{src:img,alt:dispName(n),draggable:"false",loading:"lazy"}));
+    el.append(h("span",{class:"rl"+(L.role==="P"?" p":"")+(L.zone?" z":"")+(L.tcard?" tm":"")},L.tcard?"T":(L.zone?"Z":(L.role==="P"?"投":"野"))));
+    el.append(h("button",{class:"cam",title:"画像を追加",onclick:e=>{e.stopPropagation();pickImgFor(n,rr);}},"📷"));
+    el.append(h("div",{class:"t"},dispName(n)));
+    if(no)el.append(h("div",{class:"no mono"},no));
+    el.append(h("div",{class:"s"},[L.pos,L.cost!=null?"c"+L.cost:"",L.ap!=null?"AP"+L.ap:"",L.dp!=null?"DP"+L.dp:""].filter(Boolean).join(" ")||"—"));
+    el.append(h("div",{class:"add"},
+      h("button",{onclick:e=>{e.stopPropagation();addOrder(n);}},"オーダー"),
+      h("button",{onclick:e=>{e.stopPropagation();addMain(n);}},"メイン")));
+    el.addEventListener("click",()=>smart(n));
+    return el;
+  }
+  function dlist(kind){
+    const lst=h("div",{class:"lst"});
+    lst.addEventListener("dragover",e=>{if(fieldDrag){e.preventDefault();lst.classList.add("over");}});
+    lst.addEventListener("dragleave",()=>lst.classList.remove("over"));
+    lst.addEventListener("drop",e=>{e.preventDefault();lst.classList.remove("over");
+      const d=fieldDrag;fieldDrag=null;if(!d)return;
+      if(d.build==="lib"){kind==="main"?addMain(d.name):addOrder(d.name);return;}
+      if(d.build===kind&&kind!=="main"){return;}
+    });
+    const rows=kind==="bat"?bat:kind==="pit"?pit:kind==="zon"?zon:kind==="tc"?tc:null;
+    if(kind==="main"){
+      if(!mn.length)lst.append(h("div",{style:"font-size:10px;color:var(--ink-soft)"},"—"));
+      mn.forEach((m,idx)=>lst.append(h("div",{class:"drow"},
+        h("span",{class:"nm",title:m.name},dispName(m.name),cardNo(m.name)?h("span",{class:"rowno mono"},cardNo(m.name)):null),
+        h("button",{class:"num",onclick:()=>{m.n=Math.max(1,m.n-1);rr();}},"−"),
+        h("span",{class:"cnt mono"},String(m.n)),
+        h("button",{class:"num",onclick:()=>{if(m.n<3)m.n++;rr();}},"+"),
+        h("button",{class:"x",onclick:()=>{mn.splice(idx,1);rr();}},"×"))));
+    }else{
+      if(!rows.length)lst.append(h("div",{style:"font-size:10px;color:var(--ink-soft)"},"—"));
+      rows.forEach((n,idx)=>{
+        const row=h("div",{class:"drow",draggable:"true",
+          ondragstart:e=>{fieldDrag={build:kind,name:n,idx};try{e.dataTransfer.setData("text/plain",n);}catch(x){}},
+          ondragend:()=>{fieldDrag=null;}},
+          h("span",{class:"bo"},kind==="bat"?String(idx+1):kind==="pit"?"投":kind==="tc"?"T":"Z"),
+          h("span",{class:"nm",title:n},dispName(n),cardNo(n)?h("span",{class:"rowno mono"},cardNo(n)):null),
+          h("button",{class:"x",onclick:()=>{rows.splice(idx,1);rr();}},"×"));
+        row.addEventListener("drop",e=>{e.preventDefault();const d=fieldDrag;fieldDrag=null;
+          if(!d||d.build!==kind)return;
+          const from=d.idx;rows.splice(from,1);const to=idx;rows.splice(to,0,d.name);rr();});
+        row.addEventListener("dragover",e=>{if(fieldDrag&&fieldDrag.build===kind)e.preventDefault();});
+        lst.append(row);
+      });
+    }
+    return lst;
+  }
+  function ui(){
+    const wrap=h("div",{});
+    wrap.append(h("div",{class:"btabs"},
+      h("button",{class:mode==="build"?"on":"",onclick:()=>{mode="build";rr();}},"ビルダー"),
+      h("button",{class:mode==="text"?"on":"",onclick:()=>{mode="text";rr();}},"テキスト")));
+    if(mode==="text"){
+      const ta=h("textarea",{spellcheck:"false"});ta.value=serialize();
+      const pr=h("div",{class:"presets"});
+      Object.keys(PRESETS).forEach(k=>pr.append(h("button",{onclick:()=>ta.value=PRESETS[k]},k)));
+      const dlCode=h("input",{type:"text",placeholder:"デッキコード（例 GC672）",style:"width:150px"});
+      const dlBtn=h("button",{class:"pri",onclick:async()=>{
+        const code=dlCode.value.trim();if(!code)return;
+        const orig=dlBtn.textContent;dlBtn.disabled=true;dlBtn.textContent="取込中…";
+        try{ta.value=await fetchDecklogDeck(code);toast("DeckLog "+code.toUpperCase()+" を読み込みました（内容を確認して保存）");}
+        catch(e){toast("DeckLog取り込み失敗: "+((e&&e.message)||e));}
+        finally{dlBtn.disabled=false;dlBtn.textContent=orig;}
+      }},"DeckLog読込");
+      dlCode.addEventListener("keydown",e=>{if(e.key==="Enter")dlBtn.click();});
+      const dlRow=h("div",{class:"presets"},dlCode,dlBtn);
+      wrap.append(h("p",{class:"hint"},"1行1枚。「投/野/Z/T」で役割、名前 | スタッツ | 効果、Nx で複数、# メイン 下が山札。カード番号だけの行でもOK（例 BP03-M06）。DeckLogのデッキコードは上の欄に入れて「DeckLog読込」→内容を確認して保存。オーダーは打順1〜9→10枚目以降はベンチ。"),dlRow,pr,ta,
+        h("div",{class:"row"},
+          h("button",{class:"pri",onclick:()=>{G.decklists[p]=ta.value;parseDecklist(ta.value).order.concat(parseDecklist(ta.value).main).forEach(registerLib);
+            pushLog(`${teamName(p)} デッキ更新`,true);save();closeModal();setup(p);}},"保存"),
+          h("button",{onclick:closeModal},"閉じる")));
+      return wrap;
+    }
+    wrap.append(h("div",{class:"bsum"},"野手 ",h("b",{},bat.length+"/9"),"　投手 ",h("b",{},String(pit.length)),
+      "　ZONE ",h("b",{},String(zon.length)),"　チーム ",h("b",{},String(tc.length)),
+      "　メイン ",h("b",{},mn.reduce((a,c)=>a+c.n,0)+"/"+dsize),
+      h("span",{style:"margin-left:8px"},
+        h("button",{class:"bchip"+(dsize===30?" on":""),onclick:()=>{dsize=30;rr();}},"30"),
+        h("button",{class:"bchip"+(dsize===40?" on":""),onclick:()=>{dsize=40;rr();}},"40"))));
+    const bd=h("div",{class:"bd"});
+    // library col
+    const lc=h("div",{class:"col"});
+    lc.append(h("h3",{},h("span",{},"カードライブラリ（タップで追加 / ドラッグで配置）"),
+      h("button",{class:"bchip",onclick:()=>{newForm=!newForm;rr();}},newForm?"閉じる":"＋新規")));
+    const teamsPresent=Array.from(new Set(Object.keys(G.library).map(teamCode)))
+      .sort((a,b)=>Object.keys(TEAMS).indexOf(a)-Object.keys(TEAMS).indexOf(b));
+    const trow=h("div",{class:"tools"});
+    trow.append(h("span",{style:"font-size:10px;color:var(--ink-soft);align-self:center"},"球団"));
+    trow.append(h("button",{class:"bchip"+(tfilt==="all"?" on":""),onclick:()=>{tfilt="all";rr();}},"全"));
+    teamsPresent.forEach(t=>trow.append(h("button",{class:"bchip"+(tfilt===t?" on":""),onclick:()=>{tfilt=t;rr();}},TEAMS[t])));
+    lc.append(trow);
+    const tools=h("div",{class:"tools"});
+    const qi=h("input",{type:"text",placeholder:"名前で検索",value:q});
+    qi.addEventListener("input",()=>{q=qi.value;fillLib();});
+    tools.append(qi);
+    [["all","全"],["F","野"],["P","投"],["Z","ZONE"],["T","チーム"]].forEach(([k,lab])=>tools.append(
+      h("button",{class:"bchip"+(filt===k?" on":""),onclick:()=>{filt=k;rr();}},lab)));
+    lc.append(tools);
+    if(newForm)lc.append(newCardForm());
+    const lib=h("div",{class:"lib"});
+    lc.append(lib);
+    function fillLib(){
+      lib.innerHTML="";
+      let names=libList();
+      if(names.length>320){
+        lib.append(h("div",{style:"font-size:11.5px;color:var(--ink-soft);padding:8px"},
+          "カード "+names.length+" 件。上の「球団」ボタンか名前検索で絞り込んでください（多すぎると重くなります）。"));
+        return;
+      }
+      const groups={};
+      names.forEach(n=>{const t=teamCode(n);(groups[t]=groups[t]||[]).push(n);});
+      const order=Object.keys(TEAMS).filter(t=>groups[t]);
+      if(!order.length){lib.append(h("div",{style:"font-size:11px;color:var(--ink-soft);padding:6px"},"該当なし"));return;}
+      order.forEach(t=>{
+        if(tfilt==="all"||order.length>1)lib.append(h("div",{class:"libgrouph"},TEAMS[t]+"（"+groups[t].length+"）"));
+        const g=h("div",{class:"libgrid"});
+        groups[t].forEach(n=>g.append(libCard(n)));
+        lib.append(g);
+      });
+    }
+    fillLib();
+    bd.append(lc);
+    // deck col
+    const dc=h("div",{class:"col dcol"});
+    dc.append(h("h3",{},h("span",{},"チームカード（チームエリア・効果/枚数はカード依存）")));dc.append(dlist("tc"));
+    dc.append(h("h3",{},h("span",{},"オーダー・野手（打順 上から1番）")));dc.append(dlist("bat"));
+    dc.append(h("h3",{},h("span",{},"オーダー・投手")));dc.append(dlist("pit"));
+    dc.append(h("h3",{},h("span",{},"ZONEカード（ベンチ管理・TP1で登場）")));dc.append(dlist("zon"));
+    dc.append(h("h3",{},h("span",{},"メインデッキ")));dc.append(dlist("main"));
+    bd.append(dc);
+    wrap.append(bd);
+    wrap.append(h("div",{class:"row"},
+      h("button",{class:"pri",onclick:()=>{
+        commitSize();G.decklists[p]=serialize();pushLog(`${teamName(p)} デッキ更新（メイン${dsize}）`,true);save();closeModal();setup(p);
+      }},"保存"),
+      h("button",{onclick:()=>{commitSize();G.decklists[p]=serialize();save();closeModal();}},"保存だけ"),
+      h("button",{onclick:closeModal},"キャンセル")));
+    return wrap;
+  }
+  function newCardForm(){
+    const f=h("div",{class:"nc"});
+    const nm=h("input",{type:"text",placeholder:"選手名 / チーム名"}),rl=h("select",{},h("option",{value:"F"},"野手"),h("option",{value:"P"},"投手"),h("option",{value:"Z"},"ZONE"),h("option",{value:"T"},"チーム"));
+    const ap=h("input",{type:"text",placeholder:"AP"}),dp=h("input",{type:"text",placeholder:"DP"});
+    const co=h("input",{type:"text",placeholder:"コスト"}),po=h("input",{type:"text",placeholder:"守備位置"});
+    const ef=h("input",{class:"full",type:"text",placeholder:"効果テキスト（任意）"});
+    f.append(nm,rl,ap,dp,co,po,ef,h("button",{class:"full bchip",onclick:()=>{
+      const name=nm.value.trim();if(!name)return;
+      const meta=[ap.value&&"AP"+ap.value,dp.value&&"DP"+dp.value,po.value,co.value&&"c"+co.value].filter(Boolean).join(" ");
+      registerLib({name,role:rl.value==="P"?"P":"F",zone:rl.value==="Z",tcard:rl.value==="T",meta,eff:ef.value.trim()});
+      invalidateNum2Key();newForm=false;save();rr();
+    }},"ライブラリに追加"));
+    return f;
+  }
+  modal(box);rr();
+}
+function openCardDetail(name){
+  const L=G.library[name]||{},img=libImg(name),no=cardNo(name);
+  modal(h("div",{},
+    h("h2",{},dispName(name)),
+    h("p",{class:"hint"},[no,L.pos,L.cost!=null?"コスト"+L.cost:"",L.ap!=null?"AP"+L.ap:"",L.dp!=null?"DP"+L.dp:"",L.meta].filter(Boolean).join(" ・ ")||" "),
+    img?h("img",{class:"cd-img",src:img,alt:name}):null,
+    h("div",{class:"cd-eff"},L.eff||"（効果テキスト未登録）"),
+    h("div",{class:"row"},
+      h("button",{class:"pri",onclick:()=>pickImgFor(name,()=>openCardDetail(name))},img?"画像を差し替え":"画像をアップロード"),
+      (img&&no)?h("button",{onclick:async()=>{if(await uiConfirm("画像を外しますか？","外す")){await removeCardImg(normNo(no));render();openCardDetail(name);}}},"画像を外す"):null,
+      h("button",{onclick:closeModal},"閉じる"))
+  ),true);
+}
+function openShare(){
+  const url=location.href.split("#")[0];
+  modal(h("div",{},h("h2",{},"この卓を共有"),
+    h("p",{class:"hint"},"このURLを相手に送るだけ。開けば全員 同じ卓（"+GID+"）に入る。サインイン不要。"+
+      (db?"":" ※ いまFirebase未設定なのでライブ同期はOFF（下の「手動同期」でコード交換 or 1画面ホットシート）。")),
+    h("textarea",{style:"min-height:50px",readonly:"",onclick:e=>e.target.select()},url),
+    h("div",{class:"row"},
+      h("button",{class:"pri",onclick:()=>{navigator.clipboard&&navigator.clipboard.writeText(url);}},"URLをコピー"),
+      h("button",{onclick:closeModal},"閉じる"))),true);
+}
+function openSync(){
+  const ta=h("textarea",{spellcheck:"false",placeholder:"相手から受け取った卓コードを貼って「読み込み」"});
+  modal(h("div",{},h("h2",{},"手動同期（コード交換）"),
+    h("p",{class:"hint"},"ライブ同期が使えないとき用。手番終わりに『書き出し』でコピー→相手に送信。相手は貼って『読み込み』。画像は含まれません。"),
+    h("div",{class:"row"},h("button",{class:"pri",onclick:()=>{
+      const code=btoa(unescape(encodeURIComponent(JSON.stringify(snapshotG()))));ta.value=code;navigator.clipboard&&navigator.clipboard.writeText(code);}},"現在の卓を書き出し（コピー）")),
+    ta,
+    h("div",{class:"row"},
+      h("button",{class:"pri",onclick:()=>{
+        try{const d=JSON.parse(decodeURIComponent(escape(atob(ta.value.trim()))));
+          if(!d.zones||!d.board)throw 0;
+          d.rev=Math.max(d.rev||0,G.rev||0)+1;G=d;migrate();sel=null;
+          pushLog("手動同期で読み込み",true);save();closeModal();
+        }catch(e){toast("コードを読み取れませんでした");}
+      }},"読み込み"),
+      h("button",{onclick:closeModal},"閉じる"))),true);
+}
+
+/* ---------- bulk image import ---------- */
+function normNo(s){return (s||"").replace(/[_\s　]/g,"").replace(/-(SR|R|C|SP|UR|OR|SEC|SSPP|SSP|P)$/i,"").toUpperCase();}
+function matchCardKey(filename){
+  const base=filename.replace(/\.[a-z0-9]+$/i,"").trim();
+  const keys=Object.keys(G.library);
+  const want=normNo(base);
+  let k=keys.find(x=>normNo(cardNo(x))===want&&cardNo(x));
+  if(k)return k;
+  const m=want.match(/([A-Z]+[0-9]*-[A-Z]+[0-9]+)/);
+  if(m){k=keys.find(x=>normNo(cardNo(x))===m[1]&&cardNo(x));if(k)return k;}
+  const nn=base.replace(/[\s　]/g,"");
+  k=keys.find(x=>dispName(x).replace(/[\s　]/g,"")===nn);
+  return k||null;
+}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+async function bulkUploadImgs(files,onProg){
+  let ok=0,already=0;const miss=[],errs=[];
+  let pending={};
+  const flush=async()=>{const ks=Object.keys(pending);if(ks.length){try{await db.ref("cardimg_idx").update(pending);}catch(e){}pending={};}};
+  for(let i=0;i<files.length;i++){
+    const f=files[i];onProg&&onProg(i+1,files.length,f.name);
+    const no=matchCardNo(f.name);
+    if(!no){miss.push(f.name);continue;}
+    if(IMG[no]){already++;continue;}
+    try{
+      const uri=await downscaleDataURI(f,300);
+      if(!uri||uri.length>700000){errs.push(f.name+"：変換失敗/大きすぎ");continue;}
+      await db.ref("cardimg/"+no).set(uri);
+      const ts=Date.now();IMG[no]=uri;IMGIDX[no]=ts;pending[no]=ts;ok++;
+    }catch(e){errs.push(f.name+"："+((e&&e.message)||e));}
+    if(Object.keys(pending).length>=20)await flush();
+    await sleep(25);
+  }
+  await flush();render();
+  return {ok,already,miss,errs};
+}
+function matchCardNo(filename){
+  const base=filename.replace(/\.[a-z0-9]+$/i,"").trim();
+  const want=normNo(base);
+  const nos=new Set();Object.keys(G.library).forEach(k=>{const n=cardNo(k);if(n)nos.add(normNo(n));});
+  if(nos.has(want))return want;
+  const m=want.match(/([A-Z]+[0-9]*-[A-Z]+[0-9]+)/);
+  if(m&&nos.has(m[1]))return m[1];
+  // name fallback
+  const nn=base.replace(/[\s　]/g,"");
+  const k=Object.keys(G.library).find(x=>cardNo(x)&&dispName(x).replace(/[\s　]/g,"")===nn);
+  return k?normNo(cardNo(k)):null;
+}
+function openImgImport(){
+  const inp=h("input",{type:"file",accept:"image/*",multiple:""});
+  const dinp=h("input",{type:"file",multiple:"",webkitdirectory:"",directory:""});
+  const pick=h("div",{style:"font-size:11px;color:var(--ink-soft);margin:2px 0"},"");
+  const cnt=()=>{const a=(inp.files?inp.files.length:0),b=(dinp.files?dinp.files.length:0);
+    pick.textContent=(a||b)?`選択中: ${a?a+"ファイル":""}${a&&b?" ＋ ":""}${b?"フォルダ("+b+"件)":""}`:"";};
+  inp.addEventListener("change",cnt);dinp.addEventListener("change",cnt);
+  const status=h("div",{style:"font-size:12px;margin-top:10px;min-height:20px"});
+  const usage=h("div",{style:"font-size:11px;color:var(--ink-soft);margin:4px 0"},"");
+  const teamSel=h("select",{style:"font-size:11px;padding:3px 5px"});
+  const refreshTeamSel=()=>{
+    const counts={};Object.keys(IMGIDX).forEach(no=>{const t=teamCodeFromNo(no);counts[t]=(counts[t]||0)+1;});
+    const cur=teamSel.value;teamSel.innerHTML="";
+    Object.keys(TEAMS).forEach(k=>teamSel.append(h("option",{value:k},TEAMS[k]+`（${counts[k]||0}枚）`)));
+    if(cur)teamSel.value=cur;
+  };
+  const upd=()=>{usage.textContent="登録済み画像: "+Object.keys(IMGIDX).length+"枚（枚数制限なし）";refreshTeamSel();};
+  upd();
+  const start=h("button",{class:"pri",onclick:async()=>{
+    let fs=[...(inp.files?Array.from(inp.files):[]),...(dinp.files?Array.from(dinp.files):[])];
+    fs=fs.filter(f=>/\.(png|jpe?g|jfif|pjp|webp|gif|bmp|svg)$/i.test(f.name));
+    if(!fs.length){toast("画像ファイル/フォルダを選んでください");return;}
+    if(!db){toast("同期に接続していません（Firebase未設定）。");return;}
+    start.disabled=true;start.textContent="アップロード中…";modalLock=true;
+    const res=await bulkUploadImgs(fs,(n,t,name)=>{status.textContent=`(${n}/${t}) ${name}`;});
+    modalLock=false;start.disabled=false;start.textContent="もう一度";upd();
+    status.innerHTML="";
+    status.append(h("div",{},`✅ ${res.ok}枚 登録`+(res.already?` / 既存 ${res.already}`:"")+(res.errs.length?` / 失敗 ${res.errs.length}`:"")+(res.miss.length?` / 未マッチ ${res.miss.length}`:"")));
+    toast(`画像アップロード完了：${res.ok}枚`);
+    if(res.miss.length)status.append(h("div",{style:"color:var(--ink-soft);margin-top:4px"},
+      "未マッチ: "+res.miss.slice(0,8).join(", ")+(res.miss.length>8?" …":"")));
+    if(res.errs.length)status.append(h("div",{style:"color:var(--warn);margin-top:4px"},res.errs.slice(0,5).join(" / ")));
+  }},"アップロード開始");
+  modal(h("div",{},
+    h("h2",{},"カード画像を一括アップロード"),
+    h("p",{class:"hint"},
+      "ファイル名を「カード番号」にした画像（例 BP03-M06.png）。アンダースコア・末尾の -SR 等は無視、選手名でも可。"+
+      "約300pxのWebPに縮小して共有DBに保存、相手にも同期。全カードぶん入れてOK。"),
+    usage,
+    h("div",{style:"font-size:11px;font-weight:700;margin:6px 0 2px"},"ファイルを選ぶ（1フォルダ内）"),
+    inp,
+    h("div",{style:"font-size:11px;font-weight:700;margin:8px 0 2px"},"フォルダごと選ぶ（サブフォルダも全部・球団フォルダの親を指定でOK）"),
+    dinp,
+    pick,
+    h("div",{class:"row",style:"margin-top:8px"},start,
+      h("button",{onclick:async()=>{
+        if(!db){toast("同期に接続していません。");return;}
+        if(!await uiConfirm("登録済みのカード画像を全部削除します。よろしいですか？","全部削除する"))return;
+        modalLock=true;status.style.color="var(--accent)";status.textContent="削除中…";
+        const r=await clearAllCardImgs();
+        modalLock=false;status.style.color="";
+        status.textContent=`🧹 ${r.done>=0?r.done+"枚":""}削除しました。`;upd();
+        toast("画像を全部削除しました");
+      }},"全画像を削除")),
+    h("div",{class:"row",style:"margin-top:8px;align-items:center"},
+      h("span",{style:"font-size:11px"},"球団を指定して削除："),teamSel,
+      h("button",{onclick:async()=>{
+        if(!db){toast("同期に接続していません。");return;}
+        const tk=teamSel.value,tn=TEAMS[tk];
+        const n=Object.keys(IMGIDX).filter(no=>teamCodeFromNo(no)===tk).length;
+        if(!n){toast(tn+"の画像は登録されていません");return;}
+        if(!await uiConfirm(`「${tn}」の画像を${n}枚削除します。よろしいですか？`,"削除する"))return;
+        modalLock=true;status.style.color="var(--accent)";status.textContent="削除中…";
+        const r=await clearTeamCardImgs(tk,(d,t)=>{status.textContent=`削除中… ${d}/${t}`;});
+        modalLock=false;status.style.color="";
+        status.textContent=`🧹 「${tn}」${r.done}枚削除しました。`;upd();
+        toast(`「${tn}」の画像を${r.done}枚削除しました`);
+      }},"この球団だけ削除")),
+    status,
+    h("div",{class:"row"},h("button",{onclick:()=>{if(modalLock){toast("処理中です。終わるまで待ってください。");return;}closeModal();}},"閉じる"))
+  ),true);
+}
+
+/* ---------- boot ---------- */
+function freshGame(){
+  return {v:3,rev:0,updatedBy:clientId,createdAt:Date.now(),
+    seats:{p1:null,p2:null},names:{p1:"先攻",p2:"後攻"},
+    decklists:{p1:PRESETS["ロッテ (BP03)"],p2:PRESETS["楽天 (BP03)"]},
+    zones:{},library:{},decksize:{p1:40,p2:40},
+    board:{inning:1,half:"top",outs:0,outBase:{p1:0,p2:0},score:{p1:0,p2:0},line:{p1:[],p2:[]},tp:{p1:3,p2:3},order:{p1:1,p2:1},turn:"p1"},
+    dice:{p1:null,p2:null},
+    log:[{id:uid(),t:now(),who:"",sys:true,msg:"卓を作成しました。"}]};
+}
+function boot(){
+  let restored=null;
+  try{const raw=LS.getItem("dorio_g_"+GID);if(raw)restored=JSON.parse(raw);}catch(e){}
+  if(restored&&restored.zones&&restored.board&&restored.v===3){G=restored;migrate();}
+  else{
+    G=freshGame();
+    try{const d1=LS.getItem("dorio_dl_p1"),d2=LS.getItem("dorio_dl_p2");if(d1)G.decklists.p1=d1;if(d2)G.decklists.p2=d2;}catch(e){}
+    seedLibrary();layoutSide("p1");layoutSide("p2");
+  }
+  try{const th=LS.getItem("dorio_theme");if(th)document.documentElement.setAttribute("data-theme",th);}catch(e){}
+  $("#btnShare").onclick=openShare;
+  $("#btnImg").onclick=openImgImport;
+  $("#btnSync").onclick=openSync;
+  $("#btnReset").onclick=async()=>{
+    if(!await uiConfirm("この卓を新規対戦でリセットします（デッキリスト・ライブラリ・着席は維持）。","リセット"))return;
+    const dl={p1:G.decklists.p1,p2:G.decklists.p2},seats=G.seats,names=G.names,lib=G.library,ds=G.decksize;
+    G=freshGame();G.decklists=dl;G.seats=seats;G.names=names;G.library=lib;if(ds)G.decksize=ds;
+    layoutSide("p1");layoutSide("p2");
+    pushLog("新規対戦を開始",true);save();
+  };
+  $("#btnHardReset").onclick=async()=>{
+    if(!await uiConfirm("本当に全部リセットします。デッキ・着席・ライブラリ・画像割り当て以外の全データが消えます（画像自体は残ります）。元に戻せません。","完全リセットする"))return;
+    if(!await uiConfirm("もう一度確認：この卓を完全に空の状態に戻します。よろしいですか？","はい、完全リセット"))return;
+    try{LS.removeItem("dorio_dl_p1");LS.removeItem("dorio_dl_p2");}catch(e){}
+    G=freshGame();
+    G.decklists={p1:"",p2:""};
+    seedLibrary();layoutSide("p1");layoutSide("p2");
+    pushLog("完全リセットしました",true);save();
+  };
+  $("#btnSwap").onclick=async()=>{
+    if(!await uiConfirm("先攻と後攻を入れ替えます（座席・名前・デッキ・盤面・スコア・TPなど全部まるごと入れ替わります）。","入れ替える"))return;
+    const swap=o=>{if(!o)return;const t=o.p1;o.p1=o.p2;o.p2=t;};
+    swap(G.seats);swap(G.names);swap(G.decklists);swap(G.zones);swap(G.decksize);swap(G.dice);
+    const b=G.board;swap(b.score);swap(b.line);swap(b.outBase);swap(b.tp);swap(b.order);
+    if(b.turn==="p1")b.turn="p2";else if(b.turn==="p2")b.turn="p1";
+    pushLog("先攻・後攻を入れ替えました",true);save();
+  };
+  $("#btnTheme").onclick=()=>{
+    const cur=document.documentElement.getAttribute("data-theme");
+    const nx=cur==="dark"?"light":cur==="light"?"":"dark";
+    if(nx)document.documentElement.setAttribute("data-theme",nx);else document.documentElement.removeAttribute("data-theme");
+    try{LS.setItem("dorio_theme",nx);}catch(e){}
+  };
+  syncSoloBtn();
+  $("#btnSolo").onclick=()=>{
+    soloMode=!soloMode;
+    try{LS.setItem("dorio_solo",soloMode?"1":"0");}catch(e){}
+    syncSoloBtn();render();
+    toast(soloMode?"一人回しモード：両サイド全部表示にしました（この端末だけ・相手には影響しません）":"一人回しモードを解除しました");
+  };
+  $("#btnRoll").onclick=()=>rollFor($("#rollWho").value);
+  $("#btnCoin").onclick=coin;
+  $("#logSend").onclick=sendLog;
+  $("#logInput").addEventListener("keydown",e=>{if(e.key==="Enter")sendLog();});
+  render();initSync();
+}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);else boot();
+})();
+</script>
+</body>
+</html>
