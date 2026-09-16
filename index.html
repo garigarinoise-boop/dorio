@@ -350,6 +350,7 @@ window.FIREBASE_CONFIG = {
     <button class="tb-btn" id="btnImg">画像一括</button>
     <button class="tb-btn" id="btnSync">手動同期</button>
     <button class="tb-btn" id="btnSolo">🃏 一人回し</button>
+    <button class="tb-btn" id="btnUndo">↩️ 一手戻る</button>
     <button class="tb-btn" id="btnSwap">先攻⇄後攻</button>
     <button class="tb-btn" id="btnReset">新規対戦</button>
     <button class="tb-btn" id="btnHardReset">完全リセット</button>
@@ -2718,6 +2719,7 @@ const MOVE=[["lineup","打順"],["mound","登板"],["bench","控え"],["support"
 
 let G=null,db=null,docRef=null,saveTimer=null,sel=null,popEl=null,fieldDrag=null;
 let lastDiceTs={p1:0,p2:0};   // ロール結果が前回と同じ数字でも「振った」ことが分かるようフラッシュさせる用
+let undoStack=[],lastSnapshot=null;   // 「一手戻る」用。ローカルのみ・リロードで消える（DBには保存しない）
 let IMG={},IMGIDX={},IMGwant=new Set(),imgQT=null,renderT=null;   // card no -> data URI; images live under cardimg/<no> in RTDB
 const DOWNZ={md:1,od:1,hand:1,bench:1,support:1,out:1};
 // アウトはドラッグ&ドロップ／タップ移動のデフォルトを裏（非公開）にする。
@@ -2997,15 +2999,25 @@ function syncOuts(){
   const cur=(G.zones[atk]&&G.zones[atk].out)?G.zones[atk].out.length:0;
   b.outs=Math.max(0,Math.min(3,cur-(b.outBase[atk]||0)));
 }
-function save(){
+function save(skipUndo){
+  if(!skipUndo&&lastSnapshot){undoStack.push(lastSnapshot);if(undoStack.length>25)undoStack.shift();}
   G.rev=(G.rev||0)+1;G.updatedBy=clientId;
   syncOuts();
   const snap=snapshotG();
+  lastSnapshot=JSON.parse(JSON.stringify(snap));
   try{LS.setItem("dorio_g_"+GID,JSON.stringify(snap));
     LS.setItem("dorio_dl_p1",G.decklists.p1);LS.setItem("dorio_dl_p2",G.decklists.p2);}catch(e){}
   if(docRef){clearTimeout(saveTimer);
     saveTimer=setTimeout(()=>{docRef.set(JSON.stringify(snap)).catch(()=>flashSync("同期エラー",true));},170);}
   render();
+}
+function undo(){
+  if(!undoStack.length){toast("これ以上戻せる操作がありません");return;}
+  const prev=undoStack.pop();
+  G=JSON.parse(JSON.stringify(prev));
+  migrate();sel=null;closePop();
+  pushLog("↩️ 一手戻しました",true);
+  save(true);
 }
 function pushLog(msg,sys){G.log.push({id:uid(),t:now(),who:sys?"":myName,sys:!!sys,msg});if(G.log.length>60)G.log=G.log.slice(-60);}
 function flashSync(txt,warn){const p=$("#syncPill");p.className="pill"+(warn?" local":(db?" live":" local"));$("#syncTxt").textContent=txt;}
@@ -3037,8 +3049,10 @@ async function initSync(){
 }
 function applyRemote(d){
   if(typeof d==="string"){try{d=JSON.parse(d);}catch(e){return;}}
+  if(lastSnapshot){undoStack.push(lastSnapshot);if(undoStack.length>25)undoStack.shift();}
   try{G=JSON.parse(JSON.stringify(d));}catch(e){G=d;}
   migrate();sel=null;render();prefetchInPlay();
+  lastSnapshot=JSON.parse(JSON.stringify(snapshotG()));
 }
 function migrate(){
   if(!G.zones)return;
@@ -4108,10 +4122,12 @@ function boot(){
     try{const d1=LS.getItem("dorio_dl_p1"),d2=LS.getItem("dorio_dl_p2");if(d1)G.decklists.p1=d1;if(d2)G.decklists.p2=d2;}catch(e){}
     seedLibrary();layoutSide("p1");layoutSide("p2");
   }
+  lastSnapshot=JSON.parse(JSON.stringify(snapshotG()));  // 起動直後の状態を「一手戻る」の初期基点にする
   try{const th=LS.getItem("dorio_theme");if(th)document.documentElement.setAttribute("data-theme",th);}catch(e){}
   $("#btnShare").onclick=openShare;
   $("#btnImg").onclick=openImgImport;
   $("#btnSync").onclick=openSync;
+  $("#btnUndo").onclick=undo;
   $("#btnReset").onclick=async()=>{
     if(!await uiConfirm("この卓を新規対戦でリセットします（デッキリスト・ライブラリ・着席は維持）。","リセット"))return;
     const dl={p1:G.decklists.p1,p2:G.decklists.p2},seats=G.seats,names=G.names,lib=G.library,ds=G.decksize;
