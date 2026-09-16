@@ -349,6 +349,7 @@ window.FIREBASE_CONFIG = {
     <button class="tb-btn" id="btnShare">卓を共有</button>
     <button class="tb-btn" id="btnImg">画像一括</button>
     <button class="tb-btn" id="btnSync">手動同期</button>
+    <button class="tb-btn" id="btnSolo">🃏 一人回し</button>
     <button class="tb-btn" id="btnSwap">先攻⇄後攻</button>
     <button class="tb-btn" id="btnReset">新規対戦</button>
     <button class="tb-btn" id="btnHardReset">完全リセット</button>
@@ -396,6 +397,7 @@ const LS=window.localStorage;
 
 let clientId;try{clientId=LS.getItem("dorio_cid")||(LS.setItem("dorio_cid",uid()),LS.getItem("dorio_cid"));}catch(e){clientId=uid();}
 let myName;try{myName=LS.getItem("dorio_name")||"";}catch(e){myName="";}
+let soloMode;try{soloMode=LS.getItem("dorio_solo")==="1";}catch(e){soloMode=false;}
 if(!myName){myName="プレイヤー"+clientId.slice(0,3);try{LS.setItem("dorio_name",myName);}catch(e){}}
 function gameId(){
   // explicit ?g=name / #g=name lets you run a second table; otherwise everyone
@@ -3469,6 +3471,7 @@ function lineZone(p){
 }
 const OWNZ={hand:1,bench:1,support:1,out:1,rest:1};
 function cardFaceDown(p,zk,c){
+  if(soloMode)return false;  // 一人回しモード：両サイドとも全部表にして1人で操作できるようにする
   const owner=(p===bottomSeat());
   if(zk==="mound"||zk==="od")return false;
   if(c.reveal==="all")return false;
@@ -3640,6 +3643,10 @@ function modal(node,sm){const root=$("#modalRoot");root.innerHTML="";modalLock=f
   root.append(m);return()=>root.innerHTML="";}
 function closeModal(){if(modalLock)return;$("#modalRoot").innerHTML="";}
 /* sandbox-safe replacements for window.alert/confirm/prompt (blocked in the artifact iframe) */
+function syncSoloBtn(){
+  const b=$("#btnSolo");if(!b)return;
+  b.style.cssText=soloMode?"background:var(--gold);border-color:var(--gold);color:#241a02;font-weight:700":"";
+}
 function toast(msg){
   let t=document.getElementById("toastEl");
   if(!t){t=h("div",{id:"toastEl",style:"position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f1830ee;color:#fff;border:1px solid #ffffff22;padding:10px 16px;border-radius:9px;font-size:13px;z-index:10001;max-width:82vw;box-shadow:0 6px 24px #0008;white-space:pre-wrap;transition:opacity .25s"});document.body.append(t);}
@@ -4115,6 +4122,13 @@ function boot(){
     const nx=cur==="dark"?"light":cur==="light"?"":"dark";
     if(nx)document.documentElement.setAttribute("data-theme",nx);else document.documentElement.removeAttribute("data-theme");
     try{LS.setItem("dorio_theme",nx);}catch(e){}
+  };
+  syncSoloBtn();
+  $("#btnSolo").onclick=()=>{
+    soloMode=!soloMode;
+    try{LS.setItem("dorio_solo",soloMode?"1":"0");}catch(e){}
+    syncSoloBtn();render();
+    toast(soloMode?"一人回しモード：両サイド全部表示にしました（この端末だけ・相手には影響しません）":"一人回しモードを解除しました");
   };
   $("#btnRoll").onclick=()=>rollFor($("#rollWho").value);
   $("#btnCoin").onclick=coin;
