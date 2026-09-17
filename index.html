@@ -129,6 +129,12 @@ button{font:inherit;color:inherit;cursor:pointer}
 .hand .hend{display:flex;gap:6px;align-items:center;padding-left:4px;flex:0 0 auto}
 .hand .hend button{font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel)}
 
+.revealbox{margin:0 0 8px;padding:7px;border:2px dashed var(--gold);border-radius:8px;background:rgba(200,137,26,.08)}
+.revealbox.dropok{background:rgba(255,220,150,.28)}
+.revealhead{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;font-weight:700;color:var(--gold);padding:0 2px 6px}
+.revealhead .zbtn{font-size:10px;font-weight:600;padding:3px 8px;border-radius:5px;border:1px solid var(--gold);background:var(--panel);color:var(--ink)}
+.revealbody{display:flex;flex-wrap:wrap;gap:5px}
+
 .field{display:grid;grid-template-columns:88px repeat(9,minmax(70px,1fr));
   grid-template-rows:minmax(94px,auto) minmax(112px,auto) auto;gap:6px;padding:11px;
   position:relative;min-width:940px;border-radius:12px;
@@ -2708,11 +2714,11 @@ Z 藤原 恭大 BP03-M01 | ZONE／ | 【攻撃】【メイン】AP+1する。 �
 野 和田 康士朗 BP03-M15 | AP4／外野手／コスト1 | ＜攻撃＞【メイン】ビハインド時なら、AP+2する。
 `;
 
-const CARDZ=["main","support","inning","out","rest","team","md","od","mound","bench","b1","b2","b3"];
+const CARDZ=["main","support","inning","out","rest","team","md","od","mound","bench","b1","b2","b3","reveal"];
 function emptyZones(){const z={lineup:[[],[],[],[],[],[],[],[],[]],hand:[]};CARDZ.forEach(k=>z[k]=[]);return z;}
 const ZL={main:"メインエリア",support:"サポートエリア",inning:"イニングエリア",out:"アウトエリア",
   rest:"レストエリア",team:"チームエリア",md:"メインデッキ",od:"オーダーデッキ",mound:"登板投手",bench:"ベンチ",
-  b1:"一塁",b2:"二塁",b3:"三塁",hand:"手札",lineup:"打順"};
+  b1:"一塁",b2:"二塁",b3:"三塁",hand:"手札",lineup:"打順",reveal:"公開エリア（非公式）"};
 const MOVE=[["lineup","打順"],["mound","登板"],["bench","控え"],["support","サポート"],["main","メイン"],
   ["inning","イニング"],["out","アウト"],["rest","レスト"],["team","チーム"],
   ["b3","三塁"],["b2","二塁"],["b1","一塁"],["hand","手札"],["md","Mデッキ"],["od","Oデッキ"]];
@@ -2862,7 +2868,7 @@ function deckCardNos(){
     const d=parseDecklist(G.decklists[p]||"");d.order.concat(d.main).forEach(c=>add(c.name));
     const z=G.zones[p]||{};
     (z.lineup||[]).forEach(sl=>(sl||[]).forEach(c=>c&&add(c.name)));
-    ["hand","md","od","mound","bench","main","support","inning","out","rest","team","b1","b2","b3"].forEach(k=>(z[k]||[]).forEach(c=>c&&add(c.name)));
+    ["hand","md","od","mound","bench","main","support","inning","out","rest","team","b1","b2","b3","reveal"].forEach(k=>(z[k]||[]).forEach(c=>c&&add(c.name)));
   });
   return s;
 }
@@ -3216,7 +3222,10 @@ function renderPanel(p,mine,flip){
     diceMini(p),tpCtl(p));
   const wrap=h("div",{class:"panel"},head);
   const fs=h("div",{class:"fieldscroll"});
-  fs.append(renderHand(p,mine),renderField(p,flip));
+  const rz=renderRevealZone(p);
+  fs.append(renderHand(p,mine));
+  if(rz)fs.append(rz);
+  fs.append(renderField(p,flip));
   wrap.append(fs);return wrap;
 }
 function diceMini(p){const d=G.dice[p];
@@ -3259,6 +3268,18 @@ function renderHand(p,mine){
     onclick:()=>refreshDeck(p)},"🔄 山札切れ・リフレッシュ"));
   el.append(hend);
   return el;
+}
+function renderRevealZone(p){
+  const arr=G.zones[p].reveal||[];
+  if(!arr.length)return null;
+  const box=h("div",{class:"revealbox"});
+  box.append(h("div",{class:"revealhead"},
+    h("span",{},`🔓 公開エリア（${arr.length}枚・非公式ゾーン）`),
+    h("button",{class:"zbtn",onclick:()=>sweepAllToRest(p,"reveal")},"残り全部→レスト")));
+  const body=h("div",{class:"revealbody"});
+  arr.forEach((c,i)=>body.append(renderCard(p,"reveal",null,i,c)));
+  box.append(body);wireDrop(box,p,"reveal");
+  return box;
 }
 function renderField(p,flip){
   const f=h("div",{class:"field"+(flip?" flip":"")});
@@ -3330,8 +3351,9 @@ function openPileMenu(p,key,anchor){
   });
   act("シャッフル（reveal解除）",()=>{G.zones[p].md=shuffle(G.zones[p].md);G.zones[p].md.forEach(c=>delete c.reveal);pushLog(`${teamName(p)} 山札シャッフル`);save();});
   pop.append(h("div",{class:"sep"}));
-  pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを公開（両者）"));
-  pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"all");closePop();}},n+"枚"))));
+  pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを公開エリアへ（両者に公開・仕分け用）"));
+  pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealToZone(p,key,n);closePop();}},n+"枚")),
+    h("button",{onclick:async()=>{const v=await uiPrompt("何枚公開する？","4");const n=+v;if(n>0){revealToZone(p,key,n);closePop();}}},"N枚")));
   pop.append(h("div",{style:"font-size:10px;color:var(--ink-soft);padding:2px 5px"},"トップを自分だけ確認"));
   pop.append(h("div",{class:"zrow"},[1,2,3].map(n=>h("button",{onclick:()=>{revealTop(p,key,n,"me");closePop();}},n+"枚"))));
   act("伏せ直す",()=>{arr.forEach(c=>delete c.reveal);save();});
@@ -3650,6 +3672,15 @@ function revealTop(p,key,n,mode){
   const arr=G.zones[p][key]||[];
   arr.forEach((c,idx)=>{if(idx<n)c.reveal=mode;else delete c.reveal;});
   pushLog(`${teamName(p)} ${ZL[key]}トップ${Math.min(n,arr.length)}枚を${mode==="all"?"公開":"自分だけ確認"}`);save();
+}
+function revealToZone(p,key,n){
+  // 「N枚公開→○枚まで手札、残りはレスト」系の効果用：山札から公開エリア（非公式・卓の便宜上のゾーン）へ実際に取り出す。
+  // 公開エリアに移った時点で全員に公開（フェイスアップ）。手札/レストへの仕分けは通常のカード移動で。
+  const src=G.zones[p][key]||[];
+  const n2=Math.min(n,src.length);if(!n2)return;
+  const moved=src.splice(0,n2);
+  moved.forEach(c=>{c.down=false;delete c.reveal;G.zones[p].reveal.push(c);});
+  pushLog(`${teamName(p)} ${ZL[key]}トップ${n2}枚を公開エリアへ`);save();
 }
 function showdownSupport(open){
   ["p1","p2"].forEach(q=>(G.zones[q].support||[]).forEach(c=>c.down=!open));
