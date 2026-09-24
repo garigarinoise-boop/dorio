@@ -2920,7 +2920,10 @@ function parseDecklist(txt){
     // checking this first stops "T"/"Z" from being misread as 役割指定 and eating the card number's leading letter
     const wholeBare=body.match(/^[A-Za-z][A-Za-z0-9]*[-_][A-Za-z0-9]+$/);
     if(!wholeBare){
-      const rm=body.match(/^(投|野|Z|ゾーン|ZONE|T|チーム|TEAM|先発|投手|野手)\s*[:：]?\s*(.+)$/i);
+      // 役割トークンの後に区切り（空白 or コロン）が最低1文字必須。区切りゼロを許すと
+      // 「T.キャベッジ」「Ｔ．オースティン」のように"T"で始まる選手名の頭文字を役割指定と誤読し、
+      // チームカード扱いになってしまうバグがあった（2026-09-25判明）。
+      const rm=body.match(/^(投|野|Z|ゾーン|ZONE|T|チーム|TEAM|先発|投手|野手)(?:\s+|[:：]\s*)(.+)$/i);
       if(rm){
         if(/^(z|ゾーン|zone)$/i.test(rm[1])){zone=true;role="F";}
         else if(/^(t|チーム|team)$/i.test(rm[1])){tcard=true;}
