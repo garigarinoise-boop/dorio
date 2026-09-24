@@ -266,6 +266,8 @@ body.selmode .field .z,body.selmode .lslot,body.selmode .bslot,body.selmode .ben
 .log{max-height:180px;overflow-y:auto;padding:9px 12px;display:flex;flex-direction:column;gap:4px;font-size:12px}
 .log .e{color:var(--ink-soft)} .log .e .t{opacity:.6;margin-right:6px;font-size:10.5px;font-variant-numeric:tabular-nums}
 .log .e .w{font-weight:700;color:var(--ink);margin-right:5px} .log .e.sys .w{color:var(--accent)}
+.log .e.chat{background:rgba(200,137,26,.14);border:1px solid var(--gold);border-radius:8px;padding:5px 8px;color:var(--ink);font-size:13px}
+.log .e.chat .w{color:var(--gold)}
 .log-in{display:flex;gap:6px;border-top:1px solid var(--line);padding:8px}
 .log-in input{flex:1;padding:7px 9px;border-radius:7px;border:1px solid var(--line-strong);background:var(--panel-2);color:var(--ink);font:inherit}
 .log-in button{padding:7px 12px;border-radius:7px;border:1px solid var(--line-strong);background:var(--panel-2);font-size:12px}
@@ -376,7 +378,7 @@ window.FIREBASE_CONFIG = {
     </div>
     <div class="log" id="log"></div>
     <div class="log-in">
-      <input id="logInput" placeholder="操作メモ / チャット" maxlength="140">
+      <input id="logInput" placeholder="💬 チャットを送る（通話なしで会話できます）" maxlength="140">
       <button id="logSend">送信</button>
     </div>
   </div>
@@ -2721,7 +2723,7 @@ const ZL={main:"メインエリア",support:"サポートエリア",inning:"イ�
   b1:"一塁",b2:"二塁",b3:"三塁",hand:"手札",lineup:"打順",reveal:"公開エリア（非公式）"};
 const MOVE=[["lineup","打順"],["mound","登板"],["bench","控え"],["support","サポート"],["main","メイン"],
   ["inning","イニング"],["out","アウト"],["rest","レスト"],["team","チーム"],
-  ["b3","三塁"],["b2","二塁"],["b1","一塁"],["hand","手札"],["md","Mデッキ"],["od","Oデッキ"]];
+  ["b3","三塁"],["b2","二塁"],["b1","一塁"],["hand","手札"],["md","Mデッキ↑上"],["od","Oデッキ"]];
 
 let G=null,db=null,docRef=null,saveTimer=null,sel=null,popEl=null,fieldDrag=null;
 let lastDiceTs={p1:0,p2:0};   // ロール結果が前回と同じ数字でも「振った」ことが分かるようフラッシュさせる用
@@ -3026,6 +3028,7 @@ function undo(){
   save(true);
 }
 function pushLog(msg,sys){G.log.push({id:uid(),t:now(),who:sys?"":myName,sys:!!sys,msg});if(G.log.length>60)G.log=G.log.slice(-60);}
+function pushChat(msg){G.log.push({id:uid(),t:now(),who:myName,sys:false,kind:"chat",msg});if(G.log.length>60)G.log=G.log.slice(-60);}
 function flashSync(txt,warn){const p=$("#syncPill");p.className="pill"+(warn?" local":(db?" live":" local"));$("#syncTxt").textContent=txt;}
 async function initSync(){
   const cfg=window.FIREBASE_CONFIG||{};
@@ -3410,7 +3413,7 @@ function openZoneList(p,key){
     const cell=h("div",{class:"zlcell"});
     cell.append(cardMini(c));
     const bar=h("div",{class:"zlbar"});
-    [["hand","手札"],["md","山札"],["rest","レスト"],["out","アウト"],["inning","イニング"],["support","サポート"],["main","メイン"],["bench","ベンチ"]]
+    [["hand","手札"],["md","山札(一番上)"],["rest","レスト"],["out","アウト"],["inning","イニング"],["support","サポート"],["main","メイン"],["bench","ベンチ"]]
       .filter(([k])=>k!==key).forEach(([k,lab])=>{
         if(k==="out"){
           bar.append(h("button",{onclick:()=>{moveCard(p,key,null,i,p,"out",undefined,false);openZoneList(p,key);}},"→アウト（表）"));
@@ -3477,7 +3480,7 @@ function openBench(p){
     }else{
       bar.append(h("button",{onclick:()=>{pinchHit(p,i);openBench(p);}},"→代打（メインと交代・TP-1）"));
     }
-    [["support","サポート"],["hand","手札"],["md","山札"]].forEach(([k,lab])=>
+    [["support","サポート"],["hand","手札"],["md","山札(一番上)"]].forEach(([k,lab])=>
       bar.append(h("button",{onclick:()=>mvBench(p,i,k)},"→"+lab)));
     bar.append(h("button",{onclick:()=>openCardDetail(c.name)},"詳細"));
     cell.append(bar);grid.append(cell);
@@ -3580,7 +3583,11 @@ function moveCard(fp,fzk,fslot,fi,tp,tzk,tslot,forceDown){
   const [card]=from.splice(fi,1);if(!card)return;
   card.down=forceDown!=null?forceDown:!!DOWNZ[tzk];delete card.reveal;
   const dest=arrOf(tp,tzk,tslot);
-  dest.push(card);
+  // 山札(md)への移動は「一番上」に置く（＝次に引くカードになる）。他ゾーンは末尾に追加。
+  // 「N枚見て好きな順で山札の上に戻す」効果は、戻したい順の逆順で1枚ずつここへ動かせば実現できる
+  // （最後に動かしたカードが一番上＝最初に引かれる）。
+  const put=c2=>{if(tzk==="md")dest.unshift(c2);else dest.push(c2);};
+  put(card);
   // 重ねたZONEカードは、本体（打者）を動かした時だけ一緒についてくる
   // （ZONEカード自体を単独でドラッグ/移動した時は今まで通り単独で動く）
   let partner=null;
@@ -3589,14 +3596,14 @@ function moveCard(fp,fzk,fslot,fi,tp,tzk,tslot,forceDown){
     if(pi>=0){
       partner=from.splice(pi,1)[0];
       partner.down=forceDown!=null?forceDown:!!DOWNZ[tzk];delete partner.reveal;
-      dest.push(partner);
+      put(partner);
     }
   }
   // 移動先が非公開ゾーンならログにカード名を出さない。アウトエリアのように移動時に
   // 公開/非公開を選べるゾーンは forceDown（呼び出し側の明示指定）を優先する。
   const hidesName=forceDown!=null?forceDown:(tzk!=="od"&&!!DOWNZ[tzk]);
   const label=(hidesName?"カード":`「${card.name}」`)+(partner?(hidesName?"":`＋「${partner.name}」`):"");
-  pushLog(`${teamName(fp)}: ${label}→ ${tzk==="lineup"?"打順"+((tslot??0)+1):ZL[tzk]}${forceDown!=null?(forceDown?"（裏）":"（表）"):""}`);
+  pushLog(`${teamName(fp)}: ${label}→ ${tzk==="lineup"?"打順"+((tslot??0)+1):tzk==="md"?"メインデッキ（一番上）":ZL[tzk]}${forceDown!=null?(forceDown?"（裏）":"（表）"):""}`);
   save();
 }
 function moveSelTo(p,zk,slot){if(!sel)return;const s=sel;sel=null;moveCard(s.p,s.zk,s.slot,s.i,p,zk,slot);}
@@ -3709,9 +3716,21 @@ function rollFor(p){
 function coin(){pushLog(`🪙 コイン: ${Math.random()<.5?"表":"裏"}`);save();}
 
 /* ---------- log ---------- */
+let lastSeenChatId=undefined;
+function checkNewChat(){
+  const chats=G.log.filter(e=>e.kind==="chat");
+  if(!chats.length)return;
+  const last=chats[chats.length-1];
+  if(lastSeenChatId===undefined){lastSeenChatId=last.id;return;}  // 起動直後の既存分では通知しない
+  if(last.id!==lastSeenChatId){
+    lastSeenChatId=last.id;
+    if(last.who!==myName)toast(`💬 ${last.who}: ${last.msg}`);
+  }
+}
 function renderLog(){
+  checkNewChat();
   const el=$("#log");el.innerHTML="";
-  G.log.forEach(e=>el.append(h("div",{class:"e"+(e.sys?" sys":"")},
+  G.log.forEach(e=>el.append(h("div",{class:"e"+(e.sys?" sys":"")+(e.kind==="chat"?" chat":"")},
     h("span",{class:"t"},e.t),
     e.who?h("span",{class:"w"},e.who+":"):(e.sys?h("span",{class:"w"},"卓"):""),e.msg)));
   el.scrollTop=el.scrollHeight;
@@ -3721,7 +3740,7 @@ function renderRollWho(){
   ["p1","p2"].forEach(p=>s.append(h("option",{value:p},teamName(p))));
   s.value=cur||bottomSeat();
 }
-function sendLog(){const v=$("#logInput").value.trim();if(!v)return;$("#logInput").value="";pushLog(v);save();}
+function sendLog(){const v=$("#logInput").value.trim();if(!v)return;$("#logInput").value="";pushChat(v);save();}
 
 /* ---------- modal ---------- */
 let modalLock=false;
@@ -4222,7 +4241,7 @@ function boot(){
   $("#btnRoll").onclick=()=>rollFor($("#rollWho").value);
   $("#btnCoin").onclick=coin;
   $("#logSend").onclick=sendLog;
-  $("#logInput").addEventListener("keydown",e=>{if(e.key==="Enter")sendLog();});
+  $("#logInput").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing)sendLog();});
   render();initSync();
 }
 if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);else boot();
