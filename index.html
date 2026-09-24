@@ -3812,6 +3812,17 @@ function openDeck(p){
   let dsize=G.decksize&&G.decksize[p]||40;
   const _tc={};[...bat,...pit,...zon,...tc,...mn.map(m=>m.name)].forEach(n=>{const t=teamCode(n);if(t!=="_")_tc[t]=(_tc[t]||0)+1;});
   let mode="build",q="",filt="all",tfilt=Object.keys(_tc).sort((a,b)=>_tc[b]-_tc[a])[0]||"all",newForm=false;
+  let savedDecks=null,savedDecksLoading=false;
+  function loadSavedDecks(){
+    if(!db){savedDecks=[];return;}
+    if(savedDecksLoading)return;
+    savedDecksLoading=true;
+    db.ref("decks").once("value").then(s=>{
+      const v=s.val()||{};
+      savedDecks=Object.keys(v).map(id=>({id,...v[id]})).sort((a,b)=>(b.ts||0)-(a.ts||0));
+      savedDecksLoading=false;rr();
+    }).catch(()=>{savedDecks=[];savedDecksLoading=false;rr();});
+  }
   const box=h("div",{});
   function role(n){return (G.library[n]||{}).role;}
   function isZone(n){return !!(G.library[n]||{}).zone;}
@@ -3925,7 +3936,31 @@ function openDeck(p){
       }},"DeckLog読込");
       dlCode.addEventListener("keydown",e=>{if(e.key==="Enter")dlBtn.click();});
       const dlRow=h("div",{class:"presets"},dlCode,dlBtn);
-      wrap.append(h("p",{class:"hint"},"1行1枚。「投/野/Z/T」で役割、名前 | スタッツ | 効果、Nx で複数、# メイン 下が山札。カード番号だけの行でもOK（例 BP03-M06）。DeckLogのデッキコードは上の欄に入れて「DeckLog読込」→内容を確認して保存。オーダーは打順1〜9→10枚目以降はベンチ。"),dlRow,pr,ta,
+      if(savedDecks===null)loadSavedDecks();
+      const savedRow=h("div",{class:"presets"});
+      savedRow.append(h("button",{class:"pri",onclick:async()=>{
+        if(!db){toast("同期に接続していません（保存には接続が必要です）。");return;}
+        const name=await uiPrompt("保存名（例: 〇〇さんのロッテ）","");
+        if(!name||!name.trim())return;
+        const id=uid();
+        await db.ref("decks/"+id).set({name:name.trim(),text:ta.value,savedBy:myName,ts:Date.now()});
+        toast(`「${name.trim()}」を保存しました`);savedDecks=null;loadSavedDecks();
+      }},"💾 現在の内容を保存"));
+      savedRow.append(h("button",{onclick:()=>{savedDecks=null;loadSavedDecks();rr();}},"🔄"));
+      if(savedDecks===null)savedRow.append(h("span",{style:"font-size:10px;color:var(--ink-soft);align-self:center"},"保存済みデッキを読み込み中…"));
+      else if(!savedDecks.length)savedRow.append(h("span",{style:"font-size:10px;color:var(--ink-soft);align-self:center"},"保存済みデッキはまだありません"));
+      else savedDecks.forEach(d=>{
+        savedRow.append(h("span",{style:"display:inline-flex;align-items:center;gap:2px"},
+          h("button",{title:d.text?d.text.slice(0,200):"",onclick:()=>{ta.value=d.text||"";toast(`「${d.name}」を読み込みました（内容を確認して保存）`);}},
+            d.name+(d.savedBy?`（${d.savedBy}）`:"")),
+          h("button",{title:"削除",style:"padding:5px 7px",onclick:async()=>{
+            if(!db)return;
+            if(!await uiConfirm(`「${d.name}」を削除しますか？`,"削除する"))return;
+            await db.ref("decks/"+d.id).remove();savedDecks=null;loadSavedDecks();
+          }},"×")));
+      });
+      wrap.append(h("p",{class:"hint"},"1行1枚。「投/野/Z/T」で役割、名前 | スタッツ | 効果、Nx で複数、# メイン 下が山札。カード番号だけの行でもOK（例 BP03-M06）。DeckLogのデッキコードは上の欄に入れて「DeckLog読込」→内容を確認して保存。オーダーは打順1〜9→10枚目以降はベンチ。"),dlRow,pr,
+        h("p",{class:"hint"},"保存済みデッキ（全員で共有・「あの人のあのデッキ」と対戦したい時用）："),savedRow,ta,
         h("div",{class:"row"},
           h("button",{class:"pri",onclick:()=>{G.decklists[p]=ta.value;parseDecklist(ta.value).order.concat(parseDecklist(ta.value).main).forEach(registerLib);
             pushLog(`${teamName(p)} デッキ更新`,true);save();closeModal();setup(p);}},"保存"),
