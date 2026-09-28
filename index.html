@@ -3250,6 +3250,35 @@ function wireDrop(el,tp,tzk,tslot){
     moveCard(d.p,d.zk,d.slot,d.i,tp,tzk,tslot);});
   if(sel)el.addEventListener("click",e=>{if(e.target.closest(".card"))return;moveSelTo(tp,tzk,tslot);});
 }
+function discardFromHand(p,i,drawAfter){
+  const arr=G.zones[p].hand||[];const [card]=arr.splice(i,1);if(!card)return;
+  card.down=false;delete card.reveal;card.rest=false;
+  G.zones[p].rest.push(card);
+  pushLog(`${teamName(p)}: 手札「${card.name}」→レスト（捨てる）`);save();
+  closeModal();
+  if(drawAfter)draw(p,1);
+}
+function openHandDiscard(p,drawAfter){
+  const arr=G.zones[p].hand||[];
+  const wrap=h("div",{});
+  wrap.append(h("h2",{},teamName(p)+" ・ 手札から1枚捨てる"+(drawAfter?"（捨てたら自動で1枚引く）":"")));
+  if(!arr.length){
+    wrap.append(h("p",{class:"hint"},"手札がありません。"),h("div",{class:"row"},h("button",{onclick:closeModal},"閉じる")));
+    modal(wrap);return;
+  }
+  wrap.append(h("p",{class:"hint"},"捨てたいカードの「🗑 捨てる」を押してください。"));
+  const grid=h("div",{class:"zlist"});
+  arr.forEach((c,i)=>{
+    const cell=h("div",{class:"zlcell"});
+    cell.append(cardMini(c));
+    const bar=h("div",{class:"zlbar"});
+    bar.append(h("button",{onclick:()=>discardFromHand(p,i,drawAfter)},"🗑 捨てる"));
+    cell.append(bar);grid.append(cell);
+  });
+  wrap.append(grid);
+  wrap.append(h("div",{class:"row"},h("button",{onclick:closeModal},"キャンセル")));
+  modal(wrap);
+}
 function refreshDeck(p){
   const arr=G.zones[p].rest||[];
   if(!arr.length){toast("レストにカードがありません");return;}
@@ -3268,6 +3297,9 @@ function renderHand(p,mine){
   const hend=h("div",{class:"hend"},
     h("button",{onclick:()=>draw(p,1)},"山札から1枚"),
     h("button",{onclick:async()=>{const v=await uiPrompt("何枚引く？","5");const n=+v;if(n>0)draw(p,n);}},"N枚"),
+    h("button",{onclick:()=>openHandDiscard(p,false)},"🗑 1枚捨てる"),
+    h("button",{onclick:()=>{draw(p,1);openHandDiscard(p,false);}},"📥→🗑 引いて捨てる"),
+    h("button",{onclick:()=>openHandDiscard(p,true)},"🗑→📥 捨てて引く"),
     h("button",{onclick:()=>resetHand(p)},"手札リセット"));
   if(!(G.zones[p].md||[]).length)hend.append(h("button",{
     style:"background:var(--gold);border-color:var(--gold);color:#241a02;font-weight:700",
