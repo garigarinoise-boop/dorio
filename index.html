@@ -275,9 +275,10 @@ body.selmode{padding-bottom:78px}
 .mod-stepper{display:inline-flex;align-items:center;gap:4px}
 .mod-stepper input[type=number]{width:32px;text-align:center;padding:5px 2px}
 .mod-stepper button{width:24px;height:24px;padding:0;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);font-weight:700;line-height:1}
-.hit-row{border-top:0}
+.hit-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 12px;
+  background:var(--panel);border:1px solid var(--line);border-top:1px dashed var(--line)}
 .hit-row span{font-size:10.5px;color:var(--ink-soft)}
-.hit-row button{background:var(--panel-2);font-weight:700}
+.hit-row button{font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel-2);font-weight:700}
 .hit-row button.hr{background:var(--gold);border-color:var(--gold);color:#241a02}
 .roll-row select{padding:5px 6px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);font:inherit}
 .log{max-height:180px;overflow-y:auto;padding:9px 12px;display:flex;flex-direction:column;gap:4px;font-size:12px}
@@ -396,13 +397,6 @@ window.FIREBASE_CONFIG = {
       </span>
       <button class="big" id="btnRoll">ロール</button>
       <button id="btnCoin">先攻決め（コイン）</button>
-    </div>
-    <div class="roll-row hit-row">
-      <span>結果を選んで自動処理（走者・打者を自動で進める）</span>
-      <button data-hit="1">安打</button>
-      <button data-hit="2">二塁打</button>
-      <button data-hit="3">三塁打</button>
-      <button class="hr" data-hit="4">本塁打</button>
     </div>
     <div class="log" id="log"></div>
     <div class="log-in">
@@ -4985,7 +4979,7 @@ function renderPanel(p,mine,flip){
       h("b",{class:"mono"},String(G.board.order[p])),
       h("button",{onclick:()=>{G.board.order[p]=G.board.order[p]%9+1;save();}},"+")),
     diceMini(p),tpCtl(p));
-  const wrap=h("div",{class:"panel"},head);
+  const wrap=h("div",{class:"panel"},head,hitRow(p));
   const fs=h("div",{class:"fieldscroll"});
   const rz=renderRevealZone(p);
   fs.append(renderHand(p,mine));
@@ -5003,6 +4997,12 @@ function diceMini(p){const d=G.dice[p];
   return h("div",{class:"dice-mini"},"ダイス",h("span",{class:"val"+(isNewRoll?" flash":"")},d?String(d.total):"—"),
     d?h("span",{},`(${d.dice.join("+")}${d.mod?(d.mod>0?"+"+d.mod:d.mod):""})`):"",
     h("button",{style:"width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel)",onclick:()=>rollFor(p)},"🎲"));}
+function hitRow(p){
+  const hitBtn=(n,lab,hr)=>h("button",{class:hr?"hr":"",onclick:()=>resolveHit(p,n)},lab);
+  return h("div",{class:"hit-row"},
+    h("span",{},"打撃結果："),
+    hitBtn(1,"安打"),hitBtn(2,"二塁打"),hitBtn(3,"三塁打"),hitBtn(4,"本塁打",true));
+}
 
 function wireDrop(el,tp,tzk,tslot){
   el.addEventListener("dragover",e=>{if(fieldDrag){e.preventDefault();el.classList.add("dropok");}});
@@ -6130,9 +6130,6 @@ function boot(){
   $("#btnCoin").onclick=coin;
   $("#btnModMinus").onclick=()=>adjRollMod(-1);
   $("#btnModPlus").onclick=()=>adjRollMod(1);
-  document.querySelectorAll(".hit-row [data-hit]").forEach(b=>{
-    b.onclick=()=>resolveHit($("#rollWho").value,+b.dataset.hit);
-  });
   $("#logSend").onclick=sendLog;
   $("#logInput").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing)sendLog();});
   render();initSync();
