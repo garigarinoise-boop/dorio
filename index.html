@@ -2727,6 +2727,7 @@ const MOVE=[["lineup","打順"],["mound","登板"],["bench","控え"],["support"
 
 let G=null,db=null,docRef=null,saveTimer=null,sel=null,popEl=null,fieldDrag=null;
 let lastDiceTs={p1:0,p2:0};   // ロール結果が前回と同じ数字でも「振った」ことが分かるようフラッシュさせる用
+let diceNotifyBaseline={p1:false,p2:false};   // 起動直後に既にあるロールではポップアップしないためのフラグ
 let undoStack=[],lastSnapshot=null;   // 「一手戻る」用。ローカルのみ・リロードで消える（DBには保存しない）
 let IMG={},IMGIDX={},IMGwant=new Set(),imgQT=null,renderT=null;   // card no -> data URI; images live under cardimg/<no> in RTDB
 const DOWNZ={md:1,od:1,hand:1,bench:1,support:1,out:1};
@@ -3237,6 +3238,10 @@ function renderPanel(p,mine,flip){
 function diceMini(p){const d=G.dice[p];
   const isNewRoll=d&&d.ts&&d.ts!==lastDiceTs[p];
   if(d&&d.ts)lastDiceTs[p]=d.ts;
+  if(isNewRoll){
+    if(!diceNotifyBaseline[p])diceNotifyBaseline[p]=true;  // 起動直後の既存ロールでは通知しない
+    else toast(`🎲 ${teamName(p)}（${d.by||"?"}）: [${d.dice.join(", ")}]${d.mod?(d.mod>0?" +"+d.mod:" "+d.mod):""} = ${d.total}`);
+  }
   return h("div",{class:"dice-mini"},"ダイス",h("span",{class:"val"+(isNewRoll?" flash":"")},d?String(d.total):"—"),
     d?h("span",{},`(${d.dice.join("+")}${d.mod?(d.mod>0?"+"+d.mod:d.mod):""})`):"",
     h("button",{style:"width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel)",onclick:()=>rollFor(p)},"🎲"));}
