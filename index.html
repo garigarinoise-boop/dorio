@@ -4682,7 +4682,7 @@ function layoutSide(p){
   order.concat(main).forEach(registerLib);
   const z=emptyZones();
   const bat=order.filter(c=>c.role!=="P"&&!c.zone&&!c.tcard),pit=order.filter(c=>c.role==="P"),zon=order.filter(c=>c.zone),tc=order.filter(c=>c.tcard);
-  bat.forEach((c,i)=>{if(i<9)z.lineup[i].push(mkCard(c,false));else z.bench.push(mkCard(c,true));});
+  bat.forEach((c,i)=>{if(i<9){const card=mkCard(c,false);card.homeSlot=i;z.lineup[i].push(card);}else z.bench.push(mkCard(c,true));});
   pit.forEach((c,i)=>(i===0?z.mound:z.bench).push(mkCard(c,i!==0)));
   zon.forEach(c=>z.bench.push(mkCard(c,true)));
   tc.forEach(c=>z.team.push(mkCard(c,false)));
@@ -4923,6 +4923,8 @@ function renderScoreboard(){
       h("button",{class:"step",onclick:()=>{b.inning++;save();}},"›")),
     outs,
     h("button",{class:"change",onclick:()=>{
+      const outgoingAtk=b.half==="top"?"p1":"p2";
+      returnAllToLineup(outgoingAtk);
       b.outs=0;b.swing=null;if(b.half==="top")b.half="bot";else{b.half="top";b.inning++;}
       const na=b.half==="top"?"p1":"p2";
       if(b.outBase)b.outBase[na]=(G.zones[na].out||[]).length;
@@ -5232,6 +5234,7 @@ function openZoneList(p,key){
 function pinchHit(p,i){
   const bench=G.zones[p].bench,sub=bench[i];if(!sub)return;
   bench.splice(i,1);sub.down=false;delete sub.reveal;
+  sub.homeSlot=G.board.order[p]-1;  // 代打はこの打順を引き継ぐ（以後この選手がこの打順の「持ち主」になる）
   const mainArr=G.zones[p].main;
   const outgoing=mainArr.splice(0,mainArr.length);  // 今メインにいる選手（重なってたZONEカードも一緒）はオーダーデッキへ
   outgoing.forEach(c=>{c.down=false;delete c.reveal;G.zones[p].od.push(c);});
@@ -5305,17 +5308,45 @@ function baseZone(p){
   });
   z.append(body);return z;
 }
+function returnAllToLineup(p){
+  // チェンジ時：打者(main)・走者(b1-b3)を打順へ一括で戻す（得点処理はしない）。save()は呼び出し側で行う想定
+  // 先に4ゾーンから全部抜き出してから振り分ける（戻り先不明分をmainへ戻す時に同じ配列をループし続けないため）
+  const toMove=[];
+  ["main","b1","b2","b3"].forEach(zk=>{const arr=G.zones[p][zk];while(arr.length)toMove.push(arr.shift());});
+  const handled=new Set();
+  let toLineup=0;const unresolved=[];
+  toMove.forEach(c=>{
+    if(handled.has(c))return;
+    handled.add(c);
+    let partner=null;
+    if(c.pairKey&&!c.zone){partner=toMove.find(x=>x!==c&&!handled.has(x)&&x.pairKey===c.pairKey);if(partner)handled.add(partner);}
+    delete c.pairKey;
+    if(c.homeSlot!=null&&!G.zones[p].lineup[c.homeSlot].length){c.down=false;delete c.reveal;G.zones[p].lineup[c.homeSlot].push(c);toLineup++;}
+    else{c.down=false;delete c.reveal;G.zones[p].main.push(c);unresolved.push(c.name);}
+    if(partner){delete partner.pairKey;partner.down=true;delete partner.reveal;G.zones[p].bench.push(partner);}
+  });
+  if(toLineup||unresolved.length)pushLog(`${teamName(p)}: チェンジで打者・走者を打順へ戻した（${toLineup}枚）${unresolved.length?`／戻り先不明${unresolved.length}枚はメインエリアで待機`:""}`,true);
+  if(unresolved.length)toast(`⚠️ 戻り先の打順が分からないカードがメインエリアで待機中：${unresolved.join("・")}。手動で移動してください`);
+}
 function scoreCardRaw(p,fromKey,i){
-  // 生還処理（得点+1・レストへ）。save()は呼び出し側でまとめて行う想定
+  // 生還処理（得点+1）。save()は呼び出し側でまとめて行う想定
   const arr=G.zones[p][fromKey];const c=arr[i];if(!c)return;
   arr.splice(i,1);
   let partner=null;
   if(c.pairKey&&!c.zone){const pi=arr.findIndex(x=>x&&x.pairKey===c.pairKey);if(pi>=0)partner=arr.splice(pi,1)[0];}
-  [c,partner].filter(Boolean).forEach(card=>{delete card.pairKey;card.down=!!DOWNZ.rest;delete card.reveal;G.zones[p].rest.push(card);});
+  delete c.pairKey;
+  // 自分の打順（homeSlot）を覚えていて、かつそのスロットが空いていれば自動でそこへ戻す。
+  // 分からない/埋まっている場合は、レストへ紛れ込ませず「メインエリアで待機」＋警告にして
+  // 手動で移動すべきことに気づけるようにする（fromKeyがmainの場合もそのままmainへ置き直すだけなので安全）。
+  const toLineup=c.homeSlot!=null&&!G.zones[p].lineup[c.homeSlot].length;
+  if(toLineup){c.down=false;delete c.reveal;G.zones[p].lineup[c.homeSlot].push(c);}
+  else{c.down=false;delete c.reveal;G.zones[p].main.push(c);toast(`⚠️「${c.name}」の戻り先の打順が分からないため、メインエリアで待機させました。手動で移動してください`);}
+  if(partner){delete partner.pairKey;partner.down=true;delete partner.reveal;G.zones[p].bench.push(partner);}  // ZONEカードは「ZONEをベンチに戻す」と同じくベンチへ
   const inn=Math.max(0,G.board.inning-1);
   const L=G.board.line[p]||(G.board.line[p]=[]);while(L.length<=inn)L.push(0);
   L[inn]=(L[inn]||0)+1;G.board.score[p]=(G.board.score[p]||0)+1;
-  pushLog(`${teamName(p)}: 「${c.name}」生還（+1点 → ${G.board.score[p]}）`);
+  const destLabel=toLineup?`打順${c.homeSlot+1}番へ`:"メインエリアで待機（要手動移動）";
+  pushLog(`${teamName(p)}: 「${c.name}」生還・${destLabel}（+1点 → ${G.board.score[p]}）`);
 }
 function advanceRunner(p,fromKey,i){
   if(fromKey==="b3"){
@@ -5429,6 +5460,7 @@ function moveCard(fp,fzk,fslot,fi,tp,tzk,tslot,forceDown){
   const from=arrOf(fp,fzk,fslot);if(!from)return;
   const [card]=from.splice(fi,1);if(!card)return;
   card.down=forceDown!=null?forceDown:!!DOWNZ[tzk];delete card.reveal;
+  if(tzk==="lineup"&&tslot!=null)card.homeSlot=tslot;  // 打順スロットへ入ったら「自分の打順番号」を覚える（生還時に自動で戻すため）
   const dest=arrOf(tp,tzk,tslot);
   // 山札(md)への移動は「一番上」に置く（＝次に引くカードになる）。他ゾーンは末尾に追加。
   // 「N枚見て好きな順で山札の上に戻す」効果は、戻したい順の逆順で1枚ずつここへ動かせば実現できる
