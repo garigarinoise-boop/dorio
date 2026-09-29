@@ -162,6 +162,13 @@ button{font:inherit;color:inherit;cursor:pointer}
 body.selmode .field .z:hover,body.selmode .lslot:hover,body.selmode .bslot:hover,
 body.selmode .benchbox:hover,body.selmode .hand:hover{outline:2px solid var(--gold);outline-offset:-1px;background:rgba(255,220,150,.20);cursor:copy}
 body.selmode .field .z,body.selmode .lslot,body.selmode .bslot,body.selmode .benchbox{outline:1px dashed rgba(240,190,110,.5);outline-offset:-1px}
+body.selmode{padding-bottom:78px}
+.quickbar{position:fixed;left:0;right:0;bottom:0;z-index:900;background:var(--panel);border-top:2px solid var(--gold);
+  padding:6px 8px;display:flex;align-items:center;gap:8px;box-shadow:0 -4px 16px #0008}
+.quickbar .qb-label{font-size:11px;font-weight:700;white-space:nowrap;color:var(--gold);flex:0 0 auto}
+.quickbar .qb-row{display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;flex:1;padding-bottom:2px}
+.quickbar .qb-row button{font-size:11px;padding:5px 8px;white-space:nowrap;flex:0 0 auto}
+.quickbar .qb-cancel{font-size:11px;padding:5px 8px;background:transparent;border-color:var(--line-strong);flex:0 0 auto}
 .z-inn{grid-area:inn} .z-out{grid-area:out} .z-base{grid-area:base} .z-sup{grid-area:sup}
 .z-main{grid-area:main} .z-team{grid-area:team} .z-rest{grid-area:rest}
 .z-md{grid-area:md} .z-od{grid-area:od} .z-line{grid-area:line}
@@ -4806,7 +4813,33 @@ function render(){
   const me=mySeat();
   $("#panelTop").innerHTML="";$("#panelTop").append(renderPanel("p1",me==="p1",true));
   $("#panelBot").innerHTML="";$("#panelBot").append(renderPanel("p2",me==="p2",false));
-  renderLog();renderRollWho();
+  renderLog();renderRollWho();renderQuickBar();
+}
+function renderQuickBar(){
+  let bar=document.getElementById("quickbarEl");
+  if(!sel){if(bar)bar.style.display="none";return;}
+  const {p,zk,slot,i}=sel;
+  const arr=arrOf(p,zk,slot);
+  const c=arr&&arr[i];
+  if(!c){sel=null;if(bar)bar.style.display="none";return;}
+  if(!bar){bar=h("div",{id:"quickbarEl",class:"quickbar"});document.body.append(bar);}
+  bar.innerHTML="";bar.style.display="flex";
+  bar.append(h("div",{class:"qb-label"},dispName(c.name)+"を移動"));
+  const row=h("div",{class:"qb-row"});
+  MOVE.forEach(([k,lab])=>{
+    if(k===zk&&k!=="lineup")return;
+    if(k==="out"){
+      row.append(h("button",{onclick:()=>{moveCard(p,zk,slot,i,p,"out",undefined,false);sel=null;render();}},"アウト(表)"));
+      row.append(h("button",{onclick:()=>{moveCard(p,zk,slot,i,p,"out",undefined,true);sel=null;render();}},"アウト(裏)"));
+      return;
+    }
+    row.append(h("button",{onclick:()=>{
+      const tslot=k==="lineup"?(G.board.order[p]-1):undefined;
+      moveCard(p,zk,slot,i,p,k,tslot);sel=null;render();
+    }},lab));
+  });
+  bar.append(row);
+  bar.append(h("button",{class:"qb-cancel",onclick:()=>{sel=null;render();}},"✕"));
 }
 function addRun(p,inn,d){
   const b=G.board;if(inn<0)inn=0;
