@@ -4403,6 +4403,7 @@ const MOVE=[["lineup","打順"],["mound","登板"],["bench","控え"],["support"
   ["b3","三塁"],["b2","二塁"],["b1","一塁"],["hand","手札"],["md","Mデッキ↑上"],["od","Oデッキ"]];
 
 let G=null,db=null,docRef=null,saveTimer=null,sel=null,popEl=null,fieldDrag=null;
+let lastSyncedRev=0;   // 自分が最後に確認した「サーバーと一致しているrev」。衝突検知の基準値
 let lastDiceTs={p1:0,p2:0};   // ロール結果が前回と同じ数字でも「振った」ことが分かるようフラッシュさせる用
 let diceNotifyBaseline={p1:false,p2:false};   // 起動直後に既にあるロールではポップアップしないためのフラグ
 let undoStack=[],lastSnapshot=null;   // 「一手戻る」用。ローカルのみ・リロードで消える（DBには保存しない）
@@ -4709,7 +4710,28 @@ function save(skipUndo){
   try{LS.setItem("dorio_g_"+GID,JSON.stringify(snap));
     LS.setItem("dorio_dl_p1",G.decklists.p1);LS.setItem("dorio_dl_p2",G.decklists.p2);}catch(e){}
   if(docRef){clearTimeout(saveTimer);
-    saveTimer=setTimeout(()=>{docRef.set(JSON.stringify(snap)).catch(()=>flashSync("同期エラー",true));},170);}
+    saveTimer=setTimeout(()=>{
+      // 素朴な.set()による丸ごと上書きだと、相手とほぼ同時に別の操作をした時に
+      // 片方の変更が無言で消えることがあった（例: アウト処理後のサポート→レストと相手のドローが重なる）。
+      // トランザクションで「自分がこの操作を始めた時点のrevから、サーバー側が誰かに書き換えられていないか」を確認し、
+      // 書き換えられていたら自分の書き込みは中止して衝突を検知＝トーストでやり直しを促す（無言消失をやめる）。
+      const expectRev=lastSyncedRev;
+      docRef.transaction(current=>{
+        if(current==null)return JSON.stringify(snap);
+        let cur;try{cur=JSON.parse(current);}catch(e){return JSON.stringify(snap);}
+        if((cur.rev||0)>expectRev)return;  // 中断：自分が知らない間にサーバーが進んでいた
+        return JSON.stringify(snap);
+      },(err,committed,resultSnap)=>{
+        if(err){flashSync("同期エラー",true);return;}
+        if(committed){lastSyncedRev=snap.rev;return;}
+        // 衝突：自分の書き込みは反映されなかった。相手の最新状態を取り込み、やり直しを促す
+        try{
+          const raw=resultSnap&&resultSnap.val();
+          const d=typeof raw==="string"?JSON.parse(raw):raw;
+          if(d&&d.zones){toast("⚠️ 相手の操作と同時だったため反映されませんでした。もう一度操作してください");applyRemote(d);}
+        }catch(e){}
+      });
+    },170);}
   render();
 }
 function undo(){
@@ -4738,7 +4760,7 @@ async function initSync(){
   try{
     const cur=await docRef.get();
     if(cur.exists())applyRemote(cur.val());
-    else await docRef.set(JSON.stringify(snapshotG()));
+    else{const seed=snapshotG();await docRef.set(JSON.stringify(seed));lastSyncedRev=seed.rev||0;}
   }catch(e){flashSync("同期エラー・ローカル継続",true);}
   docRef.on("value",s=>{
     if(!s.exists())return;
@@ -4753,6 +4775,7 @@ function applyRemote(d){
   if(typeof d==="string"){try{d=JSON.parse(d);}catch(e){return;}}
   if(lastSnapshot){undoStack.push(lastSnapshot);if(undoStack.length>25)undoStack.shift();}
   try{G=JSON.parse(JSON.stringify(d));}catch(e){G=d;}
+  lastSyncedRev=G.rev||0;
   migrate();sel=null;render();prefetchInPlay();
   lastSnapshot=JSON.parse(JSON.stringify(snapshotG()));
 }
