@@ -186,6 +186,8 @@ body.selmode{padding-bottom:78px}
   border-radius:6px;display:flex;flex-direction:column;background:rgba(255,255,255,.06)}
 .bslot .bh{font-size:9px;font-weight:700;color:#fff;text-align:center;padding:2px 0;opacity:.85}
 .bslot .bb{flex:1;padding:3px;display:flex;flex-wrap:wrap;gap:3px;align-content:flex-start;overflow:auto}
+.bslot .bcell{width:100%;display:flex;flex-direction:column;gap:2px}
+.bslot .advbtn{font-size:9px;padding:3px 4px;border-radius:5px;border:1px solid var(--gold);background:rgba(255,200,80,.16);color:var(--gold);font-weight:700}
 .z-line{background:linear-gradient(180deg,#153f74,#0e2e56);border-color:rgba(255,255,255,.3)}
 .z-line>.zb{flex-wrap:nowrap;gap:5px;padding:6px}
 .benchbox{flex:0 0 80px;border:1px dashed rgba(255,255,255,.42);border-radius:6px;display:flex;flex-direction:column;background:rgba(255,255,255,.06)}
@@ -270,6 +272,13 @@ body.selmode{padding-bottom:78px}
 .roll-row button{padding:6px 11px;border-radius:7px;border:1px solid var(--line-strong);background:var(--panel-2)}
 .roll-row .big{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
 .roll-row input[type=number]{width:50px;padding:5px 6px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);font:inherit}
+.mod-stepper{display:inline-flex;align-items:center;gap:4px}
+.mod-stepper input[type=number]{width:32px;text-align:center;padding:5px 2px}
+.mod-stepper button{width:24px;height:24px;padding:0;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);font-weight:700;line-height:1}
+.hit-row{border-top:0}
+.hit-row span{font-size:10.5px;color:var(--ink-soft)}
+.hit-row button{background:var(--panel-2);font-weight:700}
+.hit-row button.hr{background:var(--gold);border-color:var(--gold);color:#241a02}
 .roll-row select{padding:5px 6px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);font:inherit}
 .log{max-height:180px;overflow-y:auto;padding:9px 12px;display:flex;flex-direction:column;gap:4px;font-size:12px}
 .log .e{color:var(--ink-soft)} .log .e .t{opacity:.6;margin-right:6px;font-size:10.5px;font-variant-numeric:tabular-nums}
@@ -380,9 +389,20 @@ window.FIREBASE_CONFIG = {
       <span>打撃判定</span>
       <select id="rollWho"></select>
       <label>ダイス<input type="number" id="rollN" value="2" min="1" max="4"></label>
-      <label>補正<input type="number" id="rollMod" value="0" min="-9" max="9"></label>
+      <span class="mod-stepper">補正
+        <button type="button" id="btnModMinus">−</button>
+        <input type="number" id="rollMod" value="0" min="-9" max="9">
+        <button type="button" id="btnModPlus">+</button>
+      </span>
       <button class="big" id="btnRoll">ロール</button>
       <button id="btnCoin">先攻決め（コイン）</button>
+    </div>
+    <div class="roll-row hit-row">
+      <span>結果を選んで自動処理（走者・打者を自動で進める）</span>
+      <button data-hit="1">安打</button>
+      <button data-hit="2">二塁打</button>
+      <button data-hit="3">三塁打</button>
+      <button class="hr" data-hit="4">本塁打</button>
     </div>
     <div class="log" id="log"></div>
     <div class="log-in">
@@ -5274,10 +5294,59 @@ function baseZone(p){
     const slot=h("div",{class:"bslot"},h("div",{class:"bh"},lab));
     const bb=h("div",{class:"bb"});
     if(!arr.length)bb.append(h("div",{class:"empty"},"—"));
-    arr.forEach((c,i)=>bb.append(renderCard(p,k,null,i,c)));
+    arr.forEach((c,i)=>{
+      const cell=h("div",{class:"bcell"});
+      cell.append(renderCard(p,k,null,i,c));
+      cell.append(h("button",{class:"advbtn",onclick:e=>{e.stopPropagation();advanceRunner(p,k,i);}},
+        k==="b3"?"⚾ 生還":"▶ 進塁"));
+      bb.append(cell);
+    });
     slot.append(bb);wireDrop(slot,p,k);body.append(slot);
   });
   z.append(body);return z;
+}
+function scoreCardRaw(p,fromKey,i){
+  // 生還処理（得点+1・レストへ）。save()は呼び出し側でまとめて行う想定
+  const arr=G.zones[p][fromKey];const c=arr[i];if(!c)return;
+  arr.splice(i,1);
+  let partner=null;
+  if(c.pairKey&&!c.zone){const pi=arr.findIndex(x=>x&&x.pairKey===c.pairKey);if(pi>=0)partner=arr.splice(pi,1)[0];}
+  [c,partner].filter(Boolean).forEach(card=>{delete card.pairKey;card.down=!!DOWNZ.rest;delete card.reveal;G.zones[p].rest.push(card);});
+  const inn=Math.max(0,G.board.inning-1);
+  const L=G.board.line[p]||(G.board.line[p]=[]);while(L.length<=inn)L.push(0);
+  L[inn]=(L[inn]||0)+1;G.board.score[p]=(G.board.score[p]||0)+1;
+  pushLog(`${teamName(p)}: 「${c.name}」生還（+1点 → ${G.board.score[p]}）`);
+}
+function advanceRunner(p,fromKey,i){
+  if(fromKey==="b3"){
+    scoreCardRaw(p,"b3",i);
+    sel=null;save();
+  }else{
+    const toKey=fromKey==="b1"?"b2":"b3";
+    moveCard(p,fromKey,null,i,p,toKey,undefined);
+    sel=null;
+  }
+}
+const HIT_LABEL={1:"安打",2:"二塁打",3:"三塁打",4:"本塁打"};
+function resolveHit(p,bases){
+  if(!G.zones[p].main.length){toast("メインエリアに打者がいません");return;}
+  const moveOne=(fromKey,destBase)=>{
+    const arr=G.zones[p][fromKey];const c=arr[0];if(!c)return;
+    if(destBase>=4){scoreCardRaw(p,fromKey,0);return;}
+    const toKey="b"+destBase;
+    arr.splice(0,1);
+    let partner=null;
+    if(c.pairKey&&!c.zone){const pi=arr.findIndex(x=>x&&x.pairKey===c.pairKey);if(pi>=0)partner=arr.splice(pi,1)[0];}
+    [c,partner].filter(Boolean).forEach(card=>{card.down=!!DOWNZ[toKey];delete card.reveal;G.zones[p][toKey].push(card);});
+    pushLog(`${teamName(p)}: 「${c.name}」${fromKey==="main"?"メインエリア":ZL[fromKey]}→${ZL[toKey]}`);
+  };
+  for(let baseNum=3;baseNum>=1;baseNum--){
+    const arr=G.zones[p]["b"+baseNum];
+    while(arr.length)moveOne("b"+baseNum,baseNum+bases);
+  }
+  while(G.zones[p].main.length)moveOne("main",bases);
+  pushLog(`${teamName(p)}: 打撃判定 → ${HIT_LABEL[bases]}！`,true);
+  sel=null;save();
 }
 function lineZone(p){
   const z=h("div",{class:"z z-line"},h("div",{class:"zh"},h("span",{class:"zt"},"打順 / 投手 / ベンチ"),
@@ -5483,6 +5552,10 @@ async function resetHand(p){
   G.zones[p].hand=[];
   G.zones[p].md=shuffle(G.zones[p].md);
   pushLog(`${teamName(p)} 手札をリセット（山札へ戻してシャッフル）`,true);save();
+}
+function adjRollMod(d){
+  const el=$("#rollMod");if(!el)return;
+  el.value=Math.max(-9,Math.min(9,(+el.value||0)+d));
 }
 function rollFor(p){
   const n=Math.max(1,Math.min(4,+$("#rollN").value||2)),mod=+$("#rollMod").value||0;
@@ -6055,6 +6128,11 @@ function boot(){
   };
   $("#btnRoll").onclick=()=>rollFor($("#rollWho").value);
   $("#btnCoin").onclick=coin;
+  $("#btnModMinus").onclick=()=>adjRollMod(-1);
+  $("#btnModPlus").onclick=()=>adjRollMod(1);
+  document.querySelectorAll(".hit-row [data-hit]").forEach(b=>{
+    b.onclick=()=>resolveHit($("#rollWho").value,+b.dataset.hit);
+  });
   $("#logSend").onclick=sendLog;
   $("#logInput").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.isComposing)sendLog();});
   render();initSync();
