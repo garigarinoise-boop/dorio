@@ -281,6 +281,7 @@ body.selmode{padding-bottom:78px}
 .hit-row button{font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel-2);font-weight:700}
 .hit-row button.hr{background:var(--gold);border-color:var(--gold);color:#241a02}
 .hit-row button.out{background:transparent;color:var(--ink-soft)}
+.hit-row button.change{background:transparent;color:var(--ink-soft);margin-left:auto}
 .roll-row select{padding:5px 6px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);font:inherit}
 .log{max-height:180px;overflow-y:auto;padding:9px 12px;display:flex;flex-direction:column;gap:4px;font-size:12px}
 .log .e{color:var(--ink-soft)} .log .e .t{opacity:.6;margin-right:6px;font-size:10.5px;font-variant-numeric:tabular-nums}
@@ -4923,13 +4924,7 @@ function renderScoreboard(){
         h("button",{class:b.half==="bot"?"on":"",onclick:()=>{b.half="bot";save();}},"裏")),
       h("button",{class:"step",onclick:()=>{b.inning++;save();}},"›")),
     outs,
-    h("button",{class:"change",onclick:()=>{
-      const outgoingAtk=b.half==="top"?"p1":"p2";
-      returnAllToLineup(outgoingAtk);
-      b.outs=0;b.swing=null;if(b.half==="top")b.half="bot";else{b.half="top";b.inning++;}
-      const na=b.half==="top"?"p1":"p2";
-      if(b.outBase)b.outBase[na]=(G.zones[na].out||[]).length;
-      pushLog(`チェンジ → ${b.inning}回${b.half==="top"?"表":"裏"}`);save();}},"チェンジ ⟳")));
+    h("button",{class:"change",onclick:doChange},"チェンジ ⟳")));
   sb.append(team("p2",true));
   // line score (innings 1-5, more if extra innings)
   const cols=Math.min(15,Math.max(3,b.inning));
@@ -5005,7 +5000,8 @@ function hitRow(p){
   return h("div",{class:"hit-row"},
     h("span",{},"打撃結果："),
     h("button",{class:"out",onclick:()=>resolveOut(p)},"アウト"),
-    hitBtn(1,"安打"),hitBtn(2,"二塁打"),hitBtn(3,"三塁打"),hitBtn(4,"本塁打",true));
+    hitBtn(1,"安打"),hitBtn(2,"二塁打"),hitBtn(3,"三塁打"),hitBtn(4,"本塁打",true),
+    h("button",{class:"change mini",onclick:doChange},"チェンジ ⟳"));
 }
 
 function wireDrop(el,tp,tzk,tslot){
@@ -5342,6 +5338,15 @@ function returnAllToLineup(p){
     if(returnCardHome(p,c,partner))toLineup++;else unresolved++;
   });
   if(toLineup||unresolved)pushLog(`${teamName(p)}: チェンジで打者・走者を打順へ戻した（${toLineup}枚）${unresolved?`／戻り先不明${unresolved}枚はメインエリアで待機`:""}`,true);
+}
+function doChange(){
+  const b=G.board;
+  const outgoingAtk=b.half==="top"?"p1":"p2";
+  returnAllToLineup(outgoingAtk);
+  b.outs=0;b.swing=null;if(b.half==="top")b.half="bot";else{b.half="top";b.inning++;}
+  const na=b.half==="top"?"p1":"p2";
+  if(b.outBase)b.outBase[na]=(G.zones[na].out||[]).length;
+  pushLog(`チェンジ → ${b.inning}回${b.half==="top"?"表":"裏"}`);save();
 }
 function scoreExtractedCard(p,c,partner){
   // 生還処理の中核（呼び出し側が既に元のゾーンからc/partnerを取り出し済みの前提。得点+1、save()はしない）。
