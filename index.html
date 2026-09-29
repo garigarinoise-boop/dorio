@@ -5018,19 +5018,11 @@ function zoneHead(p,key,label,extra){
   return h("div",{class:"zh"},h("span",{class:"zt",title:label},label),
     h("span",{style:"display:flex;gap:3px;align-items:center"},extra||"",h("span",{class:"ct"},String(arr.length))));
 }
-function costSum(p,key){
-  return (G.zones[p][key]||[]).reduce((s,c)=>{
-    const L=G.library[c.name]||{};
-    return s+(L.cost!=null?L.cost:0);
-  },0);
-}
 function simpleZone(p,key,cls){
   const arr=G.zones[p][key]||[];
   let ex=null;
   if(key==="md")ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();G.zones[p].md=shuffle(G.zones[p].md);pushLog(`${teamName(p)} 山札シャッフル`);save();}},"混")];
-  if(key==="support"&&arr.length)ex=[
-    h("span",{class:"zbtn",style:"pointer-events:none;background:transparent",title:"サポートエリアのコスト合計（戦術カードは0として計算）"},"コストΣ"+costSum(p,"support")),
-    h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();
+  if(key==="support"&&arr.length)ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();
     const n=G.zones[p].support.length;
     G.zones[p].support.forEach(c=>{c.down=false;delete c.reveal;c.rest=false;G.zones[p].rest.push(c);});
     G.zones[p].support=[];pushLog(`${teamName(p)} サポート${n}枚をレストへ`);save();}},"→レスト")];
