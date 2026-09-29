@@ -280,6 +280,7 @@ body.selmode{padding-bottom:78px}
 .hit-row span{font-size:10.5px;color:var(--ink-soft)}
 .hit-row button{font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel-2);font-weight:700}
 .hit-row button.hr{background:var(--gold);border-color:var(--gold);color:#241a02}
+.hit-row button.out{background:transparent;color:var(--ink-soft)}
 .roll-row select{padding:5px 6px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);font:inherit}
 .log{max-height:180px;overflow-y:auto;padding:9px 12px;display:flex;flex-direction:column;gap:4px;font-size:12px}
 .log .e{color:var(--ink-soft)} .log .e .t{opacity:.6;margin-right:6px;font-size:10.5px;font-variant-numeric:tabular-nums}
@@ -5003,6 +5004,7 @@ function hitRow(p){
   const hitBtn=(n,lab,hr)=>h("button",{class:hr?"hr":"",onclick:()=>resolveHit(p,n)},lab);
   return h("div",{class:"hit-row"},
     h("span",{},"打撃結果："),
+    h("button",{class:"out",onclick:()=>resolveOut(p)},"アウト"),
     hitBtn(1,"安打"),hitBtn(2,"二塁打"),hitBtn(3,"三塁打"),hitBtn(4,"本塁打",true));
 }
 
@@ -5234,9 +5236,14 @@ function openZoneList(p,key){
 function pinchHit(p,i){
   const bench=G.zones[p].bench,sub=bench[i];if(!sub)return;
   bench.splice(i,1);sub.down=false;delete sub.reveal;
-  sub.homeSlot=G.board.order[p]-1;  // 代打はこの打順を引き継ぐ（以後この選手がこの打順の「持ち主」になる）
   const mainArr=G.zones[p].main;
   const outgoing=mainArr.splice(0,mainArr.length);  // 今メインにいる選手（重なってたZONEカードも一緒）はオーダーデッキへ
+  // 代打はこの打順を引き継ぐ（以後この選手がこの打順の「持ち主」になる）。
+  // 打順カウンター（G.board.order）は実運用では次の回の先頭にしか動かされておらず、1イニング中に
+  // 代打を複数回使うと全員同じ番号になってしまう。今メインにいた人（＝入れ替わる本人）の番号を
+  // そのまま引き継ぐのが確実（メインが空の時＝このターン最初の代打の時だけ打順カウンターにフォールバック）。
+  const outgoingHome=outgoing.find(c=>!c.zone);
+  sub.homeSlot=outgoingHome&&outgoingHome.homeSlot!=null?outgoingHome.homeSlot:G.board.order[p]-1;
   outgoing.forEach(c=>{c.down=false;delete c.reveal;G.zones[p].od.push(c);});
   mainArr.push(sub);
   G.board.tp[p]=Math.max(0,G.board.tp[p]-1);
@@ -5308,28 +5315,8 @@ function baseZone(p){
   });
   z.append(body);return z;
 }
-function returnAllToLineup(p){
-  // チェンジ時：打者(main)・走者(b1-b3)を打順へ一括で戻す（得点処理はしない）。save()は呼び出し側で行う想定
-  // 先に4ゾーンから全部抜き出してから振り分ける（戻り先不明分をmainへ戻す時に同じ配列をループし続けないため）
-  const toMove=[];
-  ["main","b1","b2","b3"].forEach(zk=>{const arr=G.zones[p][zk];while(arr.length)toMove.push(arr.shift());});
-  const handled=new Set();
-  let toLineup=0;const unresolved=[];
-  toMove.forEach(c=>{
-    if(handled.has(c))return;
-    handled.add(c);
-    let partner=null;
-    if(c.pairKey&&!c.zone){partner=toMove.find(x=>x!==c&&!handled.has(x)&&x.pairKey===c.pairKey);if(partner)handled.add(partner);}
-    delete c.pairKey;
-    if(c.homeSlot!=null&&!G.zones[p].lineup[c.homeSlot].length){c.down=false;delete c.reveal;G.zones[p].lineup[c.homeSlot].push(c);toLineup++;}
-    else{c.down=false;delete c.reveal;G.zones[p].main.push(c);unresolved.push(c.name);}
-    if(partner){delete partner.pairKey;partner.down=true;delete partner.reveal;G.zones[p].bench.push(partner);}
-  });
-  if(toLineup||unresolved.length)pushLog(`${teamName(p)}: チェンジで打者・走者を打順へ戻した（${toLineup}枚）${unresolved.length?`／戻り先不明${unresolved.length}枚はメインエリアで待機`:""}`,true);
-  if(unresolved.length)toast(`⚠️ 戻り先の打順が分からないカードがメインエリアで待機中：${unresolved.join("・")}。手動で移動してください`);
-}
-function scoreExtractedCard(p,c,partner){
-  // 生還処理の中核（呼び出し側が既に元のゾーンからc/partnerを取り出し済みの前提。得点+1、save()はしない）。
+function returnCardHome(p,c,partner){
+  // 1枚を打順の元の場所へ戻す共通処理（得点処理はしない）。
   // 自分の打順（homeSlot）を覚えていて、かつそのスロットが空いていれば自動でそこへ戻す。
   // 分からない/埋まっている場合は、レストへ紛れ込ませず「メインエリアで待機」＋警告にして
   // 手動で移動すべきことに気づけるようにする。
@@ -5338,6 +5325,27 @@ function scoreExtractedCard(p,c,partner){
   if(toLineup){c.down=false;delete c.reveal;G.zones[p].lineup[c.homeSlot].push(c);}
   else{c.down=false;delete c.reveal;G.zones[p].main.push(c);toast(`⚠️「${c.name}」の戻り先の打順が分からないため、メインエリアで待機させました。手動で移動してください`);}
   if(partner){delete partner.pairKey;partner.down=true;delete partner.reveal;G.zones[p].bench.push(partner);}  // ZONEカードは「ZONEをベンチに戻す」と同じくベンチへ
+  return toLineup;
+}
+function returnAllToLineup(p){
+  // チェンジ時：打者(main)・走者(b1-b3)を打順へ一括で戻す（得点処理はしない）。save()は呼び出し側で行う想定
+  // 先に4ゾーンから全部抜き出してから振り分ける（戻り先不明分をmainへ戻す時に同じ配列をループし続けないため）
+  const toMove=[];
+  ["main","b1","b2","b3"].forEach(zk=>{const arr=G.zones[p][zk];while(arr.length)toMove.push(arr.shift());});
+  const handled=new Set();
+  let toLineup=0,unresolved=0;
+  toMove.forEach(c=>{
+    if(handled.has(c))return;
+    handled.add(c);
+    let partner=null;
+    if(c.pairKey&&!c.zone){partner=toMove.find(x=>x!==c&&!handled.has(x)&&x.pairKey===c.pairKey);if(partner)handled.add(partner);}
+    if(returnCardHome(p,c,partner))toLineup++;else unresolved++;
+  });
+  if(toLineup||unresolved)pushLog(`${teamName(p)}: チェンジで打者・走者を打順へ戻した（${toLineup}枚）${unresolved?`／戻り先不明${unresolved}枚はメインエリアで待機`:""}`,true);
+}
+function scoreExtractedCard(p,c,partner){
+  // 生還処理の中核（呼び出し側が既に元のゾーンからc/partnerを取り出し済みの前提。得点+1、save()はしない）。
+  const toLineup=returnCardHome(p,c,partner);
   const inn=Math.max(0,G.board.inning-1);
   const L=G.board.line[p]||(G.board.line[p]=[]);while(L.length<=inn)L.push(0);
   L[inn]=(L[inn]||0)+1;G.board.score[p]=(G.board.score[p]||0)+1;
@@ -5362,9 +5370,35 @@ function advanceRunner(p,fromKey,i){
     sel=null;
   }
 }
+function nextOrderSlot(p){
+  // 「今の打者(homeSlot)の次」を確実な情報から計算する。打順カウンターは手動更新されない前提で
+  // 頼りすぎない（メインが空でhomeSlot不明の時だけ、既存のカウンター値にフォールバック）。
+  const curBatter=G.zones[p].main.find(c=>!c.zone);
+  const curSlot=curBatter&&curBatter.homeSlot!=null?curBatter.homeSlot:(G.board.order[p]-1);
+  return (curSlot+1)%9+1;
+}
+function resolveOut(p){
+  // 打撃判定でアウト、または打者のAPが投手のDPを下回ってそもそも打撃判定を行わずアウト、
+  // どちらも処理は同じ（打者は打順へ戻る、得点なし）。公式ルール「アウト：打者をベンチエリアに戻す」に対応。
+  if(!G.zones[p].main.length){toast("メインエリアに打者がいません");return;}
+  const nextSlot=nextOrderSlot(p);
+  const toMove=[];
+  while(G.zones[p].main.length)toMove.push(G.zones[p].main.shift());
+  const handled=new Set();
+  toMove.forEach(c=>{
+    if(handled.has(c))return;handled.add(c);
+    let partner=null;
+    if(c.pairKey&&!c.zone){const found=toMove.find(x=>x!==c&&!handled.has(x)&&x.pairKey===c.pairKey);if(found){partner=found;handled.add(partner);}}
+    returnCardHome(p,c,partner);
+  });
+  G.board.order[p]=nextSlot;
+  pushLog(`${teamName(p)}: 打撃判定 → アウト`,true);
+  sel=null;save();
+}
 const HIT_LABEL={1:"安打",2:"二塁打",3:"三塁打",4:"本塁打"};
 function resolveHit(p,bases){
   if(!G.zones[p].main.length){toast("メインエリアに打者がいません");return;}
+  const nextSlot=nextOrderSlot(p);  // 処理後に「次の打順」へ自動で進める（代打の打順引き継ぎを正確にするため）
   // 先に動かす対象を全部抜き出してから振り分ける。
   // 生還フォールバック先が「メインエリア」なので、打者のいたmainゾーンを later ループで
   // その場処理すると、フォールバックで戻されたカードを再度同じループが拾って無限ループになる
@@ -5394,6 +5428,7 @@ function resolveHit(p,bases){
       pushLog(`${teamName(p)}: 「${c.name}」${label}→${ZL[toKey]}`);
     }
   });
+  G.board.order[p]=nextSlot;
   pushLog(`${teamName(p)}: 打撃判定 → ${HIT_LABEL[bases]}！`,true);
   sel=null;save();
 }
