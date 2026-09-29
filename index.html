@@ -3337,11 +3337,19 @@ function zoneHead(p,key,label,extra){
   return h("div",{class:"zh"},h("span",{class:"zt",title:label},label),
     h("span",{style:"display:flex;gap:3px;align-items:center"},extra||"",h("span",{class:"ct"},String(arr.length))));
 }
+function costSum(p,key){
+  return (G.zones[p][key]||[]).reduce((s,c)=>{
+    const L=G.library[c.name]||{};
+    return s+(L.cost!=null?L.cost:0);
+  },0);
+}
 function simpleZone(p,key,cls){
   const arr=G.zones[p][key]||[];
   let ex=null;
   if(key==="md")ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();G.zones[p].md=shuffle(G.zones[p].md);pushLog(`${teamName(p)} 山札シャッフル`);save();}},"混")];
-  if(key==="support"&&arr.length)ex=[h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();
+  if(key==="support"&&arr.length)ex=[
+    h("span",{class:"zbtn",style:"pointer-events:none;background:transparent",title:"サポートエリアのコスト合計（戦術カードは0として計算）"},"コストΣ"+costSum(p,"support")),
+    h("button",{class:"zbtn",onclick:e=>{e.stopPropagation();
     const n=G.zones[p].support.length;
     G.zones[p].support.forEach(c=>{c.down=false;delete c.reveal;c.rest=false;G.zones[p].rest.push(c);});
     G.zones[p].support=[];pushLog(`${teamName(p)} サポート${n}枚をレストへ`);save();}},"→レスト")];
@@ -3752,6 +3760,8 @@ function rollFor(p){
   const total=dice.reduce((a,b)=>a+b,0)+mod;
   G.dice[p]={dice,mod,total,by:myName,ts:Date.now()};
   pushLog(`🎲 ${teamName(p)}: [${dice.join(", ")}]${mod?(mod>0?" +"+mod:" "+mod):""} = ${total}`);save();
+  // 単発効果（相手打撃判定でダイス-1等）の補正を戻し忘れて次のロールに引き継がれる事故を防ぐため、使用後は自動で0に戻す
+  const modEl=$("#rollMod");if(modEl)modEl.value="0";
 }
 function coin(){pushLog(`🪙 コイン: ${Math.random()<.5?"表":"裏"}`);save();}
 
