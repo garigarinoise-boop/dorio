@@ -5328,16 +5328,12 @@ function returnAllToLineup(p){
   if(toLineup||unresolved.length)pushLog(`${teamName(p)}: チェンジで打者・走者を打順へ戻した（${toLineup}枚）${unresolved.length?`／戻り先不明${unresolved.length}枚はメインエリアで待機`:""}`,true);
   if(unresolved.length)toast(`⚠️ 戻り先の打順が分からないカードがメインエリアで待機中：${unresolved.join("・")}。手動で移動してください`);
 }
-function scoreCardRaw(p,fromKey,i){
-  // 生還処理（得点+1）。save()は呼び出し側でまとめて行う想定
-  const arr=G.zones[p][fromKey];const c=arr[i];if(!c)return;
-  arr.splice(i,1);
-  let partner=null;
-  if(c.pairKey&&!c.zone){const pi=arr.findIndex(x=>x&&x.pairKey===c.pairKey);if(pi>=0)partner=arr.splice(pi,1)[0];}
-  delete c.pairKey;
+function scoreExtractedCard(p,c,partner){
+  // 生還処理の中核（呼び出し側が既に元のゾーンからc/partnerを取り出し済みの前提。得点+1、save()はしない）。
   // 自分の打順（homeSlot）を覚えていて、かつそのスロットが空いていれば自動でそこへ戻す。
   // 分からない/埋まっている場合は、レストへ紛れ込ませず「メインエリアで待機」＋警告にして
-  // 手動で移動すべきことに気づけるようにする（fromKeyがmainの場合もそのままmainへ置き直すだけなので安全）。
+  // 手動で移動すべきことに気づけるようにする。
+  delete c.pairKey;
   const toLineup=c.homeSlot!=null&&!G.zones[p].lineup[c.homeSlot].length;
   if(toLineup){c.down=false;delete c.reveal;G.zones[p].lineup[c.homeSlot].push(c);}
   else{c.down=false;delete c.reveal;G.zones[p].main.push(c);toast(`⚠️「${c.name}」の戻り先の打順が分からないため、メインエリアで待機させました。手動で移動してください`);}
@@ -5347,6 +5343,14 @@ function scoreCardRaw(p,fromKey,i){
   L[inn]=(L[inn]||0)+1;G.board.score[p]=(G.board.score[p]||0)+1;
   const destLabel=toLineup?`打順${c.homeSlot+1}番へ`:"メインエリアで待機（要手動移動）";
   pushLog(`${teamName(p)}: 「${c.name}」生還・${destLabel}（+1点 → ${G.board.score[p]}）`);
+}
+function scoreCardRaw(p,fromKey,i){
+  // 単発の生還処理（進塁ボタン用）。save()は呼び出し側でまとめて行う想定
+  const arr=G.zones[p][fromKey];const c=arr[i];if(!c)return;
+  arr.splice(i,1);
+  let partner=null;
+  if(c.pairKey&&!c.zone){const pi=arr.findIndex(x=>x&&x.pairKey===c.pairKey);if(pi>=0)partner=arr.splice(pi,1)[0];}
+  scoreExtractedCard(p,c,partner);
 }
 function advanceRunner(p,fromKey,i){
   if(fromKey==="b3"){
@@ -5361,21 +5365,35 @@ function advanceRunner(p,fromKey,i){
 const HIT_LABEL={1:"安打",2:"二塁打",3:"三塁打",4:"本塁打"};
 function resolveHit(p,bases){
   if(!G.zones[p].main.length){toast("メインエリアに打者がいません");return;}
-  const moveOne=(fromKey,destBase)=>{
-    const arr=G.zones[p][fromKey];const c=arr[0];if(!c)return;
-    if(destBase>=4){scoreCardRaw(p,fromKey,0);return;}
-    const toKey="b"+destBase;
-    arr.splice(0,1);
-    let partner=null;
-    if(c.pairKey&&!c.zone){const pi=arr.findIndex(x=>x&&x.pairKey===c.pairKey);if(pi>=0)partner=arr.splice(pi,1)[0];}
-    [c,partner].filter(Boolean).forEach(card=>{card.down=!!DOWNZ[toKey];delete card.reveal;G.zones[p][toKey].push(card);});
-    pushLog(`${teamName(p)}: 「${c.name}」${fromKey==="main"?"メインエリア":ZL[fromKey]}→${ZL[toKey]}`);
-  };
+  // 先に動かす対象を全部抜き出してから振り分ける。
+  // 生還フォールバック先が「メインエリア」なので、打者のいたmainゾーンを later ループで
+  // その場処理すると、フォールバックで戻されたカードを再度同じループが拾って無限ループになる
+  // （returnAllToLineupと同じ罠）。抜き出しと振り分けを2段階に分けて回避。
+  const toMove=[];
   for(let baseNum=3;baseNum>=1;baseNum--){
     const arr=G.zones[p]["b"+baseNum];
-    while(arr.length)moveOne("b"+baseNum,baseNum+bases);
+    while(arr.length)toMove.push({c:arr.shift(),destBase:baseNum+bases,label:ZL["b"+baseNum]});
   }
-  while(G.zones[p].main.length)moveOne("main",bases);
+  while(G.zones[p].main.length)toMove.push({c:G.zones[p].main.shift(),destBase:bases,label:"メインエリア"});
+  const handled=new Set();
+  toMove.forEach(({c,destBase,label})=>{
+    if(handled.has(c))return;
+    handled.add(c);
+    let partner=null;
+    if(c.pairKey&&!c.zone){
+      const found=toMove.find(x=>x.c!==c&&!handled.has(x.c)&&x.c.pairKey===c.pairKey);
+      if(found){partner=found.c;handled.add(partner);}
+    }
+    if(destBase>=4){
+      delete c.pairKey;if(partner)delete partner.pairKey;
+      scoreExtractedCard(p,c,partner);
+    }else{
+      const toKey="b"+destBase;
+      delete c.pairKey;c.down=!!DOWNZ[toKey];delete c.reveal;G.zones[p][toKey].push(c);
+      if(partner){partner.down=!!DOWNZ[toKey];delete partner.reveal;G.zones[p][toKey].push(partner);}
+      pushLog(`${teamName(p)}: 「${c.name}」${label}→${ZL[toKey]}`);
+    }
+  });
   pushLog(`${teamName(p)}: 打撃判定 → ${HIT_LABEL[bases]}！`,true);
   sel=null;save();
 }
