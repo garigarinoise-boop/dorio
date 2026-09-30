@@ -118,6 +118,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .dice-mini{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-soft)}
 .dice-mini .val{font-family:"Oswald",sans-serif;font-weight:700;font-size:17px;color:var(--accent)}
 .dice-mini .val.flash{animation:diceFlash .5s ease}
+.dice-mini .mod-part{font-weight:700;color:var(--gold)}
 @keyframes diceFlash{0%{transform:scale(1.7);color:var(--gold)}100%{transform:scale(1);color:var(--accent)}}
 
 .fieldscroll{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-top:0;
@@ -4997,7 +4998,8 @@ function diceMini(p){const d=G.dice[p];
   }
   const curMod=+($("#rollMod")?.value||0);
   return h("div",{class:"dice-mini"},"ダイス",h("span",{class:"val"+(isNewRoll?" flash":"")},d?String(d.total):"—"),
-    d?h("span",{},`(${d.dice.join("+")}${d.mod?(d.mod>0?"+"+d.mod:d.mod):""})`):"",
+    d?h("span",{},`(${d.dice.join("+")})`):"",
+    d&&d.mod?h("span",{class:"mod-part"},(d.mod>0?"+":"")+d.mod):"",
     h("button",{style:"width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel)",onclick:()=>rollFor(p)},"🎲"),
     h("span",{class:"mod-stepper mini"},
       h("button",{type:"button",onclick:()=>adjRollMod(-1)},"−"),
