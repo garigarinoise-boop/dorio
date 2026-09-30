@@ -4430,6 +4430,7 @@ let G=null,db=null,docRef=null,saveTimer=null,sel=null,popEl=null,fieldDrag=null
 let lastSyncedRev=0;   // 自分が最後に確認した「サーバーと一致しているrev」。衝突検知の基準値
 let lastDiceTs={p1:0,p2:0};   // ロール結果が前回と同じ数字でも「振った」ことが分かるようフラッシュさせる用
 let diceNotifyBaseline={p1:false,p2:false};   // 起動直後に既にあるロールではポップアップしないためのフラグ
+let lastInningLen={p1:0,p2:0},inningInited=false;   // イニングエリアにカードが増えた（=3アウト成立）検知用
 let undoStack=[],lastSnapshot=null;   // 「一手戻る」用。ローカルのみ・リロードで消える（DBには保存しない）
 let IMG={},IMGIDX={},IMGwant=new Set(),imgQT=null,renderT=null;   // card no -> data URI; images live under cardimg/<no> in RTDB
 const DOWNZ={md:1,od:1,hand:1,bench:1,support:1,out:1};
@@ -4857,11 +4858,31 @@ function teamName(p){const s=G.seats[p];return(s?s.name:G.names[p])+"("+(p==="p1
 function render(){
   if(!G)return;
   document.body.classList.toggle("selmode",!!sel);
+  checkInningChange();
   renderScoreboard();
   const me=mySeat();
   $("#panelTop").innerHTML="";$("#panelTop").append(renderPanel("p1",me==="p1",true));
   $("#panelBot").innerHTML="";$("#panelBot").append(renderPanel("p2",me==="p2",false));
   renderLog();renderRollWho();renderQuickBar();
+}
+function checkInningChange(){
+  // 公式ルール：守備側のアウトエリアが3枚になったら1枚をイニングエリアへ表で置く→攻守交代。
+  // イニングエリアにカードが増えた瞬間を検知して「チェンジを押してください」を知らせる（3アウト時のみ、カード効果での単発移動と誤認しないように）。
+  const b=G.board;if(!b)return;
+  if(!inningInited){
+    // 初回renderは基準値を記録するだけ（起動直後・他クライアントの既存状態では通知しない）
+    inningInited=true;
+    ["p1","p2"].forEach(p=>{lastInningLen[p]=(G.zones[p]&&G.zones[p].inning)?G.zones[p].inning.length:0;});
+    return;
+  }
+  ["p1","p2"].forEach(p=>{
+    const cur=(G.zones[p]&&G.zones[p].inning)?G.zones[p].inning.length:0;
+    if(cur>lastInningLen[p]&&b.outs>=3){
+      toast(`⚠️ 3アウト！イニングエリアにカードが置かれました。「チェンジ」を押してください`);
+      pushLog(`⚠️ 3アウト・イニングエリアにカード追加 → チェンジしてください`,true);
+    }
+    lastInningLen[p]=cur;
+  });
 }
 function renderQuickBar(){
   let bar=document.getElementById("quickbarEl");
