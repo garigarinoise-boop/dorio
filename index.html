@@ -119,6 +119,10 @@ button{font:inherit;color:inherit;cursor:pointer}
 .dice-mini .val{font-family:"Oswald",sans-serif;font-weight:700;font-size:17px;color:var(--accent)}
 .dice-mini .val.flash{animation:diceFlash .5s ease}
 .dice-mini .mod-part{font-weight:700;color:var(--gold)}
+.judge-badge{font-size:11px;font-weight:800;padding:2px 6px;border-radius:5px}
+.judge-badge.j-out{background:transparent;color:var(--ink-soft);border:1px solid var(--line-strong)}
+.judge-badge.j-single,.judge-badge.j-double{background:var(--panel-2);color:var(--ink);border:1px solid var(--line-strong)}
+.judge-badge.j-homerun{background:var(--gold);color:#241a02}
 @keyframes diceFlash{0%{transform:scale(1.7);color:var(--gold)}100%{transform:scale(1);color:var(--accent)}}
 
 .fieldscroll{overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-top:0;
@@ -4994,12 +4998,13 @@ function diceMini(p){const d=G.dice[p];
   if(d&&d.ts)lastDiceTs[p]=d.ts;
   if(isNewRoll){
     if(!diceNotifyBaseline[p])diceNotifyBaseline[p]=true;  // 起動直後の既存ロールでは通知しない
-    else toast(`🎲 ${teamName(p)}（${d.by||"?"}）: [${d.dice.join(", ")}]${d.mod?(d.mod>0?" +"+d.mod:" "+d.mod):""} = ${d.total}`);
+    else toast(`🎲 ${teamName(p)}（${d.by||"?"}）: [${d.dice.join(", ")}]${d.mod?(d.mod>0?" +"+d.mod:" "+d.mod):""} = ${d.total}${d.judged?` → 【${JUDGE_LABEL[d.judged]}】`:""}`);
   }
   const curMod=+($("#rollMod")?.value||0);
   return h("div",{class:"dice-mini"},"ダイス",h("span",{class:"val"+(isNewRoll?" flash":"")},d?String(d.total):"—"),
     d?h("span",{},`(${d.dice.join("+")})`):"",
     d&&d.mod?h("span",{class:"mod-part"},(d.mod>0?"+":"")+d.mod):"",
+    d&&d.judged?h("b",{class:"judge-badge j-"+d.judged},JUDGE_LABEL[d.judged]):"",
     h("button",{style:"width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel)",onclick:()=>rollFor(p)},"🎲"),
     h("span",{class:"mod-stepper mini"},
       h("button",{type:"button",onclick:()=>adjRollMod(-1)},"−"),
@@ -5658,12 +5663,22 @@ function adjRollMod(d){
   el.value=Math.max(-9,Math.min(9,(+el.value||0)+d));
   render();  // 各パネルのダイス横にも同じ補正値を複製表示しているので、値を変えたら再描画して同期する
 }
+const JUDGE_LABEL={out:"アウト",single:"単打",double:"二塁打",homerun:"本塁打"};
+function judgeBattingResult(swing,total){
+  // 公式チームカード記載の打撃判定表（全球団共通・実機で複数球団分確認済み）。2d6の合計が前提。
+  if(swing==="meet")return total<=4?"out":total<=10?"single":"double";
+  if(swing==="power")return total<=6?"out":total===7?"single":total<=10?"double":"homerun";
+  return null;
+}
 function rollFor(p){
   const n=Math.max(1,Math.min(4,+$("#rollN").value||2)),mod=+$("#rollMod").value||0;
   const dice=Array.from({length:n},()=>1+Math.floor(Math.random()*6));
   const total=dice.reduce((a,b)=>a+b,0)+mod;
-  G.dice[p]={dice,mod,total,by:myName,ts:Date.now()};
-  pushLog(`🎲 ${teamName(p)}: [${dice.join(", ")}]${mod?(mod>0?" +"+mod:" "+mod):""} = ${total}`);
+  const b=G.board;
+  const isAtk=p===(b.half==="top"?"p1":"p2");
+  const judged=(n===2&&isAtk&&b.swing)?judgeBattingResult(b.swing,total):null;
+  G.dice[p]={dice,mod,total,by:myName,ts:Date.now(),judged};
+  pushLog(`🎲 ${teamName(p)}: [${dice.join(", ")}]${mod?(mod>0?" +"+mod:" "+mod):""} = ${total}${judged?` → 【${JUDGE_LABEL[judged]}】`:""}`);
   // 単発効果（相手打撃判定でダイス-1等）の補正を戻し忘れて次のロールに引き継がれる事故を防ぐため、使用後は自動で0に戻す
   // （save()より先にリセットしておくことで、save()内のrender()で各パネルの複製表示も0で即座に揃う）
   const modEl=$("#rollMod");if(modEl)modEl.value="0";
