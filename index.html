@@ -287,7 +287,6 @@ body.selmode{padding-bottom:78px}
   background:var(--panel);border:1px solid var(--line);border-top:1px dashed var(--line)}
 .hit-row span{font-size:10.5px;color:var(--ink-soft)}
 .hit-row button{font-size:11px;padding:4px 9px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel-2);font-weight:700}
-.hit-row button.hr{background:var(--gold);border-color:var(--gold);color:#241a02}
 .hit-row button.out{background:transparent;color:var(--ink-soft)}
 .hit-row button.change{background:transparent;color:var(--ink-soft);margin-left:auto}
 .roll-row select{padding:5px 6px;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);color:var(--ink);font:inherit}
@@ -5004,18 +5003,28 @@ function diceMini(p){const d=G.dice[p];
   return h("div",{class:"dice-mini"},"ダイス",h("span",{class:"val"+(isNewRoll?" flash":"")},d?String(d.total):"—"),
     d?h("span",{},`(${d.dice.join("+")})`):"",
     d&&d.mod?h("span",{class:"mod-part"},(d.mod>0?"+":"")+d.mod):"",
-    d&&d.judged?h("b",{class:"judge-badge j-"+d.judged},JUDGE_LABEL[d.judged]):"",
+    d&&d.judged&&!d.consumed?h("b",{class:"judge-badge j-"+d.judged},JUDGE_LABEL[d.judged]):"",
     h("button",{style:"width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel)",onclick:()=>rollFor(p)},"🎲"),
     h("span",{class:"mod-stepper mini"},
       h("button",{type:"button",onclick:()=>adjRollMod(-1)},"−"),
       h("b",{class:"mono"},(curMod>0?"+":"")+curMod),
       h("button",{type:"button",onclick:()=>adjRollMod(1)},"+")));}
+const JUDGE_BASES={out:0,single:1,double:2,homerun:4};
+function currentJudge(p){
+  // このパネルの打者について、直前のダイスロールがまだ「押されていない」判定結果を持っているかどうか。
+  // 攻撃側自身の直近ロールだけが対象（守備側のロールや、既にボタンを押して消費済みのロールはnull）。
+  const b=G.board,d=G.dice[p];
+  if(p!==(b.half==="top"?"p1":"p2")||!d||!d.judged||d.consumed)return null;
+  return d.judged;
+}
 function hitRow(p){
-  const hitBtn=(n,lab,hr)=>h("button",{class:hr?"hr":"",onclick:()=>resolveHit(p,n)},lab);
+  const cj=currentJudge(p);
+  const hlStyle="background:var(--gold);border-color:var(--gold);color:#241a02;font-weight:800";
+  const hitBtn=(n,lab)=>h("button",{style:JUDGE_BASES[cj]===n?hlStyle:"",onclick:()=>resolveHit(p,n)},lab);
   return h("div",{class:"hit-row"},
     h("span",{},"打撃結果："),
-    h("button",{class:"out",onclick:()=>resolveOut(p)},"アウト"),
-    hitBtn(1,"安打"),hitBtn(2,"二塁打"),hitBtn(3,"三塁打"),hitBtn(4,"本塁打",true),
+    h("button",{class:"out",style:cj==="out"?hlStyle:"",onclick:()=>resolveOut(p)},"アウト"),
+    hitBtn(1,"安打"),hitBtn(2,"二塁打"),hitBtn(3,"三塁打"),hitBtn(4,"本塁打"),
     h("button",{class:"change mini",onclick:doChange},"チェンジ ⟳"));
 }
 
@@ -5358,6 +5367,7 @@ function doChange(){
   const b=G.board;
   const outgoingAtk=b.half==="top"?"p1":"p2";
   returnAllToLineup(outgoingAtk);
+  if(G.dice.p1)G.dice.p1.consumed=true;if(G.dice.p2)G.dice.p2.consumed=true;  // 判定ハイライトを両者ともクリア
   b.outs=0;b.swing=null;if(b.half==="top")b.half="bot";else{b.half="top";b.inning++;}
   const na=b.half==="top"?"p1":"p2";
   if(b.outBase)b.outBase[na]=(G.zones[na].out||[]).length;
@@ -5412,6 +5422,7 @@ function resolveOut(p){
     returnCardHome(p,c,partner);
   });
   G.board.order[p]=nextSlot;
+  if(G.dice[p])G.dice[p].consumed=true;  // 判定ハイライト消費済み（次の打者で使い回さない）
   pushLog(`${teamName(p)}: 打撃判定 → アウト`,true);
   sel=null;save();
 }
@@ -5449,6 +5460,7 @@ function resolveHit(p,bases){
     }
   });
   G.board.order[p]=nextSlot;
+  if(G.dice[p])G.dice[p].consumed=true;  // 判定ハイライト消費済み（次の打者で使い回さない）
   pushLog(`${teamName(p)}: 打撃判定 → ${HIT_LABEL[bases]}！`,true);
   sel=null;save();
 }
@@ -5684,7 +5696,7 @@ function rollFor(p){
   const b=G.board;
   const isAtk=p===(b.half==="top"?"p1":"p2");
   const judged=(n===2&&isAtk&&b.swing)?judgeBattingResult(b.swing,total):null;
-  G.dice[p]={dice,mod,total,by:myName,ts:Date.now(),judged};
+  G.dice[p]={dice,mod,total,by:myName,ts:Date.now(),judged,consumed:false};
   pushLog(`🎲 ${teamName(p)}: [${dice.join(", ")}]${mod?(mod>0?" +"+mod:" "+mod):""} = ${total}${judged?` → 【${JUDGE_LABEL[judged]}】`:""}`);
   // 単発効果（相手打撃判定でダイス-1等）の補正を戻し忘れて次のロールに引き継がれる事故を防ぐため、使用後は自動で0に戻す
   // （save()より先にリセットしておくことで、save()内のrender()で各パネルの複製表示も0で即座に揃う）
