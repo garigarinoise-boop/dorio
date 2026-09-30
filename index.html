@@ -275,6 +275,9 @@ body.selmode{padding-bottom:78px}
 .mod-stepper{display:inline-flex;align-items:center;gap:4px}
 .mod-stepper input[type=number]{width:32px;text-align:center;padding:5px 2px}
 .mod-stepper button{width:24px;height:24px;padding:0;border-radius:6px;border:1px solid var(--line-strong);background:var(--panel);font-weight:700;line-height:1}
+.mod-stepper.mini{gap:3px}
+.mod-stepper.mini button{width:16px;height:16px;font-size:10px;border-radius:4px}
+.mod-stepper.mini b{font-size:10.5px;min-width:14px;text-align:center;display:inline-block}
 .hit-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:6px 12px;
   background:var(--panel);border:1px solid var(--line);border-top:1px dashed var(--line)}
 .hit-row span{font-size:10.5px;color:var(--ink-soft)}
@@ -4992,9 +4995,14 @@ function diceMini(p){const d=G.dice[p];
     if(!diceNotifyBaseline[p])diceNotifyBaseline[p]=true;  // 起動直後の既存ロールでは通知しない
     else toast(`🎲 ${teamName(p)}（${d.by||"?"}）: [${d.dice.join(", ")}]${d.mod?(d.mod>0?" +"+d.mod:" "+d.mod):""} = ${d.total}`);
   }
+  const curMod=+($("#rollMod")?.value||0);
   return h("div",{class:"dice-mini"},"ダイス",h("span",{class:"val"+(isNewRoll?" flash":"")},d?String(d.total):"—"),
     d?h("span",{},`(${d.dice.join("+")}${d.mod?(d.mod>0?"+"+d.mod:d.mod):""})`):"",
-    h("button",{style:"width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel)",onclick:()=>rollFor(p)},"🎲"));}
+    h("button",{style:"width:20px;height:20px;border-radius:5px;border:1px solid var(--line-strong);background:var(--panel)",onclick:()=>rollFor(p)},"🎲"),
+    h("span",{class:"mod-stepper mini"},
+      h("button",{type:"button",onclick:()=>adjRollMod(-1)},"−"),
+      h("b",{class:"mono"},(curMod>0?"+":"")+curMod),
+      h("button",{type:"button",onclick:()=>adjRollMod(1)},"+")));}
 function hitRow(p){
   const hitBtn=(n,lab,hr)=>h("button",{class:hr?"hr":"",onclick:()=>resolveHit(p,n)},lab);
   return h("div",{class:"hit-row"},
@@ -5646,15 +5654,18 @@ async function resetHand(p){
 function adjRollMod(d){
   const el=$("#rollMod");if(!el)return;
   el.value=Math.max(-9,Math.min(9,(+el.value||0)+d));
+  render();  // 各パネルのダイス横にも同じ補正値を複製表示しているので、値を変えたら再描画して同期する
 }
 function rollFor(p){
   const n=Math.max(1,Math.min(4,+$("#rollN").value||2)),mod=+$("#rollMod").value||0;
   const dice=Array.from({length:n},()=>1+Math.floor(Math.random()*6));
   const total=dice.reduce((a,b)=>a+b,0)+mod;
   G.dice[p]={dice,mod,total,by:myName,ts:Date.now()};
-  pushLog(`🎲 ${teamName(p)}: [${dice.join(", ")}]${mod?(mod>0?" +"+mod:" "+mod):""} = ${total}`);save();
+  pushLog(`🎲 ${teamName(p)}: [${dice.join(", ")}]${mod?(mod>0?" +"+mod:" "+mod):""} = ${total}`);
   // 単発効果（相手打撃判定でダイス-1等）の補正を戻し忘れて次のロールに引き継がれる事故を防ぐため、使用後は自動で0に戻す
+  // （save()より先にリセットしておくことで、save()内のrender()で各パネルの複製表示も0で即座に揃う）
   const modEl=$("#rollMod");if(modEl)modEl.value="0";
+  save();
 }
 function coin(){pushLog(`🪙 コイン: ${Math.random()<.5?"表":"裏"}`);save();}
 
