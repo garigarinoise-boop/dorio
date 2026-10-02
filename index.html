@@ -5350,10 +5350,10 @@ function returnCardHome(p,c,partner){
   delete c.pairKey;
   if(partner){delete partner.pairKey;partner.down=true;delete partner.reveal;G.zones[p].bench.push(partner);}  // ZONEカードは「ZONEをベンチに戻す」と同じくベンチへ
   if(c.role==="P"){
-    // 投手は打順に属さない（layoutSideで常にmound/benchへ）。main/塁上に紛れ込んでいた場合（投手交代中の仮置き等）は
-    // 「打順がわからない」警告を出さず、静かにベンチへ戻す（対象外の戻り先探索をしない）。
-    c.down=true;delete c.reveal;G.zones[p].bench.push(c);
-    return "bench";
+    // 投手は打順に属さない。勝負のたびに登板投手がメインエリアへ出て打者と対峙する仕様のため、
+    // チェンジ時にメインエリアに投手が残っていたら「打順がわからない」警告を出さず、登板投手の場所へ戻す。
+    c.down=false;delete c.reveal;G.zones[p].mound.push(c);
+    return "mound";
   }
   const toLineup=c.homeSlot!=null&&!G.zones[p].lineup[c.homeSlot].length;
   if(toLineup){c.down=false;delete c.reveal;G.zones[p].lineup[c.homeSlot].push(c);return "lineup";}
@@ -5366,16 +5366,16 @@ function returnAllToLineup(p){
   const toMove=[];
   ["main","b1","b2","b3"].forEach(zk=>{const arr=G.zones[p][zk];while(arr.length)toMove.push(arr.shift());});
   const handled=new Set();
-  let toLineup=0,unresolved=0,toBench=0;
+  let toLineup=0,unresolved=0,toMound=0;
   toMove.forEach(c=>{
     if(handled.has(c))return;
     handled.add(c);
     let partner=null;
     if(c.pairKey&&!c.zone){partner=toMove.find(x=>x!==c&&!handled.has(x)&&x.pairKey===c.pairKey);if(partner)handled.add(partner);}
     const dest=returnCardHome(p,c,partner);
-    if(dest==="lineup")toLineup++;else if(dest==="bench")toBench++;else unresolved++;
+    if(dest==="lineup")toLineup++;else if(dest==="mound")toMound++;else unresolved++;
   });
-  if(toLineup||unresolved||toBench)pushLog(`${teamName(p)}: チェンジで打者・走者を打順へ戻した（${toLineup}枚）${toBench?`／投手${toBench}枚はベンチへ`:""}${unresolved?`／戻り先不明${unresolved}枚はメインエリアで待機`:""}`,true);
+  if(toLineup||unresolved||toMound)pushLog(`${teamName(p)}: チェンジで打者・走者を打順へ戻した（${toLineup}枚）${toMound?`／投手${toMound}枚は登板投手へ`:""}${unresolved?`／戻り先不明${unresolved}枚はメインエリアで待機`:""}`,true);
 }
 function doChange(){
   const b=G.board;
@@ -5384,6 +5384,7 @@ function doChange(){
   if(G.dice.p1)G.dice.p1.consumed=true;if(G.dice.p2)G.dice.p2.consumed=true;  // 判定ハイライトを両者ともクリア
   b.outs=0;b.swing=null;if(b.half==="top")b.half="bot";else{b.half="top";b.inning++;}
   const na=b.half==="top"?"p1":"p2";
+  returnAllToLineup(na);  // 守備側（=次の攻撃側）がメインエリアに出していた登板投手を登板投手の場所へ戻す
   if(b.outBase)b.outBase[na]=(G.zones[na].out||[]).length;
   pushLog(`チェンジ → ${b.inning}回${b.half==="top"?"表":"裏"}`);save();
 }
@@ -5393,7 +5394,7 @@ function scoreExtractedCard(p,c,partner){
   const inn=Math.max(0,G.board.inning-1);
   const L=G.board.line[p]||(G.board.line[p]=[]);while(L.length<=inn)L.push(0);
   L[inn]=(L[inn]||0)+1;G.board.score[p]=(G.board.score[p]||0)+1;
-  const destLabel=dest==="lineup"?`打順${c.homeSlot+1}番へ`:dest==="bench"?"ベンチへ":"メインエリアで待機（要手動移動）";
+  const destLabel=dest==="lineup"?`打順${c.homeSlot+1}番へ`:dest==="mound"?"登板投手へ":"メインエリアで待機（要手動移動）";
   pushLog(`${teamName(p)}: 「${c.name}」生還・${destLabel}（+1点 → ${G.board.score[p]}）`);
 }
 function scoreCardRaw(p,fromKey,i){
