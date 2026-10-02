@@ -5325,8 +5325,15 @@ function baseZone(p){
     const bb=h("div",{class:"bb"});
     if(!arr.length)bb.append(h("div",{class:"empty"},"—"));
     arr.forEach((c,i)=>{
+      // ZONEカードに本体（非ZONE）の相棒が同じベースにいるなら、単独セル＋単独ボタンは作らない。
+      // 本体側のセルにまとめて表示し、ボタンも1つだけにする（別々にボタンを押すと二重に得点/進塁してしまうバグの修正）。
+      if(c.zone&&arr.some(x=>x&&!x.zone&&x.pairKey===c.pairKey))return;
       const cell=h("div",{class:"bcell"});
       cell.append(renderCard(p,k,null,i,c));
+      if(!c.zone&&c.pairKey){
+        const pi=arr.findIndex(x=>x&&x.zone&&x.pairKey===c.pairKey);
+        if(pi>=0)cell.append(renderCard(p,k,null,pi,arr[pi]));
+      }
       cell.append(h("button",{class:"advbtn",onclick:e=>{e.stopPropagation();advanceRunner(p,k,i);}},
         k==="b3"?"⚾ 生還":"▶ 進塁"));
       bb.append(cell);
