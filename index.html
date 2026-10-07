@@ -359,6 +359,100 @@ a{color:var(--navy)}
   .sb-mid{grid-column:1/-1;order:3;justify-content:center;flex-wrap:wrap}
   .sb-runs{font-size:34px}
 }
+/* ===== スマホ・タブレット向け（PC表示には影響しない範囲だけ上書き） ===== */
+/* タブレット縦（iPad等）：盤面のレイアウトはPCと同じまま、横スクロールなしで収める */
+@media (max-width:900px){
+  .field{min-width:0;grid-template-columns:64px repeat(9,minmax(0,1fr))}
+  .z-main .card,.z-sup .card{width:104px}
+  .z-main .card.art img,.z-sup .card.art img{max-height:196px}
+  .z-md .stackcard,.z-od .stackcard{width:62px}
+  .z-team .card{width:100%;max-width:80px}
+  .z-line>.zb{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .z-line .lslot{flex:1 0 66px}
+  .hand{flex-wrap:wrap}
+  .hand .hlabel{writing-mode:horizontal-tb;flex-basis:100%;padding:0 2px}
+  .hand .hend{flex-basis:100%;flex-wrap:wrap;padding-left:0}
+}
+/* スマホ：盤面を縦長に組み替え、打順の列だけ横スクロール */
+@media (max-width:640px){
+  .wrap{padding:8px 8px 60px}
+  .topbar{gap:6px 8px}
+  .brand{flex-basis:100%}
+  .pill{white-space:normal;max-width:100%}
+  .fieldscroll{padding:6px}
+  .field,.field.flip{grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:auto;padding:7px;gap:5px}
+  .field{grid-template-areas:
+    "base base base base"
+    "sup  sup  main main"
+    "inn  out  md   od"
+    "team rest rest rest"
+    "line line line line"}
+  .field.flip{grid-template-areas:
+    "line line line line"
+    "team rest rest rest"
+    "inn  out  md   od"
+    "sup  sup  main main"
+    "base base base base"}
+  .z{min-height:72px}
+  .z-main .card,.z-sup .card{width:96px}
+  .z-main .card.art img,.z-sup .card.art img{max-height:180px}
+  .z-line .lslot{flex:0 0 76px}
+  .hand .card{width:84px}
+  .p-head{padding:8px}
+  .hit-row{padding:6px 8px}
+  .quickbar{flex-wrap:wrap;gap:6px 8px}
+  .quickbar .qb-label{flex-basis:calc(100% - 60px);overflow:hidden;text-overflow:ellipsis}
+  .quickbar .qb-cancel{margin-left:auto}
+  .quickbar .qb-row{flex-basis:100%;order:1}
+  html body.selmode{padding-bottom:calc(130px + env(safe-area-inset-bottom))}
+  .modal{padding:8px}
+  .modal .box{padding:12px;max-height:94vh}
+}
+/* 指で操作する端末：ボタンを押しやすく、ホバー表現・長押しメニュー・ダブルタップ拡大を抑える */
+@media (hover:none){
+  .card:hover{transform:none;box-shadow:0 1px 1px rgba(0,0,0,.08);z-index:auto}
+  .card.sel:hover{box-shadow:0 0 0 2px var(--accent)}
+}
+@media (pointer:coarse){
+  body{-webkit-tap-highlight-color:transparent}
+  button,.card,.stackcard,.benchstack,.pilecount,.linescore td.run{touch-action:manipulation}
+  .card,.stackcard,.benchstack,.libc,.linescore td.run{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+  .wrap{padding-left:max(8px,env(safe-area-inset-left));padding-right:max(8px,env(safe-area-inset-right))}
+  .tb-btn{padding:8px 12px;font-size:13px}
+  .runctl button{width:36px;height:36px;font-size:18px}
+  .sb-tp button{width:28px;height:28px;font-size:14px}
+  .inning .step{width:32px;height:32px;font-size:15px}
+  .inning .half button{padding:5px 10px;font-size:11px}
+  .out-dot{width:24px;height:24px}
+  .change,.turnbar button{padding:7px 12px;font-size:12px}
+  .linescore th,.linescore td{width:34px;height:30px}
+  .seatbtn{padding:6px 11px;font-size:12px}
+  .minictl button,.dice-mini>button{width:30px!important;height:30px!important;font-size:14px}
+  .mod-stepper button{width:32px;height:32px}
+  .mod-stepper.mini button{width:26px;height:26px;font-size:13px}
+  .hit-row button{padding:8px 12px;font-size:12.5px}
+  .hand .hend button{padding:8px 11px;font-size:12px}
+  .z>.zh .zbtn,.revealhead .zbtn{padding:4px 8px;font-size:10.5px}
+  .pilecount{padding:3px 8px;font-size:12px}
+  .pop{max-width:min(280px,calc(100vw - 16px));max-height:calc(100vh - 16px);overflow-y:auto}
+  .pop button{padding:10px 10px;font-size:13.5px}
+  .pop .zrow button{padding:9px 4px;font-size:12.5px}
+  .zlbar button{padding:6px 8px;font-size:11px}
+  body.selmode{padding-bottom:calc(96px + env(safe-area-inset-bottom))}
+  .quickbar{padding:8px 8px calc(8px + env(safe-area-inset-bottom))}
+  .quickbar .qb-label{font-size:12px}
+  .quickbar .qb-row{gap:6px}
+  .quickbar .qb-row button,.quickbar .qb-cancel{padding:10px 12px;font-size:13px}
+  .roll-row button{padding:9px 13px}
+  .log-in button{padding:9px 14px}
+  .modal .row button{padding:10px 14px}
+  .btabs button{padding:8px 14px}
+  .bchip{padding:6px 11px}
+  .drow .num{width:30px;height:30px}
+  .libc .add button{padding:6px 0;font-size:10.5px}
+  /* iOSは16px未満の入力欄にフォーカスすると画面が勝手に拡大されるため */
+  input,select,textarea,.modal textarea{font-size:16px!important}
+}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -4888,6 +4982,20 @@ function renderQuickBar(){
   bar.append(row);
   bar.append(h("button",{class:"qb-cancel",onclick:()=>{sel=null;render();}},"✕"));
 }
+// タッチ端末の長押し（iOS Safariは長押しで contextmenu が出ないため自前で判定）。
+// Android のように contextmenu も出る端末で二重に動かないよう、直近の長押し時刻を共有する。
+let lastLongPressAt=0;
+function longPressMark(){lastLongPressAt=Date.now();}
+function longPressRecent(){return Date.now()-lastLongPressAt<800;}
+function touchLongPress(fn,ms=500){
+  let t=null,x=0,y=0;
+  const cancel=()=>{if(t){clearTimeout(t);t=null;}};
+  return{
+    onpointerdown:e=>{if(e.pointerType!=="touch")return;cancel();x=e.clientX;y=e.clientY;
+      t=setTimeout(()=>{t=null;if(longPressRecent())return;longPressMark();fn();},ms);},
+    onpointermove:e=>{if(t&&Math.hypot(e.clientX-x,e.clientY-y)>10)cancel();},
+    onpointerup:cancel,onpointercancel:cancel,onpointerleave:cancel};
+}
 function addRun(p,inn,d){
   const b=G.board;if(inn<0)inn=0;
   const L=b.line[p]||(b.line[p]=[]);while(L.length<=inn)L.push(0);
@@ -4946,14 +5054,15 @@ function renderScoreboard(){
     for(let i=0;i<cols;i++){
       const v=(b.line[p]||[])[i]||0;
       tr.append(h("td",{class:"run"+(i===b.inning-1?" cur":""),title:`${p==="p1"?"先攻":"後攻"} ${i+1}回 — クリック+1 / 長押し・右クリック−1`,
-        onclick:()=>addRun(p,i,1),
-        oncontextmenu:e=>{e.preventDefault();addRun(p,i,-1);}},String(v)));
+        onclick:()=>{if(longPressRecent())return;addRun(p,i,1);},
+        oncontextmenu:e=>{e.preventDefault();if(longPressRecent())return;longPressMark();addRun(p,i,-1);},
+        ...touchLongPress(()=>addRun(p,i,-1))},String(v)));
     }
     tr.append(h("td",{class:"tot"},String(b.score[p]||0)));
     tbl.append(tr);
   });
   sb.append(h("div",{class:"linescore"},tbl,
-    h("div",{class:"ls-hint"},"セル: クリックで+1 / 右クリック（長押し）で−1。スコアボードの −／＋ は現在の回。")));
+    h("div",{class:"ls-hint"},"セル: クリック（タップ）で+1 / 右クリック・長押しで−1。スコアボードの −／＋ は現在の回。")));
   const t=b.turn;
   sb.append(h("div",{class:"turnbar"},"手番: ",h("span",{class:"who"},teamName(t)),
     h("button",{onclick:()=>{b.turn=other(t);pushLog(`手番 → ${teamName(other(t))}`);save();}},"手番を渡す"),
