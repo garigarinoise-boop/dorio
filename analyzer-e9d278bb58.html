@@ -219,6 +219,28 @@ function diceFromEffect_(eff, supportOnly) {
 // メインデッキのカードが手札から置かれて能力が働くエリア（サポート・イニング・レスト）
 var MAIN_AREA_RE = /【(サポート|イニング|レスト)】/;
 
+/**
+ * 伏せたとき（【サポート】の能力）に足される AP/DP を拾う。
+ * 前に「〜なら／〜時、／〜場合」が付かないものは無条件（属性に関係なくかかる）、付くものは条件つき。
+ */
+function supportStat_(eff) {
+  var r = { ap: 0, dp: 0, apCond: [], dpCond: [] };
+  abilities_(eff).forEach(function (ab) {
+    if (!/【サポート】/.test(ab)) return;
+    var body = ab.replace(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/, '');
+    var seen = { AP: false, DP: false };
+    body.split(/(?<=。)/).forEach(function (sent) {
+      var m = sent.match(/(?:打者の|投手の)?(AP|DP)\+(\d+)/);
+      if (!m || seen[m[1]]) return;
+      seen[m[1]] = true;
+      var pre = sent.slice(0, m.index), key = m[1].toLowerCase();
+      if (/なら|時、|場合|サポートに/.test(pre)) r[key + 'Cond'].push(sent.trim().slice(0, 90));
+      else r[key] += +m[2];
+    });
+  });
+  return r;
+}
+
 /** その能力を「持っている」か：能力の頭に付いた【 】のアイコンに含まれるか（文中で言及しているだけは含めない） */
 function hasAbilityTag_(eff, tag) {
   return abilities_(eff).some(function (ab) { var head = (ab.match(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/) || [''])[0]; return head.indexOf(tag) >= 0; });
@@ -397,11 +419,18 @@ function analyzeDeck(deck, db, opt) {
     var r = { no: c.no, name: c.name, num: c.num, kind: c.kind, eff: c.eff || '', single: c.num === 1 };
     r.atkSup = c.apAttr ? c.apAttr + ' AP' + c.apSup : '';
     r.defSup = c.dpAttr ? c.dpAttr + ' DP' + c.dpSup : '';
+    // 伏せたときの効果で無条件に足される分（属性問わず）と、属性ごとの実質の値
+    var st = supportStat_(c.eff);
+    r.effAp = st.ap; r.effDp = st.dp; r.effApCond = st.apCond; r.effDpCond = st.dpCond;
+    var apv = function (a) { return (c.apAttr === a ? (c.apSup === '4+' ? 4 : Number(c.apSup) || 0) : 0) + st.ap; };
+    var dpv = function (a) { return (c.dpAttr === a ? dpValue_(c) : 0) + st.dp; };
+    r.atkTotal = st.ap ? { ミート: apv('ミート'), 強振: apv('強振') } : null;
+    r.defTotal = st.dp ? { ミート: dpv('ミート'), 強振: dpv('強振') } : null;
     r.atkAwaken = o && o.pos !== 1 ? o.name + ' の打席 AP+' + o.ap : '';
     r.defAwaken = o && o.pos === 1 ? o.name + ' の登板中 DP+' + o.dp : '';
     var supVal = dpValue_(c);
     // 先発のDP＋この1枚で届く値（効果による加算は含めない）
-    r.defOne = starterDp != null ? (r.defAwaken && o.no === (starter && starter.no) ? starterDp + o.dp : (c.dpAttr ? starterDp + supVal : null)) : null;
+    r.defOne = starterDp != null ? (r.defAwaken && o.no === (starter && starter.no) ? starterDp + o.dp : (c.dpAttr || st.dp ? starterDp + Math.max(dpv('ミート'), dpv('強振')) : null)) : null;
     r.defOneAtLeast = c.dpSup === '4+' && !(c.no in DP_EXACT);
     if (c.kind === '戦術') tactics.push(r); else twoWay.push(r);
   });
@@ -536,7 +565,8 @@ function analyzeDeck(deck, db, opt) {
       var K = 0, names = [];
       main.forEach(function (c) {
         var awk = c.no === starter.no;
-        var v = awk ? starterDp + starter.dp : (c.dpAttr === a ? starterDp + dpValue_(c) : null);
+        var ef = supportStat_(c.eff).dp;
+        var v = awk ? starterDp + starter.dp : (c.dpAttr === a || ef ? starterDp + (c.dpAttr === a ? dpValue_(c) : 0) + ef : null);
         if (v != null && v >= 11) { K += c.num; names.push(c.name + '×' + c.num); }
       });
       pushP('先発DP＋1枚で11以上（' + a + 'に当たったとき）', K, names.join('・'));
@@ -776,17 +806,20 @@ function vBatting(a) {
   ${zone.length ? `<p class="small">ZONE選手：${zone.map(z => cname(z.no, z.name)).join("・")}</p>` : ""}`;
 }
 
+const totHtml = (tot, kind, eff) => tot ? `<div class="small">効果で${kind}+${eff}（属性問わず）<br><b>実質 <span class="meet">ミート${kind}${tot["ミート"]}</span>・<span class="power">強振${kind}${tot["強振"]}</span></b></div>` : "";
+const atkHtml = r => supHtml(r.atkSup) + totHtml(r.atkTotal, "AP", r.effAp);
+const defHtml = r => supHtml(r.defSup) + totHtml(r.defTotal, "DP", r.effDp);
 function vTwoWay(a) {
   const sd = a.starter ? a.starter.dp : null;
   const oneCell = r => r.defOne == null ? '<span class="muted">—</span>' : `<span class="num ${r.defOne >= 11 ? "ok" : ""}">${r.defOne}${r.defOneAtLeast ? "+" : ""}</span>`;
   return `<h3>メインの選手カード（攻撃と守備の2役）</h3><div class="scroll"><table><thead><tr><th>カード</th><th class="n">枚数</th><th>攻撃で足すもの</th><th>守備で足すもの</th><th class="n">先発DP＋この1枚</th></tr></thead><tbody>
   ${a.twoWay.map(r => `<tr class="${r.defAwaken ? "hl" : ""}"><td>${cname(r.no, r.name)}${r.single ? '<span class="badge pin">1枚</span>' : ""}<div class="small muted">${esc(r.no)}</div></td><td class="n num">${r.num}</td>
-   <td>${r.atkAwaken ? `<span class="badge awk">覚醒</span> ${esc(r.atkAwaken)}<div class="small muted">ほかの打席は ${supHtml(r.atkSup)}</div>` : supHtml(r.atkSup)}</td>
-   <td>${r.defAwaken ? `<span class="badge awk">覚醒</span> ${esc(r.defAwaken)}<div class="small muted">ほかの投手のときは ${supHtml(r.defSup)}</div>` : supHtml(r.defSup)}</td><td class="n">${oneCell(r)}</td></tr>`).join("")}
+   <td>${r.atkAwaken ? `<span class="badge awk">覚醒</span> ${esc(r.atkAwaken)}<div class="small muted">ほかの打席は ${supHtml(r.atkSup)}</div>` : atkHtml(r)}</td>
+   <td>${r.defAwaken ? `<span class="badge awk">覚醒</span> ${esc(r.defAwaken)}<div class="small muted">ほかの投手のときは ${supHtml(r.defSup)}</div>` : defHtml(r)}</td><td class="n">${oneCell(r)}</td></tr>`).join("")}
   </tbody></table></div>
-  <p class="note">覚醒：メインエリアの選手と同じカード番号を伏せると、サポート値の代わりにその選手の元々のAP（打者）／DP（投手）が足される（属性は関係ない）。「先発DP＋この1枚」は先発${a.starter ? "（" + esc(a.starter.name) + " DP" + sd + "）" : ""}が登板中に、このカードだけを伏せたときの値。サポートは相手の宣言と属性が合ったときだけ足される。カード効果による加算は入っていません。11以上を緑にしています。「4以上」と出るサポート値は、公式の検索で4と5以上を区別できないため（＋を付けています）。</p>
+  <p class="note">覚醒：メインエリアの選手と同じカード番号を伏せると、サポート値の代わりにその選手の元々のAP（打者）／DP（投手）が足される（属性は関係ない）。「先発DP＋この1枚」は先発${a.starter ? "（" + esc(a.starter.name) + " DP" + sd + "）" : ""}が登板中に、このカードだけを伏せたときの値。サポートは相手の宣言と属性が合ったときだけ足される。伏せたときに無条件でかかる効果（好球必打・研ぎ澄まされた一振りの AP+2、強心臓・渾身の一球の DP+2 など）は「実質」として足しています。「〜なら」付きの効果は入れていません。11以上を緑にしています。「4以上」と出るサポート値は、公式の検索で4と5以上を区別できないため（＋を付けています）。</p>
   <h3>戦術カード</h3><div class="scroll"><table><thead><tr><th>カード</th><th class="n">枚数</th><th>攻撃</th><th>守備</th><th>効果</th></tr></thead><tbody>
-  ${a.tactics.map(r => `<tr><td>${cname(r.no, r.name)}${r.single ? '<span class="badge pin">1枚</span>' : ""}</td><td class="n num">${r.num}</td><td>${supHtml(r.atkSup)}</td><td>${supHtml(r.defSup)}</td><td class="small">${esc(r.eff)}</td></tr>`).join("")}
+  ${a.tactics.map(r => `<tr><td>${cname(r.no, r.name)}${r.single ? '<span class="badge pin">1枚</span>' : ""}</td><td class="n num">${r.num}</td><td>${atkHtml(r)}</td><td>${defHtml(r)}</td><td class="small">${esc(r.eff)}</td></tr>`).join("")}
   </tbody></table></div>`;
 }
 
