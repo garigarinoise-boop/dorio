@@ -258,11 +258,66 @@ function supportStat_(eff, tagRe) {
 function awakenLabel_(c) {
   var pit = c.pos === 1, base = pit ? c.dp : c.ap; if (base == null) return '';
   var k = pit ? 'DP' : 'AP', st = awakenStat_(c.eff), add = pit ? st.dp : st.ap;
-  return add ? k + '+' + (base + add) + '（素' + base + '＋覚醒' + add + '）' : k + '+' + base;
+  var self = selfSupportBonus_(c).reduce(function (s2, x) { return s2 + x.n; }, 0);
+  var parts = ['素' + base];
+  if (add) parts.push('【覚醒】' + add);
+  if (self) parts.push('自分の効果' + self);
+  return parts.length > 1 ? k + '+' + (base + add + self) + '（' + parts.join('＋') + '）' : k + '+' + base;
 }
+function awakenTotal_(c) { var st = awakenStat_(c.eff); return (c.pos === 1 ? (c.dp || 0) + st.dp : (c.ap || 0) + st.ap) + selfSupportBonus_(c).reduce(function (s2, x) { return s2 + x.n; }, 0); }
 
 /** 【覚醒】の能力で、覚醒したとき（同じカードを1枚伏せたとき）に足される AP/DP */
 function awakenStat_(eff) { return supportStat_(eff, /【覚醒】/); }
+
+/**
+ * 条件の文（「サポートエリアに《投手》か「名前」か"ビハインド時"…があるなら」）に当てはまるカードを list から選ぶ。
+ * シナジーと同じ判定（名前・ポジション・球団・ビハインド時・本領発揮・コスト・特殊能力なし・戦術）。
+ */
+function condMatch_(sent, list) {
+  var found = [], m;
+  var reBr = /《([^》]+)》/g; while ((m = reBr.exec(sent))) found.push({ t: 'br', k: m[1], at: m.index, end: m.index + m[0].length });
+  var reNm = /「([^」]+)」(以外)?(?:の(【[^】]+】))?/g; while ((m = reNm.exec(sent))) if (!m[2]) found.push({ t: 'name', k: m[1], need: m[3] || '', at: m.index, end: m.index + m[0].length });
+  if ((m = /["“”]ビハインド時["“”]に有効になる特殊能力を持つ(選手)?カード/.exec(sent))) found.push({ t: 'behind', at: m.index, end: m.index + m[0].length });
+  if ((m = /【本領発揮】を持つ(選手)?カード/.exec(sent))) found.push({ t: 'honryo', at: m.index, end: m.index + m[0].length });
+  var reCost = /コストが(\d+)(以上|以下)の(選手)?カード/g; while ((m = reCost.exec(sent))) found.push({ t: 'cost', n: +m[1], dir: m[2], player: !!m[3], at: m.index, end: m.index + m[0].length });
+  if ((m = /特殊能力を持たない(選手)?カード/.exec(sent))) found.push({ t: 'vanilla', at: m.index, end: m.index + m[0].length });
+  if (!found.length) return null;
+  var pool = {};
+  found.forEach(function (f) {
+    list.forEach(function (x) {
+      var ok = false;
+      if (f.t === 'br') {
+        var pos = Object.keys(POS_NAME).find(function (p) { return POS_NAME[p] === f.k; });
+        ok = pos ? (x.kind === '選手' && String(x.pos) === pos) : f.k === '野手' ? isFielder_(x) : TEAM_NICK[f.k] ? teamOf_(x.no) === TEAM_NICK[f.k] : normName_(x.name) === normName_(f.k);
+      } else if (f.t === 'name') ok = normName_(x.name) === normName_(f.k) && (!f.need || hasAbilityTag_(x.eff, f.need));
+      else if (f.t === 'behind') ok = x.kind === '選手' && /ビハインド時/.test(String(x.eff || '').replace(/["“”″][^"“”″]*["“”″]/g, ''));
+      else if (f.t === 'honryo') ok = hasAbilityTag_(x.eff, '【本領発揮】');
+      else if (f.t === 'cost') { if (!(f.player && x.kind !== '選手')) { var c2 = x.kind === '戦術' ? 0 : (Number(x.cost) || 0); ok = f.dir === '以上' ? c2 >= f.n : c2 <= f.n; } }
+      else if (f.t === 'vanilla') ok = x.kind === '選手' && !String(x.eff || '').trim();
+      if (ok) pool[x.no] = x;
+    });
+  });
+  return Object.keys(pool).map(function (k) { return pool[k]; });
+}
+
+/**
+ * 覚醒札（同じカード）を伏せたとき、その札自身が打者／投手の「サポートエリアに○○があるなら AP+N（DP+N）」を満たすか。
+ * 満たすなら覚醒の値に +N が乗る（例：藤原 BP03-M03 は自分も"ビハインド時"の能力を持つので AP+1）。
+ */
+function selfSupportBonus_(c) {
+  var out = [], kind = c.pos === 1 ? 'DP' : 'AP';
+  abilities_(c.eff).forEach(function (ab) {
+    var head = (ab.match(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/) || [''])[0];
+    if (!/【メイン】/.test(head) || /【覚醒】|【サポート】|起動/.test(head)) return;
+    ab.split(/(?<=。)/).forEach(function (sent) {
+      var m = sent.match(new RegExp('サポートエリアに(.+?)があるなら、(?:打者の|投手の)?' + kind + '\\+(\\d+)'));
+      if (!m) return;
+      var hit = condMatch_(m[1], [c]);
+      if (hit && hit.length) out.push({ n: +m[2], cond: 'サポートエリアに' + m[1] + 'があるなら' });
+    });
+  });
+  return out;
+}
 
 /** その能力を「持っている」か：能力の頭に付いた【 】のアイコンに含まれるか（文中で言及しているだけは含めない） */
 function hasAbilityTag_(eff, tag) {
@@ -407,7 +462,7 @@ function analyzeDeck(deck, db, opt) {
       no: c.no, name: c.name, kind: c.kind, pos: POS_NAME[c.pos] || '', posShort: POS_SHORT[c.pos] || '',
       role: c.role || (b.pinch != null ? '代打' : ''), cost: c.cost, ap: c.ap, dp: c.dp, base: c.base || '', b: b,
       awakenCopies: K, awakenAdd: awakenLabel_(c),
-      awk: awakenStat_(c.eff),
+      awk: awakenStat_(c.eff), awkSelf: selfSupportBonus_(c),
       pHand: H ? probAtLeastOne_(N, K, H) : null,
       eff: c.eff || '',
     };
@@ -456,7 +511,7 @@ function analyzeDeck(deck, db, opt) {
     r.awkAlt = o ? awakenStat_(o.eff)[o.pos === 1 ? 'dpAlt' : 'apAlt'] : [];
     var supVal = dpValue_(c);
     // 先発のDP＋この1枚で届く値（効果による加算は含めない）
-    r.defOne = starterDp != null ? (r.defAwaken && o.no === (starter && starter.no) ? starterDp + o.dp + awakenStat_(o.eff).dp : (c.dpAttr || st.dp ? starterDp + Math.max(dpv('ミート'), dpv('強振')) : null)) : null;
+    r.defOne = starterDp != null ? (r.defAwaken && o.no === (starter && starter.no) ? starterDp + awakenTotal_(o) : (c.dpAttr || st.dp ? starterDp + Math.max(dpv('ミート'), dpv('強振')) : null)) : null;
     r.defOneAtLeast = c.dpSup === '4+' && !(c.no in DP_EXACT);
     if (c.kind === '戦術') tactics.push(r); else twoWay.push(r);
   });
@@ -592,7 +647,7 @@ function analyzeDeck(deck, db, opt) {
       main.forEach(function (c) {
         var awk = c.no === starter.no;
         var ef = supportStat_(c.eff).dp;
-        var v = awk ? starterDp + starter.dp + awakenStat_(starter.eff).dp : (c.dpAttr === a || ef ? starterDp + (c.dpAttr === a ? dpValue_(c) : 0) + ef : null);
+        var v = awk ? starterDp + awakenTotal_(starter) : (c.dpAttr === a || ef ? starterDp + (c.dpAttr === a ? dpValue_(c) : 0) + ef : null);
         if (v != null && v >= 11) { K += c.num; names.push(c.name + '×' + c.num); }
       });
       pushP('先発DP＋1枚で11以上（' + a + 'に当たったとき）', K, names.join('・'));
@@ -844,7 +899,7 @@ function vTwoWay(a) {
    <td>${r.atkAwaken ? `<span class="badge awk">覚醒</span> ${esc(r.atkAwaken)}<div class="small muted">ほかの打席は ${supHtml(r.atkSup)}</div>` : atkHtml(r)}</td>
    <td>${r.defAwaken ? `<span class="badge awk">覚醒</span> ${esc(r.defAwaken)}<div class="small muted">ほかの投手のときは ${supHtml(r.defSup)}</div>` : defHtml(r)}</td><td class="n">${oneCell(r)}</td></tr>`).join("")}
   </tbody></table></div>
-  <p class="note">覚醒：メインエリアの選手と同じカード番号を伏せると、サポート値の代わりにその選手の元々のAP（打者）／DP（投手）が足される（属性は関係ない）。その選手が【覚醒】の能力を持っていれば、伏せた枚数ぶんその効果も乗る（表示は1枚伏せたとき。「素○＋覚醒○」）。「先発DP＋この1枚」は先発${a.starter ? "（" + esc(a.starter.name) + " DP" + sd + "）" : ""}が登板中に、このカードだけを伏せたときの値。サポートは相手の宣言と属性が合ったときだけ足される。伏せたときに無条件でかかる効果（好球必打・研ぎ澄まされた一振りの AP+2、強心臓・渾身の一球の DP+2 など）は「実質」として足しています。「〜なら」付きの効果は入れていません。11以上を緑にしています。「4以上」と出るサポート値は、公式の検索で4と5以上を区別できないため（＋を付けています）。</p>
+  <p class="note">覚醒：メインエリアの選手と同じカード番号を伏せると、サポート値の代わりにその選手の元々のAP（打者）／DP（投手）が足される（属性は関係ない）。その選手が【覚醒】の能力を持っていれば、伏せた枚数ぶんその効果も乗る。さらに、その選手の「サポートエリアに○○があるなら AP+N」を伏せた覚醒札自身が満たすなら、その +N も乗る（例：藤原 BP03-M03 は自分も"ビハインド時"の能力を持つので AP+7）。表示は1枚伏せたとき。「先発DP＋この1枚」は先発${a.starter ? "（" + esc(a.starter.name) + " DP" + sd + "）" : ""}が登板中に、このカードだけを伏せたときの値。サポートは相手の宣言と属性が合ったときだけ足される。伏せたときに無条件でかかる効果（好球必打・研ぎ澄まされた一振りの AP+2、強心臓・渾身の一球の DP+2 など）は「実質」として足しています。「〜なら」付きの効果は入れていません。11以上を緑にしています。「4以上」と出るサポート値は、公式の検索で4と5以上を区別できないため（＋を付けています）。</p>
   <h3>戦術カード</h3><div class="scroll"><table><thead><tr><th>カード</th><th class="n">枚数</th><th>攻撃</th><th>守備</th><th>効果</th></tr></thead><tbody>
   ${a.tactics.map(r => `<tr><td>${cname(r.no, r.name)}${r.single ? '<span class="badge pin">1枚</span>' : ""}</td><td class="n num">${r.num}</td><td>${atkHtml(r)}</td><td>${defHtml(r)}</td><td class="small">${esc(r.eff)}</td></tr>`).join("")}
   </tbody></table></div>`;
