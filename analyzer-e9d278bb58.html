@@ -216,6 +216,11 @@ function diceFromEffect_(eff, supportOnly) {
   return out;
 }
 
+/** その能力を「持っている」か：能力の頭に付いた【 】のアイコンに含まれるか（文中で言及しているだけは含めない） */
+function hasAbilityTag_(eff, tag) {
+  return abilities_(eff).some(function (ab) { var head = (ab.match(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/) || [''])[0]; return head.indexOf(tag) >= 0; });
+}
+
 /** K枚入りの札が、N枚の山から H 枚見たときに1枚以上ある確率 */
 function probAtLeastOne_(N, K, H) {
   if (K <= 0 || H <= 0 || N <= 0) return 0;
@@ -410,7 +415,8 @@ function analyzeDeck(deck, db, opt) {
       if (!/サポートエリア|イニングエリア|レストエリア|手札|山札|公開|捨て|【コンボ】/.test(sent)) return;
       var found = [], m;
       var reBr = /《([^》]+)》/g; while ((m = reBr.exec(sent))) found.push({ type: 'br', key: m[1], at: m.index, end: m.index + m[0].length });
-      var reNm = /「([^」]+)」(以外)?/g; while ((m = reNm.exec(sent))) if (!m[2]) found.push({ type: 'name', key: m[1], at: m.index, end: m.index + m[0].length });
+      // 「寺地 隆成」の【本領発揮】のように能力まで指定されていたら、その能力を持つカードだけ
+      var reNm = /「([^」]+)」(以外)?(?:の(【[^】]+】))?/g; while ((m = reNm.exec(sent))) if (!m[2]) found.push({ type: 'name', key: m[1], need: m[3] || '', at: m.index, end: m.index + m[0].length });
       var reCombo = /【コンボ】([^:：\s]+)[:：]/g; while ((m = reCombo.exec(sent))) found.push({ type: 'name', key: m[1], at: m.index, end: m.index + m[0].length });
       if ((m = /["“”]ビハインド時["“”]に有効になる特殊能力を持つ(選手)?カード/.exec(sent))) found.push({ type: 'behind', at: m.index, end: m.index + m[0].length });
       if ((m = /【本領発揮】を持つ(選手)?カード/.exec(sent))) found.push({ type: 'honryo', at: m.index, end: m.index + m[0].length });
@@ -440,13 +446,14 @@ function analyzeDeck(deck, db, opt) {
             else if (/^(右打|左打|両打|右投|左投)$/.test(k)) unsupported = true;
             else match = main.filter(function (x) { return normName_(x.name) === normName_(k); });
           } else if (f.type === 'name') {
-            label = '「' + f.key + '」'; match = main.filter(function (x) { return normName_(x.name) === normName_(f.key); });
+            label = '「' + f.key + '」' + (f.need ? 'の' + f.need + 'を持つカード' : '');
+            match = main.filter(function (x) { return normName_(x.name) === normName_(f.key) && (!f.need || hasAbilityTag_(x.eff, f.need)); });
           } else if (f.type === 'behind') {
-            label = '"ビハインド時"の能力を持つ選手'; match = main.filter(function (x) { return x.kind === '選手' && /ビハインド時/.test(x.eff || ''); });
+            label = '"ビハインド時"の能力を持つ選手'; match = main.filter(function (x) { return x.kind === '選手' && /ビハインド時/.test(String(x.eff || '').replace(/["“”″][^"“”″]*["“”″]/g, '')); });
           } else if (f.type === 'honryo') {
             var ex = (sent.match(/「([^」]+)」以外/) || [])[1];
             label = '【本領発揮】を持つカード' + (ex ? '（' + ex + '以外）' : '');
-            match = main.filter(function (x) { return /【本領発揮】/.test(x.eff || '') && (!ex || normName_(x.name) !== normName_(ex)); });
+            match = main.filter(function (x) { return hasAbilityTag_(x.eff, '【本領発揮】') && (!ex || normName_(x.name) !== normName_(ex)); });
           } else if (f.type === 'samename') {
             label = '同じ名前が2枚以上'; match = main.filter(function (x) { return x.num >= 2; });
           } else if (f.type === 'tactic') {
