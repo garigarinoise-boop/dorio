@@ -740,8 +740,8 @@ function judgeCells(r) {
   if (!j) return '<td colspan="2" class="muted">—</td>';
   const m = j["ミート"], p = j["強振"];
   const em = je["ミート"], ep = je["強振"];
-  return `<td class="small"><span class="meet">単打以上 ${pct(1 - m["アウト"])}</span><br><span class="muted">二塁打 ${pct(m["二塁打"])}</span>${em ? `<div class="hl" style="margin-top:3px;padding:1px 4px;border-radius:4px">効果+${add["ミート"]}のとき <b class="meet">${pct(1 - em["アウト"])}</b><br><span class="muted">二塁打 ${pct(em["二塁打"])}</span></div>` : ""}</td>
-          <td class="small"><span class="power">安打以上 ${pct(1 - p["アウト"])}</span><br><span class="muted">長打 ${pct(p["二塁打"] + p["本塁打"])}・本塁打 ${pct(p["本塁打"])}</span>${ep ? `<div class="hl" style="margin-top:3px;padding:1px 4px;border-radius:4px">効果+${add["強振"]}のとき <b class="power">${pct(1 - ep["アウト"])}</b><br><span class="muted">長打 ${pct(ep["二塁打"] + ep["本塁打"])}・本塁打 ${pct(ep["本塁打"])}</span></div>` : ""}</td>`;
+  return `<td class="small"><span class="meet">アウト以外 ${pct(1 - m["アウト"])}</span><br><span class="muted">二塁打 ${pct(m["二塁打"])}</span>${em ? `<div class="hl" style="margin-top:3px;padding:1px 4px;border-radius:4px">効果+${add["ミート"]}のとき <b class="meet">${pct(1 - em["アウト"])}</b><br><span class="muted">二塁打 ${pct(em["二塁打"])}</span></div>` : ""}</td>
+          <td class="small"><span class="power">アウト以外 ${pct(1 - p["アウト"])}</span><br><span class="muted">長打 ${pct(p["二塁打"] + p["本塁打"])}・本塁打 ${pct(p["本塁打"])}</span>${ep ? `<div class="hl" style="margin-top:3px;padding:1px 4px;border-radius:4px">効果+${add["強振"]}のとき <b class="power">${pct(1 - ep["アウト"])}</b><br><span class="muted">長打 ${pct(ep["二塁打"] + ep["本塁打"])}・本塁打 ${pct(ep["本塁打"])}</span></div>` : ""}</td>`;
 }
 const effCell = r => {
   const d = (r.effDice || []).map(x => `<div class="small"><span class="${attrCls(x.attr)}">${x.attr === "両方" ? "ミート・強振" : x.attr} ダイス+${x.n}</span> <span class="muted">${esc(x.cond)}</span></div>`).join("");
@@ -756,7 +756,7 @@ function vBatting(a) {
   ${bat.map(r => `<tr><td class="num">${r.bat || (r.role === "代打" ? "代打" : "控え")}</td><td>${r.posShort}</td><td>${cname(r.no, r.name)}<div class="small muted">${esc(r.no)}${r.role === "代打" && r.b.pinch != null ? `・代打${r.b.pinch}ドロー` : ""}</div></td><td class="n num">${r.cost ?? "—"}</td><td class="n num">${r.ap ?? "—"}</td><td>${dice(r.b)}</td>
    <td>${r.awakenCopies ? `<b class="num">${r.awakenCopies}</b>枚 <span class="badge awk">${esc(r.awakenAdd)}</span><div class="small muted">初手に1枚以上 ${pct(r.pHand)}</div>` : '<span class="muted">0枚</span>'}</td>${judgeCells(r)}${effCell(r)}</tr>`).join("")}
   </tbody></table></div>
-  <p class="note">打撃判定は公式チームカードの表（2d6＋補正。ミート：4以下アウト・5〜10単打・11以上二塁打／強振：6以下アウト・7単打・8〜10二塁打・11以上本塁打）。上の段は基礎能力の【ミート①】【強振②】と、上で選んだ補正（今は ${S.oppDice > 0 ? "+" : ""}${S.oppDice}）だけ。黄色の段は、その打者自身の効果のダイス＋の<b>条件をすべて満たしたとき</b>（ビハインド時・覚醒・代打で出たとき・コンボなど。条件は効果の列に書いてある）。</p>
+  <p class="note">「アウト以外」＝打撃判定でアウトにならない確率（ミートなら単打か二塁打、強振なら単打・二塁打・本塁打のどれか）。打撃判定は公式チームカードの表（2d6＋補正。ミート：4以下アウト・5〜10単打・11以上二塁打／強振：6以下アウト・7単打・8〜10二塁打・11以上本塁打）。上の段は基礎能力の【ミート①】【強振②】と、上で選んだ補正（今は ${S.oppDice > 0 ? "+" : ""}${S.oppDice}）だけ。黄色の段は、その打者自身の効果のダイス＋の<b>条件をすべて満たしたとき</b>（ビハインド時・覚醒・代打で出たとき・コンボなど。条件は効果の列に書いてある）。</p>
   ${a.teamDice.length ? `<h3>打者全員に効くダイス＋（オーダーの投手など）</h3>${a.teamDice.map(d => `<div class="small">${cname(d.no, d.name)}：<span class="${attrCls(d.attr)}">${d.attr === "両方" ? "ミート・強振" : d.attr} ダイス+${d.n}</span> <span class="muted">${esc(d.cond)}</span></div>`).join("")}<p class="note">これは上の「ダイス補正」に足して試してください（例：奥川の登板中なら +1）。</p>` : ""}
   ${a.diceCards.length ? `<h3>メインから伏せてダイス＋を足せる札</h3>${a.diceCards.map(d => `<div class="small">${cname(d.no, d.name)} ×${d.num}：<span class="${attrCls(d.attr)}">${d.attr === "両方" ? "ミート・強振" : d.attr} ダイス+${d.n}</span> <span class="muted">${esc(d.cond)}</span></div>`).join("")}` : ""}
   <h3>投手</h3><div class="scroll"><table><thead><tr><th>役割</th><th>投手</th><th class="n">コスト</th><th class="n">DP</th><th>基礎能力</th><th>覚醒札（メイン）</th></tr></thead><tbody>
@@ -914,7 +914,7 @@ function mdExport(a) {
   L.push(`- 選手 ${s.players}／戦術 ${s.tactics}（メインの野手 ${s.fielders}・投手 ${s.pitchers}）`);
   L.push(`- APサポート：ミート ${s.apMeet}／強振 ${s.apPower}　DPサポート：ミート ${s.dpMeet}／強振 ${s.dpPower}`);
   const ng = a.checks.filter(c => !c.ok); if (ng.length) L.push(`- ルールチェック：${ng.map(c => c.label + "（" + c.detail + "）").join("、")}`);
-  L.push("", "| 打順 | 選手 | AP | 覚醒札 | ミート単打以上 | 強振安打以上 |", "|--:|---|--:|--:|--:|--:|");
+  L.push("", "| 打順 | 選手 | AP | 覚醒札 | ミートでアウト以外 | 強振でアウト以外 |", "|--:|---|--:|--:|--:|--:|");
   a.order.filter(r => r.bat).forEach(r => L.push(`| ${r.bat} | ${r.name} ${r.no} | ${r.ap ?? ""} | ${r.awakenCopies} | ${pct(1 - r.judge["ミート"]["アウト"])} | ${pct(1 - r.judge["強振"]["アウト"])} |`));
   L.push("", "| メインの選手 | 枚数 | 攻撃 | 守備 |", "|---|--:|---|---|");
   a.twoWay.forEach(r => L.push(`| ${r.name} ${r.no} | ${r.num} | ${r.atkAwaken ? "覚醒 " + r.atkAwaken + "／他 " + (r.atkSup || "—") : r.atkSup || "—"} | ${r.defAwaken ? "覚醒 " + r.defAwaken + "／他 " + (r.defSup || "—") : r.defSup || "—"} |`));
