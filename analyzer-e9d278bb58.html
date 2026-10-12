@@ -223,10 +223,12 @@ var MAIN_AREA_RE = /【(サポート|イニング|レスト)】/;
  * 伏せたとき（【サポート】の能力）に足される AP/DP を拾う。
  * 前に「〜なら／〜時、／〜場合」が付かないものは無条件（属性に関係なくかかる）、付くものは条件つき。
  */
-function supportStat_(eff) {
+function supportStat_(eff, tagRe) {
+  tagRe = tagRe || /【サポート】/;
   var r = { ap: 0, dp: 0, apCond: [], dpCond: [], apAlt: [], dpAlt: [] };
   abilities_(eff).forEach(function (ab) {
-    if (!/【サポート】/.test(ab)) return;
+    var head = (ab.match(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/) || [''])[0];
+    if (!tagRe.test(head)) return;
     var body = ab.replace(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/, '');
     var seen = { AP: false, DP: false };
     body.split(/(?<=。)/).forEach(function (sent) {
@@ -251,6 +253,16 @@ function supportStat_(eff) {
   });
   return r;
 }
+
+/** 覚醒で足される合計の表示（素の AP/DP ＋【覚醒】の無条件の効果） */
+function awakenLabel_(c) {
+  var pit = c.pos === 1, base = pit ? c.dp : c.ap; if (base == null) return '';
+  var k = pit ? 'DP' : 'AP', st = awakenStat_(c.eff), add = pit ? st.dp : st.ap;
+  return add ? k + '+' + (base + add) + '（素' + base + '＋覚醒' + add + '）' : k + '+' + base;
+}
+
+/** 【覚醒】の能力で、覚醒したとき（同じカードを1枚伏せたとき）に足される AP/DP */
+function awakenStat_(eff) { return supportStat_(eff, /【覚醒】/); }
 
 /** その能力を「持っている」か：能力の頭に付いた【 】のアイコンに含まれるか（文中で言及しているだけは含めない） */
 function hasAbilityTag_(eff, tag) {
@@ -394,7 +406,8 @@ function analyzeDeck(deck, db, opt) {
       bat: c.pos !== 1 && c.kind === '選手' && !b.pinch ? null : null,
       no: c.no, name: c.name, kind: c.kind, pos: POS_NAME[c.pos] || '', posShort: POS_SHORT[c.pos] || '',
       role: c.role || (b.pinch != null ? '代打' : ''), cost: c.cost, ap: c.ap, dp: c.dp, base: c.base || '', b: b,
-      awakenCopies: K, awakenAdd: c.pos === 1 ? (c.dp != null ? 'DP+' + c.dp : '') : (c.ap != null ? 'AP+' + c.ap : ''),
+      awakenCopies: K, awakenAdd: awakenLabel_(c),
+      awk: awakenStat_(c.eff),
       pHand: H ? probAtLeastOne_(N, K, H) : null,
       eff: c.eff || '',
     };
@@ -438,11 +451,12 @@ function analyzeDeck(deck, db, opt) {
     var dpv = function (a) { return (c.dpAttr === a ? dpValue_(c) : 0) + st.dp; };
     r.atkTotal = st.ap ? { ミート: apv('ミート'), 強振: apv('強振') } : null;
     r.defTotal = st.dp ? { ミート: dpv('ミート'), 強振: dpv('強振') } : null;
-    r.atkAwaken = o && o.pos !== 1 ? o.name + ' の打席 AP+' + o.ap : '';
-    r.defAwaken = o && o.pos === 1 ? o.name + ' の登板中 DP+' + o.dp : '';
+    r.atkAwaken = o && o.pos !== 1 ? o.name + ' の打席 ' + awakenLabel_(o) : '';
+    r.defAwaken = o && o.pos === 1 ? o.name + ' の登板中 ' + awakenLabel_(o) : '';
+    r.awkAlt = o ? awakenStat_(o.eff)[o.pos === 1 ? 'dpAlt' : 'apAlt'] : [];
     var supVal = dpValue_(c);
     // 先発のDP＋この1枚で届く値（効果による加算は含めない）
-    r.defOne = starterDp != null ? (r.defAwaken && o.no === (starter && starter.no) ? starterDp + o.dp : (c.dpAttr || st.dp ? starterDp + Math.max(dpv('ミート'), dpv('強振')) : null)) : null;
+    r.defOne = starterDp != null ? (r.defAwaken && o.no === (starter && starter.no) ? starterDp + o.dp + awakenStat_(o.eff).dp : (c.dpAttr || st.dp ? starterDp + Math.max(dpv('ミート'), dpv('強振')) : null)) : null;
     r.defOneAtLeast = c.dpSup === '4+' && !(c.no in DP_EXACT);
     if (c.kind === '戦術') tactics.push(r); else twoWay.push(r);
   });
@@ -578,7 +592,7 @@ function analyzeDeck(deck, db, opt) {
       main.forEach(function (c) {
         var awk = c.no === starter.no;
         var ef = supportStat_(c.eff).dp;
-        var v = awk ? starterDp + starter.dp : (c.dpAttr === a || ef ? starterDp + (c.dpAttr === a ? dpValue_(c) : 0) + ef : null);
+        var v = awk ? starterDp + starter.dp + awakenStat_(starter.eff).dp : (c.dpAttr === a || ef ? starterDp + (c.dpAttr === a ? dpValue_(c) : 0) + ef : null);
         if (v != null && v >= 11) { K += c.num; names.push(c.name + '×' + c.num); }
       });
       pushP('先発DP＋1枚で11以上（' + a + 'に当たったとき）', K, names.join('・'));
@@ -806,14 +820,14 @@ function vBatting(a) {
   const dice = b => ["ミート", "強振"].filter(k => b.dice[k] != null).map(k => `<span class="${attrCls(k)}">${k}+${b.dice[k]}</span>`).join(" ") || '<span class="muted">—</span>';
   return `<h3>打順と打撃判定</h3><div class="scroll"><table><thead><tr><th>打順</th><th>守</th><th>選手</th><th class="n">コスト</th><th class="n">AP</th><th>ダイス＋</th><th>覚醒札（メイン）</th><th>ミートで判定</th><th>強振で判定</th><th>効果（ダイス＋は条件つき）</th></tr></thead><tbody>
   ${bat.map(r => `<tr><td class="num">${r.bat || (r.role === "代打" ? "代打" : "控え")}</td><td>${r.posShort}</td><td>${cname(r.no, r.name)}<div class="small muted">${esc(r.no)}${r.role === "代打" && r.b.pinch != null ? `・代打${r.b.pinch}ドロー` : ""}</div></td><td class="n num">${r.cost ?? "—"}</td><td class="n num">${r.ap ?? "—"}</td><td>${dice(r.b)}</td>
-   <td>${r.awakenCopies ? `<b class="num">${r.awakenCopies}</b>枚 <span class="badge awk">${esc(r.awakenAdd)}</span><div class="small muted">初手に1枚以上 ${pct(r.pHand)}</div>` : '<span class="muted">0枚</span>'}</td>${judgeCells(r)}${effCell(r)}</tr>`).join("")}
+   <td>${r.awakenCopies ? `<b class="num">${r.awakenCopies}</b>枚 <span class="badge awk">${esc(r.awakenAdd)}</span>${((r.awk || {})[r.posShort === "投" ? "dpAlt" : "apAlt"] || []).map(x => `<div class="small hl" style="padding:0 4px;border-radius:4px">${esc(x.cond)}なら覚醒の効果は代わりに+${x.n}</div>`).join("")}<div class="small muted">初手に1枚以上 ${pct(r.pHand)}</div>` : '<span class="muted">0枚</span>'}</td>${judgeCells(r)}${effCell(r)}</tr>`).join("")}
   </tbody></table></div>
   <p class="note">「アウト以外」＝打撃判定でアウトにならない確率（ミートなら単打か二塁打、強振なら単打・二塁打・本塁打のどれか）。「長打」＝二塁打以上（ミートの判定表で出る長打は二塁打だけ、強振は二塁打と本塁打。三塁打は判定表からは出ない）。打撃判定は公式チームカードの表（2d6＋補正。ミート：4以下アウト・5〜10単打・11以上二塁打／強振：6以下アウト・7単打・8〜10二塁打・11以上本塁打）。上の段は基礎能力の【ミート①】【強振②】と、上で選んだ補正（今は ${S.oppDice > 0 ? "+" : ""}${S.oppDice}）だけ。黄色の段は、その打者自身の効果のダイス＋の<b>条件をすべて満たしたとき</b>（ビハインド時・覚醒・代打で出たとき・コンボなど。条件は効果の列に書いてある）。</p>
   ${a.teamDice.length ? `<h3>打者全員に効くダイス＋（オーダーの投手など）</h3>${a.teamDice.map(d => `<div class="small">${cname(d.no, d.name)}：<span class="${attrCls(d.attr)}">${d.attr === "両方" ? "ミート・強振" : d.attr} ダイス+${d.n}</span> <span class="muted">${esc(d.cond)}</span></div>`).join("")}<p class="note">これは上の「ダイス補正」に足して試してください（例：奥川の登板中なら +1）。</p>` : ""}
   ${a.diceCards.length ? `<h3>メインから伏せてダイス＋を足せる札</h3>${a.diceCards.map(d => `<div class="small">${cname(d.no, d.name)} ×${d.num}：<span class="${attrCls(d.attr)}">${d.attr === "両方" ? "ミート・強振" : d.attr} ダイス+${d.n}</span> <span class="muted">${esc(d.cond)}</span></div>`).join("")}` : ""}
   <h3>投手</h3><div class="scroll"><table><thead><tr><th>役割</th><th>投手</th><th class="n">コスト</th><th class="n">DP</th><th>基礎能力</th><th>覚醒札（メイン）</th></tr></thead><tbody>
   ${pit.map(r => `<tr><td>${esc(r.role || "")}</td><td>${cname(r.no, r.name)}<div class="small muted">${esc(r.no)}</div></td><td class="n num">${r.cost ?? "—"}</td><td class="n num">${r.dp ?? "—"}</td><td class="small">${esc(r.base || "")}</td>
-   <td>${r.awakenCopies ? `<b class="num">${r.awakenCopies}</b>枚 <span class="badge awk">${esc(r.awakenAdd)}</span><div class="small muted">初手に1枚以上 ${pct(r.pHand)}</div>` : '<span class="muted">0枚</span>'}</td></tr>`).join("")}
+   <td>${r.awakenCopies ? `<b class="num">${r.awakenCopies}</b>枚 <span class="badge awk">${esc(r.awakenAdd)}</span>${((r.awk || {})[r.posShort === "投" ? "dpAlt" : "apAlt"] || []).map(x => `<div class="small hl" style="padding:0 4px;border-radius:4px">${esc(x.cond)}なら覚醒の効果は代わりに+${x.n}</div>`).join("")}<div class="small muted">初手に1枚以上 ${pct(r.pHand)}</div>` : '<span class="muted">0枚</span>'}</td></tr>`).join("")}
   </tbody></table></div>
   ${zone.length ? `<p class="small">ZONE選手：${zone.map(z => cname(z.no, z.name)).join("・")}</p>` : ""}`;
 }
@@ -830,7 +844,7 @@ function vTwoWay(a) {
    <td>${r.atkAwaken ? `<span class="badge awk">覚醒</span> ${esc(r.atkAwaken)}<div class="small muted">ほかの打席は ${supHtml(r.atkSup)}</div>` : atkHtml(r)}</td>
    <td>${r.defAwaken ? `<span class="badge awk">覚醒</span> ${esc(r.defAwaken)}<div class="small muted">ほかの投手のときは ${supHtml(r.defSup)}</div>` : defHtml(r)}</td><td class="n">${oneCell(r)}</td></tr>`).join("")}
   </tbody></table></div>
-  <p class="note">覚醒：メインエリアの選手と同じカード番号を伏せると、サポート値の代わりにその選手の元々のAP（打者）／DP（投手）が足される（属性は関係ない）。「先発DP＋この1枚」は先発${a.starter ? "（" + esc(a.starter.name) + " DP" + sd + "）" : ""}が登板中に、このカードだけを伏せたときの値。サポートは相手の宣言と属性が合ったときだけ足される。伏せたときに無条件でかかる効果（好球必打・研ぎ澄まされた一振りの AP+2、強心臓・渾身の一球の DP+2 など）は「実質」として足しています。「〜なら」付きの効果は入れていません。11以上を緑にしています。「4以上」と出るサポート値は、公式の検索で4と5以上を区別できないため（＋を付けています）。</p>
+  <p class="note">覚醒：メインエリアの選手と同じカード番号を伏せると、サポート値の代わりにその選手の元々のAP（打者）／DP（投手）が足される（属性は関係ない）。その選手が【覚醒】の能力を持っていれば、伏せた枚数ぶんその効果も乗る（表示は1枚伏せたとき。「素○＋覚醒○」）。「先発DP＋この1枚」は先発${a.starter ? "（" + esc(a.starter.name) + " DP" + sd + "）" : ""}が登板中に、このカードだけを伏せたときの値。サポートは相手の宣言と属性が合ったときだけ足される。伏せたときに無条件でかかる効果（好球必打・研ぎ澄まされた一振りの AP+2、強心臓・渾身の一球の DP+2 など）は「実質」として足しています。「〜なら」付きの効果は入れていません。11以上を緑にしています。「4以上」と出るサポート値は、公式の検索で4と5以上を区別できないため（＋を付けています）。</p>
   <h3>戦術カード</h3><div class="scroll"><table><thead><tr><th>カード</th><th class="n">枚数</th><th>攻撃</th><th>守備</th><th>効果</th></tr></thead><tbody>
   ${a.tactics.map(r => `<tr><td>${cname(r.no, r.name)}${r.single ? '<span class="badge pin">1枚</span>' : ""}</td><td class="n num">${r.num}</td><td>${atkHtml(r)}</td><td>${defHtml(r)}</td><td class="small">${esc(r.eff)}</td></tr>`).join("")}
   </tbody></table></div>`;
