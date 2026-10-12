@@ -224,14 +224,25 @@ var MAIN_AREA_RE = /【(サポート|イニング|レスト)】/;
  * 前に「〜なら／〜時、／〜場合」が付かないものは無条件（属性に関係なくかかる）、付くものは条件つき。
  */
 function supportStat_(eff) {
-  var r = { ap: 0, dp: 0, apCond: [], dpCond: [] };
+  var r = { ap: 0, dp: 0, apCond: [], dpCond: [], apAlt: [], dpAlt: [] };
   abilities_(eff).forEach(function (ab) {
     if (!/【サポート】/.test(ab)) return;
     var body = ab.replace(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/, '');
     var seen = { AP: false, DP: false };
     body.split(/(?<=。)/).forEach(function (sent) {
       var m = sent.match(/(?:打者の|投手の)?(AP|DP)\+(\d+)/);
-      if (!m || seen[m[1]]) return;
+      if (!m) return;
+      // 「〜なら、代わりに、AP+3する」：条件を満たすと値が上がる
+      var alt = sent.match(/^(.*?)(?:なら|時)、?代わりに、?(?:打者の|投手の)?(AP|DP)\+(\d+)/);
+      if (alt && seen[alt[2]]) { r[alt[2].toLowerCase() + 'Alt'].push({ n: +alt[3], cond: alt[1].replace(/^[、\s]+/, '').trim() }); return; }
+      // 同じ文の中の「〜なら、さらに、DP+1する」（渾身の一球など）：足した値を条件つきで
+      var more = sent.match(/(?:打者の|投手の)?(AP|DP)\+(\d+)し、(.*?)なら、?さらに、?(AP|DP)\+(\d+)/);
+      if (more && !seen[more[1]] && more[1] === more[4] && !/なら|時、|場合/.test(sent.slice(0, more.index))) {
+        seen[more[1]] = true; r[more[1].toLowerCase()] += +more[2];
+        r[more[1].toLowerCase() + 'Alt'].push({ n: +more[2] + +more[5], cond: more[3].replace(/^それが/, '投手が').trim() });
+        return;
+      }
+      if (seen[m[1]]) return;
       seen[m[1]] = true;
       var pre = sent.slice(0, m.index), key = m[1].toLowerCase();
       if (/なら|時、|場合|サポートに/.test(pre)) r[key + 'Cond'].push(sent.trim().slice(0, 90));
@@ -422,6 +433,7 @@ function analyzeDeck(deck, db, opt) {
     // 伏せたときの効果で無条件に足される分（属性問わず）と、属性ごとの実質の値
     var st = supportStat_(c.eff);
     r.effAp = st.ap; r.effDp = st.dp; r.effApCond = st.apCond; r.effDpCond = st.dpCond;
+    r.effApAlt = st.apAlt; r.effDpAlt = st.dpAlt;
     var apv = function (a) { return (c.apAttr === a ? (c.apSup === '4+' ? 4 : Number(c.apSup) || 0) : 0) + st.ap; };
     var dpv = function (a) { return (c.dpAttr === a ? dpValue_(c) : 0) + st.dp; };
     r.atkTotal = st.ap ? { ミート: apv('ミート'), 強振: apv('強振') } : null;
@@ -807,8 +819,9 @@ function vBatting(a) {
 }
 
 const totHtml = (tot, kind, eff) => tot ? `<div class="small">効果で${kind}+${eff}（属性問わず）<br><b>実質 <span class="meet">ミート${kind}${tot["ミート"]}</span>・<span class="power">強振${kind}${tot["強振"]}</span></b></div>` : "";
-const atkHtml = r => supHtml(r.atkSup) + totHtml(r.atkTotal, "AP", r.effAp);
-const defHtml = r => supHtml(r.defSup) + totHtml(r.defTotal, "DP", r.effDp);
+const altHtml = (alts, kind, base, eff) => (alts || []).map(x => { const d = x.n - eff; return `<div class="small hl" style="padding:1px 4px;border-radius:4px;margin-top:2px">${esc(x.cond)}なら代わりに${kind}+${x.n}<br>→ <span class="meet">ミート${kind}${base["ミート"] + d}</span>・<span class="power">強振${kind}${base["強振"] + d}</span></div>`; }).join("");
+const atkHtml = r => supHtml(r.atkSup) + totHtml(r.atkTotal, "AP", r.effAp) + (r.atkTotal ? altHtml(r.effApAlt, "AP", r.atkTotal, r.effAp) : "");
+const defHtml = r => supHtml(r.defSup) + totHtml(r.defTotal, "DP", r.effDp) + (r.defTotal ? altHtml(r.effDpAlt, "DP", r.defTotal, r.effDp) : "");
 function vTwoWay(a) {
   const sd = a.starter ? a.starter.dp : null;
   const oneCell = r => r.defOne == null ? '<span class="muted">—</span>' : `<span class="num ${r.defOne >= 11 ? "ok" : ""}">${r.defOne}${r.defOneAtLeast ? "+" : ""}</span>`;
