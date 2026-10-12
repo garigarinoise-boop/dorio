@@ -422,10 +422,14 @@ function analyzeDeck(deck, db, opt) {
   // 代打（基礎能力【代打】）はスタメンではないので、ポジションの充足には数えない
   players.filter(function (c) { return !c.pinch && !/【代打/.test(c.base || ''); }).forEach(function (c) { posHave[c.pos] = (posHave[c.pos] || 0) + 1; });
   var lack = Object.keys(posNeed).filter(function (p) { return (posHave[p] || 0) < posNeed[p]; }).map(function (p) { return POS_NAME[p] + (posNeed[p] > 1 ? posNeed[p] + '人' : ''); });
-  add(!lack.length, 'ポジション（投捕一二三遊 各1・外野3）', lack.length ? '足りない: ' + lack.join('・') : 'そろっている');
+  // ※公式のおすすめデッキ（楽天 3M4NM）にスタメンの外野手2人の例があり、条件の解釈を確認中なので、違反ではなく「要確認」にとどめる
+  add(!lack.length, 'ポジション（投捕一二三遊 各1・外野3）', lack.length ? '足りない: ' + lack.join('・') + '（判定方法を確認中）' : 'そろっている', !!lack.length);
   var costP = players.filter(function (c) { return c.pos === 1; }).reduce(function (s, c) { return s + (Number(c.cost) || 0); }, 0);
   var costB = players.filter(isFielder_).reduce(function (s, c) { return s + (Number(c.cost) || 0); }, 0);
-  add(!team.maxP || costP <= team.maxP, '投手コスト合計', costP + ' / ' + (team.maxP || '?'));
+  // ※合計で見ると公式のおすすめデッキ（巨人 ZYLV・楽天 1YQR5S）でも上限を超えるので、1人ずつの最大も併記し「要確認」にとどめる
+  var maxPit = players.filter(function (c) { return c.pos === 1; }).reduce(function (m2, c) { return Math.max(m2, Number(c.cost) || 0); }, 0);
+  var pOk = !team.maxP || costP <= team.maxP;
+  add(pOk, '投手コスト', '合計 ' + costP + '・1人の最大 ' + maxPit + ' / 上限 ' + (team.maxP || '?') + (pOk ? '' : '（合計か1人ずつかを確認中）'), !pOk);
   add(!team.maxB || costB <= team.maxB, '野手コスト合計', costB + ' / ' + (team.maxB || '?'));
   add(!team.mainMax || mainTotal === team.mainMax, 'メインデッキの枚数', mainTotal + ' / ' + (team.mainMax || '?') + ' 枚');
   var over = main.filter(function (c) { return c.num > (c.max || 3); });
