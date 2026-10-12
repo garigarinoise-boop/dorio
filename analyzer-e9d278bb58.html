@@ -422,14 +422,53 @@ function analyzeDeck(deck, db, opt) {
   // 代打（基礎能力【代打】）はスタメンではないので、ポジションの充足には数えない
   players.filter(function (c) { return !c.pinch && !/【代打/.test(c.base || ''); }).forEach(function (c) { posHave[c.pos] = (posHave[c.pos] || 0) + 1; });
   var lack = Object.keys(posNeed).filter(function (p) { return (posHave[p] || 0) < posNeed[p]; }).map(function (p) { return POS_NAME[p] + (posNeed[p] > 1 ? posNeed[p] + '人' : ''); });
-  // ※公式のおすすめデッキ（楽天 3M4NM）にスタメンの外野手2人の例があり、条件の解釈を確認中なので、違反ではなく「要確認」にとどめる
-  add(!lack.length, 'ポジション（投捕一二三遊 各1・外野3）', lack.length ? '足りない: ' + lack.join('・') + '（判定方法を確認中）' : 'そろっている', !!lack.length);
+  add(!lack.length, 'ポジション（投捕一二三遊 各1・外野3）', lack.length ? '足りない: ' + lack.join('・') : 'そろっている');
+  // 他球団の選手（チームカードの球団と、カード番号の球団記号が違う）。侍ジャパン（SJ）などは対象外
+  var tcode = (String(team.no).match(/^TEAM-([A-Z]+)\d/) || [])[1];
+  if (tcode && TEAM_CODE[tcode]) {
+    var foreign = order.concat(main).filter(function (c) {
+      if (c.kind !== '選手' && c.kind !== 'ZONE選手') return false;
+      var k = (String(c.no).match(/-([A-Z]+)\d/) || [])[1];
+      return k && TEAM_CODE[k] && k !== tcode;
+    });
+    add(!foreign.length, '他球団の選手が入っていない', foreign.length ? '入っている: ' + foreign.filter(function (c, i, arr) { return arr.findIndex(function (y) { return y.no === c.no; }) === i; }).map(function (c) { return c.name + '（' + c.no + '・' + TEAM_CODE[(String(c.no).match(/-([A-Z]+)\d/) || [])[1]] + '）'; }).join('・') : 'すべて' + TEAM_CODE[tcode]);
+  }
   var costP = players.filter(function (c) { return c.pos === 1; }).reduce(function (s, c) { return s + (Number(c.cost) || 0); }, 0);
   var costB = players.filter(isFielder_).reduce(function (s, c) { return s + (Number(c.cost) || 0); }, 0);
-  // ※合計で見ると公式のおすすめデッキ（巨人 ZYLV・楽天 1YQR5S）でも上限を超えるので、1人ずつの最大も併記し「要確認」にとどめる
-  var maxPit = players.filter(function (c) { return c.pos === 1; }).reduce(function (m2, c) { return Math.max(m2, Number(c.cost) || 0); }, 0);
-  var pOk = !team.maxP || costP <= team.maxP;
-  add(pOk, '投手コスト', '合計 ' + costP + '・1人の最大 ' + maxPit + ' / 上限 ' + (team.maxP || '?') + (pOk ? '' : '（合計か1人ずつかを確認中）'), !pOk);
+  // 投手コストの合計 ≦ 上限。ただしコストを下げる効果を入れて計算する
+  //  - 自分のコストを下げる（松井「先発がコスト3以上で【先発】を持つなら、このカードのコストを-1」）→ オーダーで条件を満たせば確定
+  //  - 交代で出る投手のコストを下げる（大勢「…なら、次に交代で出場する【抑え】のコストを-3」など）→ 試合中の条件つきなので「使えば」として表示
+  var pitchers0 = players.filter(function (c) { return c.pos === 1; });
+  var hasBigStarter = pitchers0.some(function (c) { return c.role === '先発' && (Number(c.cost) || 0) >= 3; });
+  var sure = [], maybe = {};
+  pitchers0.forEach(function (c) {
+    var m = String(c.eff || '').match(/([^。]*)なら、このカードのコストを-(\d+)/);
+    if (m && /コストが3以上で【先発】/.test(m[1]) && hasBigStarter) sure.push({ name: c.name, n: Math.min(+m[2], Number(c.cost) || 0) });
+  });
+  order.forEach(function (src) {
+    var re = /([^。]*?)(?:、この勝負中、|この勝負中、)次に交代で出場する((?:コストが(\d+)以上で)?【抑え】を持つ《投手》|「[^」]+」(?:か「[^」]+」)?)のコストを-(\d+)/g, m;
+    while ((m = re.exec(String(src.eff || '')))) {
+      var cond = m[1].replace(/^.*【[^】]+】/, '').replace(/^メインフェイズ開始時、/, '').replace(/(ある)?なら$/, '').trim();
+      var names = (m[2].match(/「[^」]+」/g) || []).map(function (x) { return normName_(x.slice(1, -1)); });
+      pitchers0.forEach(function (t) {
+        if (t.no === src.no) return;
+        var ok = names.length ? names.indexOf(normName_(t.name)) >= 0 : (t.role === '抑え' && (!m[3] || (Number(t.cost) || 0) >= +m[3]));
+        if (!ok) return;
+        var red = Math.min(+m[4], Number(t.cost) || 0);
+        if (!maybe[t.no] || maybe[t.no].n < red) maybe[t.no] = { n: red, target: t.name, src: src.name, cond: cond };
+      });
+    }
+  });
+  var sureSum = sure.reduce(function (a2, x) { return a2 + x.n; }, 0);
+  var maybeList = Object.keys(maybe).map(function (k) { return maybe[k]; });
+  var maybeSum = maybeList.reduce(function (a2, x) { return a2 + x.n; }, 0);
+  var pSure = costP - sureSum, pMin = pSure - maybeSum;
+  var pDetail = '合計 ' + costP + (sureSum ? '（' + sure.map(function (x) { return x.name + ' -' + x.n; }).join('・') + '）→ ' + pSure : '') + ' / 上限 ' + (team.maxP || '?');
+  if (team.maxP && pSure > team.maxP && pMin <= team.maxP) {
+    add(true, '投手コスト合計', pDetail + '。' + maybeList.map(function (x) { return x.src + 'の効果で' + x.target + 'のコスト-' + x.n + '（条件：' + x.cond + '）'; }).join('、') + 'を使えば ' + pMin + ' / ' + team.maxP);
+  } else {
+    add(!team.maxP || pSure <= team.maxP, '投手コスト合計', pDetail);
+  }
   add(!team.maxB || costB <= team.maxB, '野手コスト合計', costB + ' / ' + (team.maxB || '?'));
   add(!team.mainMax || mainTotal === team.mainMax, 'メインデッキの枚数', mainTotal + ' / ' + (team.mainMax || '?') + ' 枚');
   var over = main.filter(function (c) { return c.num > (c.max || 3); });
