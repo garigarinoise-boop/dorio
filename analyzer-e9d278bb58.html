@@ -135,9 +135,9 @@ h3:first-child{margin-top:0}
 
   <section class="panel">
     <div class="row small">
-      <span>相手投手のダイス補正</span>
+      <span>打撃判定のダイス補正</span>
       <span class="toggle" id="oppdice"></span>
-      <span class="muted">（打撃判定の確率に反映。ダイス−1 のような投手と当たるときに切り替えてください）</span>
+      <span class="muted">（相手投手のダイス−1や、自分の投手が登板中に打者全員へ付くダイス＋1などを、ここで足し引きして試せます）</span>
     </div>
   </section>
 
@@ -191,6 +191,29 @@ function parseBase_(base) {
 /** 効果テキストを能力ごとに分ける（【攻撃】【守備】【攻・守】＜攻撃＞などの区切り、／） */
 function abilities_(eff) {
   return String(eff || '').split(/／|\n|(?=【(?:攻撃|守備|攻・守|攻\/守)】)|(?=＜(?:攻撃|守備|攻・守)＞)/).map(function (x) { return x.trim(); }).filter(Boolean);
+}
+
+/**
+ * 効果テキストから「打撃判定を行うなら【ダイス】+N」を拾う。
+ * supportOnly=false：打者本人の【攻撃】の能力（【サポート】以外）、true：手札から伏せる【サポート】の能力
+ * 属性は直前の「ミート／強振で（打撃判定・勝負）を行うなら」から決める。書いてなければ両方。
+ */
+function diceFromEffect_(eff, supportOnly) {
+  var out = [];
+  abilities_(eff).forEach(function (ab) {
+    if (!/【攻撃】|【攻・守】|【攻\/守】|＜攻撃＞|＜攻・守＞/.test(ab)) return;
+    if (!!supportOnly !== /【サポート】/.test(ab)) return;
+    var re = /【?ダイス】?\+(\d+)/g, m;
+    while ((m = re.exec(ab))) {
+      var before = ab.slice(0, m.index), am = before.match(/(ミート|強振)で(打撃判定|勝負)を行うなら[^。]*$/) || before.match(/(ミート|強振)で(打撃判定|勝負)[^。]*。?[^。]*$/);
+      // 条件の文：能力の頭からダイス＋の文の終わりまで（長ければ後ろ側を残す）
+      var endIdx = ab.indexOf('。', m.index); endIdx = endIdx < 0 ? ab.length : endIdx + 1;
+      var cond = ab.slice(0, endIdx).replace(/^(【[^】]+】|＜[^＞]+＞)+/, '').trim();
+      if (cond.length > 130) cond = '…' + cond.slice(-130);
+      out.push({ n: +m[1], attr: am ? am[1] : '両方', cond: cond });
+    }
+  });
+  return out;
 }
 
 /** K枚入りの札が、N枚の山から H 枚見たときに1枚以上ある確率 */
@@ -339,6 +362,15 @@ function analyzeDeck(deck, db, opt) {
         ミート: judgeProb_('ミート', (b.dice['ミート'] || 0) + diceMod),
         強振: judgeProb_('強振', (b.dice['強振'] || 0) + diceMod),
       };
+      // 効果によるダイス＋（条件付き。条件は満たすか分からないので「満たしたとき」として別に出す）
+      row.effDice = diceFromEffect_(c.eff, false);
+      var add = { ミート: 0, 強振: 0 };
+      row.effDice.forEach(function (d) { if (d.attr !== '強振') add['ミート'] += d.n; if (d.attr !== 'ミート') add['強振'] += d.n; });
+      row.judgeEff = {
+        ミート: add['ミート'] ? judgeProb_('ミート', (b.dice['ミート'] || 0) + diceMod + add['ミート']) : null,
+        強振: add['強振'] ? judgeProb_('強振', (b.dice['強振'] || 0) + diceMod + add['強振']) : null,
+      };
+      row.effAdd = add;
     }
     return row;
   });
@@ -502,6 +534,19 @@ function analyzeDeck(deck, db, opt) {
   }
   var singles = main.filter(function (c) { return c.num === 1; }).map(function (c) { return { name: c.name, no: c.no, p0: H ? probAtLeastOne_(N, 1, H) : null }; });
 
+  // ---- 打者以外のオーダー（投手など）から打者全員に効くダイス＋ ----
+  var teamDice = [];
+  order.forEach(function (c) {
+    if (c.kind === '選手' && c.pos !== 1) return;
+    diceFromEffect_(c.eff, false).forEach(function (d) { teamDice.push({ no: c.no, name: c.name, n: d.n, attr: d.attr, cond: d.cond }); });
+  });
+
+  // ---- メインから伏せてダイス＋を足せる札（【攻撃】【サポート】の能力）----
+  var diceCards = [];
+  main.forEach(function (c) {
+    diceFromEffect_(c.eff, true).forEach(function (d) { diceCards.push({ no: c.no, name: c.name, num: c.num, n: d.n, attr: d.attr, cond: d.cond }); });
+  });
+
   // ---- 手札を補充する手段 ----
   // 効果は能力ごと（【攻撃】【守備】＜攻撃＞…で始まるまとまり）に切る。メインのカードは手札から伏せて使うので【サポート】の能力だけを見る
   var draws = [];
@@ -536,7 +581,7 @@ function analyzeDeck(deck, db, opt) {
   ];
 
   return {
-    draws: draws, env: env,
+    draws: draws, env: env, diceCards: diceCards, teamDice: teamDice,
     title: deck.title || '', code: deck.deck_id || '', team: team, checks: checks, summary: summary,
     starter: starter ? { name: starter.name, dp: starter.dp, hand: H } : null, hand: H, deckSize: N, oppDice: diceMod,
     order: orderRows, twoWay: twoWay, tactics: tactics, synergy: synergy,
@@ -690,22 +735,30 @@ function vSummary(a) {
   <p class="note">集計は 2026-08-01〜09-12 の大会（BP03「PLAY RE:STYLE」発売前）。今の環境とは違う可能性があります。多い・少ないの判断はしていません。</p>`;
 }
 
-function judgeCells(j) {
+function judgeCells(r) {
+  const j = r.judge, je = r.judgeEff || {}, add = r.effAdd || {};
   if (!j) return '<td colspan="2" class="muted">—</td>';
   const m = j["ミート"], p = j["強振"];
-  return `<td class="small"><span class="meet">単打以上 ${pct(1 - m["アウト"])}</span><br><span class="muted">二塁打 ${pct(m["二塁打"])}</span></td>
-          <td class="small"><span class="power">安打以上 ${pct(1 - p["アウト"])}</span><br><span class="muted">長打 ${pct(p["二塁打"] + p["本塁打"])}・本塁打 ${pct(p["本塁打"])}</span></td>`;
+  const em = je["ミート"], ep = je["強振"];
+  return `<td class="small"><span class="meet">単打以上 ${pct(1 - m["アウト"])}</span><br><span class="muted">二塁打 ${pct(m["二塁打"])}</span>${em ? `<div class="hl" style="margin-top:3px;padding:1px 4px;border-radius:4px">効果+${add["ミート"]}のとき <b class="meet">${pct(1 - em["アウト"])}</b><br><span class="muted">二塁打 ${pct(em["二塁打"])}</span></div>` : ""}</td>
+          <td class="small"><span class="power">安打以上 ${pct(1 - p["アウト"])}</span><br><span class="muted">長打 ${pct(p["二塁打"] + p["本塁打"])}・本塁打 ${pct(p["本塁打"])}</span>${ep ? `<div class="hl" style="margin-top:3px;padding:1px 4px;border-radius:4px">効果+${add["強振"]}のとき <b class="power">${pct(1 - ep["アウト"])}</b><br><span class="muted">長打 ${pct(ep["二塁打"] + ep["本塁打"])}・本塁打 ${pct(ep["本塁打"])}</span></div>` : ""}</td>`;
 }
+const effCell = r => {
+  const d = (r.effDice || []).map(x => `<div class="small"><span class="${attrCls(x.attr)}">${x.attr === "両方" ? "ミート・強振" : x.attr} ダイス+${x.n}</span> <span class="muted">${esc(x.cond)}</span></div>`).join("");
+  return `<td style="min-width:220px">${d}${r.eff ? `<details class="small"><summary class="muted">効果の全文</summary><div class="effect">${esc(r.eff)}</div></details>` : '<span class="muted small">効果なし</span>'}</td>`;
+};
 function vBatting(a) {
   const bat = a.order.filter(r => r.kind === "選手" && r.posShort !== "投");
   const pit = a.order.filter(r => r.posShort === "投");
   const zone = a.order.filter(r => r.kind === "ZONE選手");
   const dice = b => ["ミート", "強振"].filter(k => b.dice[k] != null).map(k => `<span class="${attrCls(k)}">${k}+${b.dice[k]}</span>`).join(" ") || '<span class="muted">—</span>';
-  return `<h3>打順と打撃判定</h3><div class="scroll"><table><thead><tr><th>打順</th><th>守</th><th>選手</th><th class="n">コスト</th><th class="n">AP</th><th>ダイス＋</th><th>覚醒札（メイン）</th><th>ミートで判定</th><th>強振で判定</th></tr></thead><tbody>
+  return `<h3>打順と打撃判定</h3><div class="scroll"><table><thead><tr><th>打順</th><th>守</th><th>選手</th><th class="n">コスト</th><th class="n">AP</th><th>ダイス＋</th><th>覚醒札（メイン）</th><th>ミートで判定</th><th>強振で判定</th><th>効果（ダイス＋は条件つき）</th></tr></thead><tbody>
   ${bat.map(r => `<tr><td class="num">${r.bat || (r.role === "代打" ? "代打" : "控え")}</td><td>${r.posShort}</td><td>${cname(r.no, r.name)}<div class="small muted">${esc(r.no)}${r.role === "代打" && r.b.pinch != null ? `・代打${r.b.pinch}ドロー` : ""}</div></td><td class="n num">${r.cost ?? "—"}</td><td class="n num">${r.ap ?? "—"}</td><td>${dice(r.b)}</td>
-   <td>${r.awakenCopies ? `<b class="num">${r.awakenCopies}</b>枚 <span class="badge awk">${esc(r.awakenAdd)}</span><div class="small muted">初手に1枚以上 ${pct(r.pHand)}</div>` : '<span class="muted">0枚</span>'}</td>${judgeCells(r.judge)}</tr>`).join("")}
+   <td>${r.awakenCopies ? `<b class="num">${r.awakenCopies}</b>枚 <span class="badge awk">${esc(r.awakenAdd)}</span><div class="small muted">初手に1枚以上 ${pct(r.pHand)}</div>` : '<span class="muted">0枚</span>'}</td>${judgeCells(r)}${effCell(r)}</tr>`).join("")}
   </tbody></table></div>
-  <p class="note">打撃判定は公式チームカードの表（2d6＋補正。ミート：4以下アウト・5〜10単打・11以上二塁打／強振：6以下アウト・7単打・8〜10二塁打・11以上本塁打）。ダイス＋は基礎能力の【ミート①】【強振②】と、上で選んだ相手投手の補正（今は ${S.oppDice > 0 ? "+" : ""}${S.oppDice}）。カード効果によるダイス＋は入っていません。</p>
+  <p class="note">打撃判定は公式チームカードの表（2d6＋補正。ミート：4以下アウト・5〜10単打・11以上二塁打／強振：6以下アウト・7単打・8〜10二塁打・11以上本塁打）。上の段は基礎能力の【ミート①】【強振②】と、上で選んだ補正（今は ${S.oppDice > 0 ? "+" : ""}${S.oppDice}）だけ。黄色の段は、その打者自身の効果のダイス＋の<b>条件をすべて満たしたとき</b>（ビハインド時・覚醒・代打で出たとき・コンボなど。条件は効果の列に書いてある）。</p>
+  ${a.teamDice.length ? `<h3>打者全員に効くダイス＋（オーダーの投手など）</h3>${a.teamDice.map(d => `<div class="small">${cname(d.no, d.name)}：<span class="${attrCls(d.attr)}">${d.attr === "両方" ? "ミート・強振" : d.attr} ダイス+${d.n}</span> <span class="muted">${esc(d.cond)}</span></div>`).join("")}<p class="note">これは上の「ダイス補正」に足して試してください（例：奥川の登板中なら +1）。</p>` : ""}
+  ${a.diceCards.length ? `<h3>メインから伏せてダイス＋を足せる札</h3>${a.diceCards.map(d => `<div class="small">${cname(d.no, d.name)} ×${d.num}：<span class="${attrCls(d.attr)}">${d.attr === "両方" ? "ミート・強振" : d.attr} ダイス+${d.n}</span> <span class="muted">${esc(d.cond)}</span></div>`).join("")}` : ""}
   <h3>投手</h3><div class="scroll"><table><thead><tr><th>役割</th><th>投手</th><th class="n">コスト</th><th class="n">DP</th><th>基礎能力</th><th>覚醒札（メイン）</th></tr></thead><tbody>
   ${pit.map(r => `<tr><td>${esc(r.role || "")}</td><td>${cname(r.no, r.name)}<div class="small muted">${esc(r.no)}</div></td><td class="n num">${r.cost ?? "—"}</td><td class="n num">${r.dp ?? "—"}</td><td class="small">${esc(r.base || "")}</td>
    <td>${r.awakenCopies ? `<b class="num">${r.awakenCopies}</b>枚 <span class="badge awk">${esc(r.awakenAdd)}</span><div class="small muted">初手に1枚以上 ${pct(r.pHand)}</div>` : '<span class="muted">0枚</span>'}</td></tr>`).join("")}
