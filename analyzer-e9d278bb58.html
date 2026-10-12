@@ -374,6 +374,9 @@ function analyzeDeck(deck, db, opt) {
     abilities_(c.eff).forEach(function (ab) { ab.split(/(?<=。)/).map(function (x) { return x.trim(); }).filter(Boolean).forEach(function (x) { sents.push({ t: x, ab: ab }); }); });
     sents.forEach(function (so) {
       var sent = so.t, ability = so.ab;
+      // メインデッキのカードが関わるのは、サポート・イニング・レストの各エリアと手札・山札（公開・捨てる）・コンボだけ。
+      // 「出場している《野手》」「登板している投手」のようにオーダーについての文は対象にしない
+      if (!/サポートエリア|イニングエリア|レストエリア|手札|山札|公開|捨て|【コンボ】/.test(sent)) return;
       var found = [], m;
       var reBr = /《([^》]+)》/g; while ((m = reBr.exec(sent))) found.push({ type: 'br', key: m[1], at: m.index, end: m.index + m[0].length });
       var reNm = /「([^」]+)」(以外)?/g; while ((m = reNm.exec(sent))) if (!m[2]) found.push({ type: 'name', key: m[1], at: m.index, end: m.index + m[0].length });
@@ -381,7 +384,11 @@ function analyzeDeck(deck, db, opt) {
       if ((m = /["“”]ビハインド時["“”]に有効になる特殊能力を持つ(選手)?カード/.exec(sent))) found.push({ type: 'behind', at: m.index, end: m.index + m[0].length });
       if ((m = /【本領発揮】を持つ(選手)?カード/.exec(sent))) found.push({ type: 'honryo', at: m.index, end: m.index + m[0].length });
       if ((m = /同じ名前のカードが2枚以上/.exec(sent))) found.push({ type: 'samename', at: m.index, end: m.index + m[0].length });
-      if ((m = /戦術カード/.exec(sent))) found.push({ type: 'tactic', at: m.index, end: m.index + m[0].length });
+      if ((m = /戦術カード(?!のコストは)/.exec(sent))) found.push({ type: 'tactic', at: m.index, end: m.index + m[0].length });
+      var reCost = /コストが(\d+)(以上|以下)の(選手)?カード/g;
+      while ((m = reCost.exec(sent))) found.push({ type: 'cost', n: +m[1], dir: m[2], player: !!m[3], at: m.index, end: m.index + m[0].length });
+      if ((m = /特殊能力を持たない(選手)?カード/.exec(sent))) found.push({ type: 'vanilla', at: m.index, end: m.index + m[0].length });
+      if ((m = /コストの合計/.exec(sent))) found.push({ type: 'costsum', at: m.index, end: m.index + m[0].length });
       found.sort(function (x, y) { return x.at - y.at; });
       // 「《投手》か《捕手》」「「寺地」か"ビハインド時"…」のように「か／または」でつながる条件は1つにまとめる（どれか1枚でよい）
       var groups = [];
@@ -390,7 +397,7 @@ function analyzeDeck(deck, db, opt) {
         if (prev && /^\s*(か|または|や|、|・)\s*$/.test(sent.slice(prev.end, f.at))) groups[groups.length - 1].push(f); else groups.push([f]);
       });
       groups.forEach(function (g) {
-        var labels = [], pool = {}, unsupported = false;
+        var labels = [], pool = {}, unsupported = false, costInfo = false;
         g.forEach(function (f) {
           var match = [], label = '';
           if (f.type === 'br') {
@@ -413,6 +420,18 @@ function analyzeDeck(deck, db, opt) {
             label = '同じ名前が2枚以上'; match = main.filter(function (x) { return x.num >= 2; });
           } else if (f.type === 'tactic') {
             label = '戦術カード'; match = main.filter(function (x) { return x.kind === '戦術'; });
+          } else if (f.type === 'cost') {
+            // 戦術カードのコストは0として扱う（公式の補足）
+            label = 'コスト' + f.n + f.dir + 'の' + (f.player ? '選手' : '') + 'カード';
+            match = main.filter(function (x) {
+              if (f.player && x.kind !== '選手') return false;
+              var cst = x.kind === '戦術' ? 0 : (Number(x.cost) || 0);
+              return f.dir === '以上' ? cst >= f.n : cst <= f.n;
+            });
+          } else if (f.type === 'vanilla') {
+            label = '特殊能力を持たない選手カード'; match = main.filter(function (x) { return x.kind === '選手' && !String(x.eff || '').trim(); });
+          } else if (f.type === 'costsum') {
+            label = 'コストの合計（参考：メインのコスト分布）'; costInfo = true;
           }
           labels.push(label);
           match.forEach(function (x) { pool[x.no] = x; });
@@ -426,8 +445,14 @@ function analyzeDeck(deck, db, opt) {
         // 「山札の上からN枚を公開」と同じ文にある条件なら、当たる確率も出す
         var rv = ability.match(/山札の上から(\d+)枚/);
         var reveal = rv ? { n: +rv[1], p1: probAtLeastOne_(N, K, +rv[1]), pAll: probExactly_(N, K, +rv[1], +rv[1]) } : null;
-        conds.push({ label: label, sentence: sent, unsupported: unsupported, total: K, reveal: reveal,
-          cards: match.map(function (x) { return x.name + (sameName[normName_(x.name)] > 1 ? '（' + x.no + '）' : '') + '×' + x.num; }) });
+        var cards = match.map(function (x) { return x.name + (sameName[normName_(x.name)] > 1 ? '（' + x.no + '）' : '') + '×' + x.num; });
+        if (costInfo && g.length === 1) {
+          var dist = {};
+          main.forEach(function (x) { var cst = x.kind === '戦術' ? 0 : (Number(x.cost) || 0); dist[cst] = (dist[cst] || 0) + x.num; });
+          cards = Object.keys(dist).sort().map(function (k2) { return 'コスト' + k2 + '：' + dist[k2] + '枚'; });
+          K = null;
+        }
+        conds.push({ label: label, sentence: sent, unsupported: unsupported, total: K, reveal: reveal, cards: cards });
       });
     });
     // 同じ条件が別の文にも出てくるときは1つにまとめ、文を並べる
@@ -708,7 +733,7 @@ function vTwoWay(a) {
 function vSynergy(a) {
   if (!a.synergy.length) return '<div class="empty">オーダーの効果テキストに、メインのカードを条件にする書き方は見つかりませんでした。</div>';
   return `<p class="note" style="margin-top:0">オーダーの効果に書かれている条件（《投手》「カード名」"ビハインド時"【本領発揮】【コンボ】など）を、メインデッキのカードと文字どおりに突き合わせています。相性の良し悪しの判断はしていません。</p>
-  ${a.synergy.map(s => `<h3>${cname(s.no, s.name)}</h3>${s.conds.map(c => `<div class="cond"><div class="t">${esc(c.label)} → メインに <span class="num" style="font-size:17px">${c.total}</span> 枚${c.unsupported ? ' <span class="badge pin">打ち手の左右など、データに無い条件（未対応）</span>' : ""}</div>
+  ${a.synergy.map(s => `<h3>${cname(s.no, s.name)}</h3>${s.conds.map(c => `<div class="cond"><div class="t">${esc(c.label)} ${c.total == null ? "" : `→ メインに <span class="num" style="font-size:17px">${c.total}</span> 枚`}${c.unsupported ? ' <span class="badge pin">打ち手の左右など、データに無い条件（未対応）</span>' : ""}</div>
     ${c.cards.length ? `<div class="small">${c.cards.map(esc).join("・")}</div>` : ""}
     ${c.reveal ? `<div class="small">山札の上から${c.reveal.n}枚を公開したとき、1枚以上ある確率 <b>${pct(c.reveal.p1)}</b>${c.reveal.n > 1 ? `／${c.reveal.n}枚とも ${pct(c.reveal.pAll)}` : ""}（山札${a.deckSize}枚で計算）</div>` : ""}
     ${c.sentences.map(x => `<div class="s">${esc(x)}</div>`).join("")}</div>`).join("")}`).join("")}`;
