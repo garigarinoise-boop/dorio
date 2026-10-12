@@ -202,7 +202,7 @@ function diceFromEffect_(eff, supportOnly) {
   var out = [];
   abilities_(eff).forEach(function (ab) {
     if (!/【攻撃】|【攻・守】|【攻\/守】|＜攻撃＞|＜攻・守＞/.test(ab)) return;
-    if (!!supportOnly !== /【サポート】/.test(ab)) return;
+    if (!!supportOnly !== MAIN_AREA_RE.test(ab)) return;
     var re = /【?ダイス】?\+(\d+)/g, m;
     while ((m = re.exec(ab))) {
       var before = ab.slice(0, m.index), am = before.match(/(ミート|強振)で(打撃判定|勝負)を行うなら[^。]*$/) || before.match(/(ミート|強振)で(打撃判定|勝負)[^。]*。?[^。]*$/);
@@ -215,6 +215,9 @@ function diceFromEffect_(eff, supportOnly) {
   });
   return out;
 }
+
+// メインデッキのカードが手札から置かれて能力が働くエリア（サポート・イニング・レスト）
+var MAIN_AREA_RE = /【(サポート|イニング|レスト)】/;
 
 /** その能力を「持っている」か：能力の頭に付いた【 】のアイコンに含まれるか（文中で言及しているだけは含めない） */
 function hasAbilityTag_(eff, tag) {
@@ -513,7 +516,7 @@ function analyzeDeck(deck, db, opt) {
     if (b.pinch != null) tpUse.push({ name: c.name, what: '代打（出場で' + b.pinch + '枚ドロー）', tp: 1, per: '代打1回' });
   });
   if (zones.length) tpUse.push({ name: zones.map(function (z) { return z.name; }).join('・'), what: 'ZONE（1試合1回）', tp: 1, per: '1回' });
-  main.forEach(function (c) { abilities_(c.eff).forEach(function (ab) { if (/【サポート】/.test(ab) && /タイムポイントを\d*つ?獲得/.test(ab)) tpGain.push({ name: c.name + '（メイン×' + c.num + '）', what: ab.slice(0, 110) }); }); });
+  main.forEach(function (c) { abilities_(c.eff).forEach(function (ab) { if (MAIN_AREA_RE.test(ab) && /タイムポイントを\d*つ?獲得/.test(ab)) tpGain.push({ name: c.name + '（メイン×' + c.num + '）', what: ab.slice(0, 110) }); }); });
 
   // ---- 引ける確率 ----
   var probRows = [];
@@ -555,13 +558,13 @@ function analyzeDeck(deck, db, opt) {
   });
 
   // ---- 手札を補充する手段 ----
-  // 効果は能力ごと（【攻撃】【守備】＜攻撃＞…で始まるまとまり）に切る。メインのカードは手札から伏せて使うので【サポート】の能力だけを見る
+  // 効果は能力ごと（【攻撃】【守備】＜攻撃＞…で始まるまとまり）に切る。メインのカードは手札からサポート・イニング・レストに置かれたときの能力だけを見る
   var draws = [];
   var drawFrom = function (c, label, supportOnly) {
     abilities_(c.eff).forEach(function (ab) {
-      if (supportOnly && !/【サポート】/.test(ab)) return;
+      if (supportOnly && !MAIN_AREA_RE.test(ab)) return;
       var m = ab.match(/カードを(\d+)枚(まで)?引く/);
-      if (m) draws.push({ name: label, when: ab.slice(0, 110), n: +m[1], effect: true });
+      if (m) draws.push({ name: label, when: (/^(?:【[^】]+】|＜[^＞]+＞)*【本領発揮】/.test(ab) ? '〔本領発揮：同じカードが出場しているとき〕' : '') + ab.slice(0, 110), n: +m[1], effect: true });
     });
   };
   order.forEach(function (c) {
@@ -801,7 +804,7 @@ function vTp(a) {
   <h3>TPを増やす手段</h3>${a.tp.gain.length ? `<table><tbody>${a.tp.gain.map(g => `<tr><td style="width:30%">${esc(g.name)}</td><td class="small">${esc(g.what)}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">効果テキストに「タイムポイントを獲得」は見つかりませんでした。</p>'}
   <p class="note">使い道は「できること」の一覧で、全部を1試合で使うわけではありません。公式ルール：投手交代・代打はTPを1使う、ZONEはTP1で1試合1回、【タイム①】は能力を使うたびにTP1。</p>
   <h3>手札を補充する手段</h3>${a.draws.length ? `<table><thead><tr><th>カード</th><th class="n">枚数</th><th>いつ</th></tr></thead><tbody>${a.draws.map(d => `<tr><td>${esc(d.name)}</td><td class="n num">${d.n}</td><td class="small">${esc(d.when)}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">見つかりませんでした。</p>'}
-  <p class="note">メインのカードは、手札から伏せたときに効く【サポート】の能力だけを数えています。「〜なら」の条件付きのものも含みます。</p>`;
+  <p class="note">メインのカードは、手札からサポート・イニング・レストエリアに置かれたときに効く能力（【サポート】【イニング】【レスト】）だけを数えています。「〜なら」の条件付きのものも含みます。</p>`;
 }
 
 function vProb(a) {
