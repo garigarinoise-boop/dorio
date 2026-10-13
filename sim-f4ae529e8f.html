@@ -1340,6 +1340,17 @@ function simRun_(SA, SB, opt) {
     var bp = (opt.bet && opt.bet[def.key]) || '強振', adN = (opt.adapt && opt.adapt[def.key]) || 2, bOth = bp === '強振' ? 'ミート' : '強振';
     var bet = atk.obsAtk[bOth] >= atk.obsAtk[bp] + adN ? bOth : bp, other0 = bet === 'ミート' ? '強振' : 'ミート';
     var dpBet = bet === 'ミート' ? dpM : dpS, dpOth = bet === 'ミート' ? dpS : dpM, dSel;
+    // 「手札で決める（自動）」：相手がミート・強振で来る見込み（この試合の宣言＋打者の得意なダイス）で、手札で上げられる DP を重み付けする
+    var autoBet = bp === 'auto';
+    var bd = atk.S.base(b.no).dice || {}, totA = atk.obsAtk['ミート'] + atk.obsAtk['強振'];
+    var pM = Math.min(0.9, Math.max(0.1, (atk.obsAtk['ミート'] + 1 + ((bd['ミート'] || 0) - (bd['強振'] || 0)) * 0.5) / (totA + 2)));
+    // 「節約」：走者なしの打席は出塁を許してよいと考えて1枚まで。打たれても手札に戻る札（不屈など）を優先する
+    var saveMode = opt.save && opt.save[def.key] && !runner;
+    var backBonus = function (s) { return saveMode ? s.filter(function (x) { var f = def.S.fx(x); return f.fukutsu && rowCost(def, pit) >= f.fukutsu; }).length * 150 : 0; };
+    var defSc0 = autoBet
+      ? function (s) { return ((dVal(s, 'ミート') - dpM) * pM + (dVal(s, '強振') - dpS) * (1 - pM)) * 100 + nPl(s); }
+      : function (s) { return (dVal(s, bet) - dpBet) * 100 + (dVal(s, other0) - dpOth) * 10 + nPl(s); };
+    var defSc = function (s) { return defSc0(s) + backBonus(s); };
     var bestSet = function (hand, score, size, filter) {
       var c = []; hand.forEach(function (x, i) { if (!filter || filter(x)) c.push(i); });
       var best = [], bs = -1e9;
@@ -1356,14 +1367,15 @@ function simRun_(SA, SB, opt) {
       // 相手の打者の覚醒札が、まだ見えていない所（山札・手札）に残っていそうなら、手札に余裕があるときに 35% で勝負師・威圧を混ぜる（読み合い）
       var awkLeftA = atk.S.X.mainCards.filter(function (x) { return x.no === b.no; }).reduce(function (t, x) { return t + x.num; }, 0) - atk.rest.concat(atk.inning, atk.out).filter(function (x) { return x.no === b.no; }).length;
       var killI = hB.findIndex(isKill);
-      if (killI >= 0 && awkLeftA > 0 && hB.length >= def.S.handStart && rnd() < 0.35) {
-        var one1 = bestSet(hB, function (s) { return (dVal(s, bet) - dpBet) * 100 + (dVal(s, other0) - dpOth) * 10 + nPl(s); }, 1, function (x) { return !isKill(x) && nm(x) !== '強心臓'; });
+      if (killI >= 0 && awkLeftA > 0 && hB.length >= def.S.handStart && !saveMode && rnd() < 0.35) {
+        var one1 = bestSet(hB, defSc, 1, function (x) { return !isKill(x) && nm(x) !== '強心臓'; });
         dSel = { idx: [killI].concat(one1.score >= 10 ? one1.idx : []) }; ev(def, '得点圏の外で勝負師・威圧を張る');
       } else {
-        dSel = bestSet(hB, function (s) { return (dVal(s, bet) - dpBet) * 100 + (dVal(s, other0) - dpOth) * 10 + nPl(s); }, hB.length >= def.S.handStart ? 2 : 1,
+        dSel = bestSet(hB, defSc, !saveMode && hB.length >= def.S.handStart ? 2 : 1,
           function (x) { return !isKill(x) && nm(x) !== '強心臓'; });
         if (dSel.score < 10) dSel.idx = [];
       }
+      if (autoBet) { var chosen = dSel.idx.map(function (i) { return hB[i]; }); bet = dVal(chosen, 'ミート') - dpM >= dVal(chosen, '強振') - dpS ? 'ミート' : '強振'; }
       def.obsDef[bet]++;
     } else {
       var mn = function (s) { return Math.min(dVal(s, 'ミート') - dpM, dVal(s, '強振') - dpS) * 10 + nPl(s); };
@@ -1750,7 +1762,7 @@ function simulateGame2(XA, XB, opt) {
     innA: [0, 0, 0], innB: [0, 0, 0], relA: 0, relB: 0, zoneA: 0, zoneB: 0, pinchA: 0, pinchB: 0, refresh: 0, swapsA: 0, swapsB: 0, mullA: 0, mullB: 0, tpLeftA: 0, tpLeftB: 0, scores: {} };
   for (var tr = 0; tr < trials; tr++) {
     var aFirst = tr % 2 === 0;
-    var R = simRun_(SA, SB, { rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan });
+    var R = simRun_(SA, SB, { rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -1803,7 +1815,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
@@ -1831,7 +1843,7 @@ function simulateScene2(XA, XB, attr, opt) {
 function* soloGame(XA, XB, opt) {
   opt = opt || {};
   var SA = simSide_(XA), SB = simSide_(XB);
-  var R = simRun_(SA, SB, { rnd: opt.rnd, swapLevel: opt.swapLevel, memo: {}, worthMemo: {}, human: 'A', mulligan: false, log: opt.log, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan });
+  var R = simRun_(SA, SB, { rnd: opt.rnd, swapLevel: opt.swapLevel, memo: {}, worthMemo: {}, human: 'A', mulligan: false, log: opt.log, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save });
   R.A.human = true;
   var ctx = { R: R, inn: 1, top: true, half: null, atkKey: null, line: { A: [], B: [] }, aFirst: !!opt.aFirst, over: false };
   var relay = function* (it) { var r = it.next(); while (!r.done) { r.value.ctx = ctx; var a = yield r.value; r = it.next(a); } return r.value; };
@@ -1893,12 +1905,12 @@ const lsSet = (k, v) => { try { LS && LS.setItem(k, JSON.stringify(v)); } catch 
 const $ = (s, el = document) => el.querySelector(s);
 const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const pc = x => (x * 100).toFixed(0) + "%";
-const S = { A: null, B: null, tab: lsGet("dorio_sim_tab", "game"), lv: 1, trials: 1000, res: {}, sceneIdx: 0, lead: null, running: false, betA: lsGet("dorio_sim_betA", "強振"), betB: lsGet("dorio_sim_betB", "強振"), adA: lsGet("dorio_sim_adA", 2), adB: lsGet("dorio_sim_adB", 2) };
+const S = { A: null, B: null, tab: lsGet("dorio_sim_tab", "game"), lv: 1, trials: 1000, res: {}, sceneIdx: 0, lead: null, running: false, betA: lsGet("dorio_sim_betA", "強振"), betB: lsGet("dorio_sim_betB", "強振"), adA: lsGet("dorio_sim_adA", 2), adB: lsGet("dorio_sim_adB", 2), saveA: lsGet("dorio_sim_saveA", false), saveB: lsGet("dorio_sim_saveB", false) };
 const planOf = k => { const X = S[k] && S[k].X; const key = "dorio_sim_plan_" + (X && (X.code || X.title) || k); return S["plan" + k] && S["plan" + k]._key === key ? S["plan" + k] : (S["plan" + k] = Object.assign({ def: "auto", per: {} }, lsGet(key, {}), { _key: key })); };
 const savePlan = k => { const p = planOf(k); lsSet(p._key, { def: p.def, per: p.per }); };
 const planOpt = () => ({ A: { def: planOf("A").def, per: planOf("A").per }, B: { def: planOf("B").def, per: planOf("B").per } });
-const betOpt = () => ({ bet: { A: S.betA, B: S.betB }, adapt: { A: S.adA, B: S.adB }, atkPlan: planOpt() });
-const betKey = () => [S.betA, S.betB, S.adA, S.adB, JSON.stringify(planOpt())].join(",");
+const betOpt = () => ({ bet: { A: S.betA, B: S.betB }, adapt: { A: S.adA, B: S.adB }, save: { A: !!S.saveA, B: !!S.saveB }, atkPlan: planOpt() });
+const betKey = () => [S.betA, S.betB, S.adA, S.adB, !!S.saveA, !!S.saveB, JSON.stringify(planOpt())].join(",");
 const SWAP_LV = ["控えめ", "標準", "積極"];
 const SCENES = [
   { label: "1回・同点", start: 1, diff: 0, lead: 0 },
@@ -1950,7 +1962,7 @@ function renderTabs() {
 const head = () => `<div class="row" style="justify-content:space-between;margin-bottom:10px"><div><span class="tag a">自分</span> <b>${esc(S.A.X.title || "（無題）")}</b> <span class="muted small">${esc(S.A.X.code)}　${esc(S.A.X.team.name)}</span></div>${S.B ? `<div><span class="tag b">仮想敵</span> <b>${esc(S.B.X.title || "（無題）")}</b> <span class="muted small">${esc(S.B.X.code)}　${esc(S.B.X.team.name)}</span></div>` : ""}</div>`;
 const lvSel = id => `<label>投手の「手札を捨てて引く」効果（石田など）の使い方 <select id="${id}">${SWAP_LV.map((x, i) => `<option value="${i}" ${i === S.lv ? "selected" : ""}>${x}</option>`).join("")}</select></label>`;
 const AD_OPTS = [[1, "相手が逆を1回多く宣言したら"], [2, "相手が逆を2回多く宣言したら"], [3, "相手が逆を3回多く宣言したら"], [99, "張り替えない"]];
-const betRow = (who, k, ak) => `<span class="small"><b>${who}の守備</b>　張る属性（得点圏の外）：<select id="bet${k}">${["強振", "ミート"].map(a => `<option ${S["bet" + k] === a ? "selected" : ""}>${a}</option>`).join("")}</select>　張り替え：<select id="ad${k}">${AD_OPTS.map(([v, l]) => `<option value="${v}" ${S[ak] === v ? "selected" : ""}>${l}</option>`).join("")}</select></span>`;
+const betRow = (who, k, ak) => `<span class="small"><b>${who}の守備</b>　張る属性（得点圏の外）：<select id="bet${k}">${[["強振", "強振"], ["ミート", "ミート"], ["auto", "手札で決める（自動）"]].map(([v, l]) => `<option value="${v}" ${S["bet" + k] === v ? "selected" : ""}>${l}</option>`).join("")}</select>　張り替え：<select id="ad${k}" ${S["bet" + k] === "auto" ? "disabled" : ""}>${AD_OPTS.map(([v, l]) => `<option value="${v}" ${S[ak] === v ? "selected" : ""}>${l}</option>`).join("")}</select>　札の使い方：<select id="save${k}"><option value="" ${S["save" + k] ? "" : "selected"}>いつもどおり</option><option value="1" ${S["save" + k] ? "selected" : ""}>節約（走者なしは1枚まで・不屈を優先）</option></select></span>`;
 const PLAN_OPTS = [["auto", "手札で決める（自動）"], ["ミート", "ミート"], ["強振", "強振"], ["norunnerPower", "走者なしは強振、走者ありはミート"], ["rispPower", "得点圏は強振、それ以外はミート"]];
 const planRow = (who, k) => {
   const p = planOf(k), X = S[k].X, bats = X.values.filter(v => v.t.kind === "AP");
@@ -1966,6 +1978,7 @@ const trSel = id => `<label>回数 <select id="${id}">${[300, 1000, 3000].map(n 
 function wireCommon() {
   document.querySelectorAll(".plandef").forEach(el => el.onchange = () => { planOf(el.dataset.k).def = el.value; savePlan(el.dataset.k); render(); });
   document.querySelectorAll(".planper").forEach(el => el.onchange = () => { const p = planOf(el.dataset.k); if (el.value) p.per[el.dataset.no] = el.value; else delete p.per[el.dataset.no]; savePlan(el.dataset.k); render(); });
+  ["A", "B"].forEach(k => { const sv = $("#save" + k); if (sv) sv.onchange = () => { S["save" + k] = !!sv.value; lsSet("dorio_sim_save" + k, !!sv.value); render(); }; });
   ["A", "B"].forEach(k => { const be = $("#bet" + k); if (be) be.onchange = () => { S["bet" + k] = be.value; lsSet("dorio_sim_bet" + k, be.value); render(); }; const ad = $("#ad" + k); if (ad) ad.onchange = () => { S["ad" + k] = +ad.value; lsSet("dorio_sim_ad" + k, +ad.value); render(); }; });
   const lv = $("#lv"); if (lv) lv.onchange = () => { S.lv = +lv.value; render(); };
   const tr = $("#tr"); if (tr) tr.onchange = () => { S.trials = +tr.value; render(); };
@@ -2081,7 +2094,7 @@ function vRules() {
   ・TP は1試合3つ。交代（中継ぎ・抑えは出場時にその数字だけ引く。抑えは最終回だけ）・代打（その数字だけ引く）・ZONE（1試合1回、試合終了まで）・【タイム①】に使う。<br>
   ・3イニング。後攻が3回表の終わりでリードしていれば3回裏なし、3回裏に勝ち越せば終了。同点は引き分け（延長なし）。<br>
   <h3>判断の決まり（両チーム同じ）</h3>
-  ・守備：得点圏の外では、画面で選んだ属性（既定は強振）に張る。相手がこの試合で逆の属性を、選んだ回数（既定は2回）以上多く宣言していれば張り替える。手札が初手の枚数以上なら2枚、少なければ1枚。得点圏では勝負師／威圧＋1枚、無ければミート・強振の低いほうが高くなる2枚（強心臓も使う）。得点圏の外でも、手札に余裕があり相手打者の覚醒札が残っていそうなら 35% で勝負師・威圧を混ぜる。同じ値なら選手札を先に伏せる。中嶋の「捨てて DP+4」は、捨てられる札があれば見込んで選ぶ。<br>
+  ・守備：得点圏の外では、画面で選んだ属性（既定は強振）に張る。相手がこの試合で逆の属性を、選んだ回数（既定は2回）以上多く宣言していれば張り替える。「手札で決める（自動）」なら、相手がミート・強振で来る見込み（この試合の宣言と打者の得意なダイス）で、手札で上げられる DP を重み付けして一番止めやすい札を伏せる。札の使い方を「節約」にすると、走者なしの打席は出塁を許してよいと考えて1枚まで（打たれても手札に戻る不屈を優先）にし、守り札を得点圏に残す。手札が初手の枚数以上なら2枚、少なければ1枚。得点圏では勝負師／威圧＋1枚、無ければミート・強振の低いほうが高くなる2枚（強心臓も使う）。得点圏の外でも、手札に余裕があり相手打者の覚醒札が残っていそうなら 35% で勝負師・威圧を混ぜる。同じ値なら選手札を先に伏せる。中嶋の「捨てて DP+4」は、捨てられる札があれば見込んで選ぶ。<br>
   ・攻撃：画面の「攻撃」の設定（全体・打者ごと）で宣言を決める。「手札で決める（自動）」なら、手札で伏せられる値と相手投手の素の DP の差で宣言し、相手がこの試合で張ってこなかった属性に少し寄せる。覚醒札は、相手の伏せた札に勝負師・威圧が入っている見込み（見えていない枚数と相手の手札の枚数から計算、得点圏ほど高く見る）で割り引いて比べる。得点圏の外では守備の要の札（先発と同じ番号・強心臓・不屈・DP4以上。打者本人の覚醒札は除く）を使わない。2枚伏せるのは得点圏か、手札に初手より2枚以上余裕があるとき。<br>
   ・ZONE：ZONE 選手の最初の打席で使う。代打：最終回、得点圏かビハインドで代打のほうが値が高いとき。継投：最終回の守備で、先発で使う札（覚醒札・強心臓・不屈）が手札に無くなったら抑え（いなければ中継ぎ）に。TP は継投・ZONE のぶんを残してから代打・【タイム①】に使う。<br>
   ・投手の「手札を捨てて引く」（石田など）：控えめ＝特殊能力なしで DP が上がらない札だけ捨てる／標準＝得点圏では攻撃用の戦術も捨てる／積極＝守備札が4枚以上なら警戒も捨てる。<br>
