@@ -192,8 +192,14 @@ function parseBase_(base) {
 }
 
 /** 効果テキストを能力ごとに分ける（【攻撃】【守備】【攻・守】＜攻撃＞などの区切り、／） */
+var ABIL_CACHE_ = {};
 function abilities_(eff) {
+  var key = String(eff || ''), hit = ABIL_CACHE_[key];
+  if (hit) return hit.slice();
   // 全角の「＋」「－」で書かれた効果もあるので、半角にそろえてから読む（塩見・村上など）
+  return (ABIL_CACHE_[key] = abilities0_(key)).slice();
+}
+function abilities0_(eff) {
   return String(eff || '').replace(/＋/g, '+').replace(/－/g, '-').split(/／|\n|(?=【(?:攻撃|守備|攻・守|攻\/守)】)|(?=＜(?:攻撃|守備|攻・守)＞)/).map(function (x) { return x.trim(); }).filter(Boolean);
 }
 
@@ -312,16 +318,53 @@ function condMatch_(sent, list) {
  * 打者／投手の【メイン】の「サポートエリアに○○があるなら AP+N（DP+N）」のうち、伏せた札の集まり cards で満たされるものの合計。
  * 同じ能力は何枚満たしても1回分。
  */
+/**
+ * 「サポートエリアに X があるなら」の X を、伏せた札 cards で満たすか。X は「A か、B」のどちらか、「〜がN枚以上」で枚数つき。
+ * 「選手カード」「戦術カード」「元々のサポートのDPが1以下の選手カード」「サポートにAPを持つ戦術カード」なども数える。読めなければ null。
+ */
+function supCountOk_(X, cards, self) {
+  var alts = String(X).replace(/^自分の/, '').split(/か、|または/), any = false, okAll = false;
+  alts.forEach(function (alt) {
+    var m = alt.match(/^(.*?)が(\d)枚(以上)?(?:あ(?:る|り))?$/), base = (m ? m[1] : alt).replace(/^、/, '').trim(), need = m ? +m[2] : 1;
+    var ex = (base.match(/「(.+?)」以外の/) || [])[1]; base = base.replace(/「.+?」以外の/, '');
+    var pool = cards.filter(function (x) { return !(ex && normName_(x.name) === normName_(ex)); });
+    var hit;
+    if (/^(?:元々の)?サポートのDPが(\d)以下の選手カード$/.test(base)) { var lim = +base.match(/(\d)以下/)[1]; hit = pool.filter(function (x) { return x.kind === '選手' && dpValue_(x) <= lim; }); }
+    else if (/^サポートにAPを持つ戦術カード$/.test(base)) hit = pool.filter(function (x) { return x.kind === '戦術' && +x.apSup > 0; });
+    else if (/^サポートにDPを持つ戦術カード$/.test(base)) hit = pool.filter(function (x) { return x.kind === '戦術' && +x.dpSup > 0; });
+    else if (/^選手カード$/.test(base)) hit = pool.filter(function (x) { return x.kind === '選手'; });
+    else if (/^戦術カード$/.test(base)) hit = pool.filter(function (x) { return x.kind === '戦術'; });
+    else if (/^カード$/.test(base)) hit = pool;
+    else hit = condMatch_(base, pool);
+    if (hit == null) return;
+    any = true;
+    if (hit.length >= need) okAll = true;
+  });
+  return any ? okAll : null;
+}
+
 function supportCondBonus_(c, cards) {
   var sum = 0, kind = c.pos === 1 ? 'DP' : 'AP';
   abilities_(c.eff).forEach(function (ab) {
     var head = (ab.match(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/) || [''])[0];
     if (!/【メイン】/.test(head) || /【覚醒】|【サポート】|起動/.test(head)) return;
+    var lastX = null, lastN = 0, lastOk = false;
     ab.split(/(?<=。)/).forEach(function (sent) {
-      var m = sent.match(new RegExp('サポートエリアに(.+?)があるなら、(?:打者の|投手の)?' + kind + '\\+(\\d+)'));
-      if (!m) return;
-      var hit = condMatch_(m[1], cards);
-      if (hit && hit.length) sum += +m[2];
+      var alt = sent.match(new RegExp('^(\\d)枚以上あるなら、代わりに、?(?:打者の|投手の)?' + kind + '\\+(\\d+)'));
+      if (alt && lastX) { if (supCountOk_(lastX + 'が' + alt[1] + '枚以上', cards)) { if (lastOk) sum -= lastN; sum += +alt[2]; lastOk = true; lastN = +alt[2]; } return; }
+      var m = sent.match(new RegExp('サポートエリアに、?(.+?)(?:があるなら|が(\\d)枚以上あるなら)、(?:打者の|投手の)?' + kind + '\\+(\\d+)'));
+      if (!m) { lastX = null; return; }
+      if (/^(?:自分が)?カードをプレイした時/.test(sent) === false && /手札|山札/.test(m[1])) return;
+      var X = m[1] + (m[2] ? 'が' + m[2] + '枚以上' : '');
+      var ok = supCountOk_(X, cards);
+      lastX = m[1]; lastN = +m[3]; lastOk = !!ok;
+      if (ok) sum += +m[3];
+    });
+    // 「サポートエリアのカード2枚につき、AP+1」（牧）・「サポートエリアにあるカードのコストの合計だけAPをプラス」（柳町）
+    ab.split(/(?<=。)/).forEach(function (sent) {
+      var m3 = sent.match(new RegExp('サポートエリアのカード(\\d)枚につき、' + kind + '\\+(\\d+)'));
+      if (m3) sum += Math.floor(cards.length / +m3[1]) * +m3[2];
+      if (new RegExp('サポートエリアにあるカードのコストの合計だけ' + kind + 'をプラスする').test(sent)) cards.forEach(function (x) { if (x.kind !== '戦術') sum += Number(x.cost) || 0; });
     });
     // 「サポートエリアの○○1枚につき、DP+1」：満たす札の枚数ぶん
     ab.split(/(?<=。)/).forEach(function (sent) {
@@ -376,7 +419,7 @@ function comboBonus_(c, set, attr) {
   abilities_(c.eff).forEach(function (ab) {
     var m = ab.match(/【コンボ】([^:：]+)[:：](.*)$/); if (!m) return;
     var name = normName_(m[1]);
-    if (!set.some(function (x) { return normName_(x.name) === name; })) return;
+    if (!set.some(function (x) { var al = String(x.eff || '').match(/名称は「(.+?)」としても扱う/); return normName_(x.name) === name || (al && normName_(al[1]) === name); })) return;
     var a = m[2].match(/(ミート|強振)で(?:勝負|打撃判定)を行うなら/);
     if (a && a[1] !== attr) return;
     var v = m[2].match(re);
@@ -388,18 +431,45 @@ function comboBonus_(c, set, attr) {
 /**
  * 条件の文が試合のどの状況で満たされるか：'risp'＝走者が二塁か三塁、'runner'＝走者がいる、'always'＝条件なし、'other'＝それ以外（起動・ビハインドなど）
  */
+var SITK_CACHE_ = {};
 function sitKind_(text) {
+  var k0 = String(text); if (k0 in SITK_CACHE_) return SITK_CACHE_[k0];
+  return (SITK_CACHE_[k0] = sitKind0_(text));
+}
+function sitKind0_(text) {
   var t = String(text || '');
   if (/^起動：/.test(t)) return 'kidou'; // 起動の効果。シミュレーションでは起動を使った打席だけ満たす
   t = t.replace(/(ミート|強振)?で?、?相手が打撃判定を行うなら、?(さらに、?)?/g, '').replace(/[”“"][^”“"]*[”“"]/g, ''); // ”ビハインド時” のような引用は、カードの種類の条件なので除く
   if (/代打で出場/.test(t)) return 'pinch';
   if (/ZONE状態の選手がい/.test(t)) return 'zoneAny';
   if (/ZONE状態/.test(t)) return 'zoneSelf';
+  if (/走者が三塁にいる/.test(t) && !/二塁/.test(t)) return 'runner3';
   if (/二塁または三塁|二塁か三塁|走者が二塁|走者が三塁|得点圏/.test(t)) return 'risp';
   if (/1つ前の勝負で、?自分の打者が出塁/.test(t)) return 'prevOn';
+  // タイムポイント・手札・出場している選手・打順・相手のサポート・イニングやアウトの枚数
+  var m1;
+  if (/自分の持つタイムポイントがない/.test(t)) return 'tpLe:0';
+  if ((m1 = t.match(/自分の持つタイムポイントが(\d)つ以下/))) return 'tpLe:' + m1[1];
+  if ((m1 = t.match(/自分の持つタイムポイントが(\d)つ以上/))) return 'tpGe:' + m1[1];
+  if ((m1 = t.match(/手札が(\d)枚以上/))) return 'handGe:' + m1[1];
+  if ((m1 = t.match(/手札が(\d)枚以下/))) return 'handLe:' + m1[1];
+  if ((m1 = t.match(/出場しているコストが(\d)以上の《野手》が(\d)枚以上/))) return 'fieldCost:' + m1[1] + ':' + m1[2];
+  if (/《野手》のコストに『1』と『2』と『3』がそれぞれある/.test(t)) return 'costs123';
+  if ((m1 = t.match(/【覚醒】を持つ《野手》が(\d)枚以上/))) return 'awkFielders:' + m1[1];
+  if ((m1 = t.match(/自分の出場している《(捕手|一塁手|二塁手|三塁手|遊撃手|外野手|投手|野手)》が(\d)枚(以上)?/))) return 'field:' + m1[1] + ':' + (m1[3] ? 'ge' : 'eq') + ':' + m1[2];
+  if ((m1 = t.match(/このカードの打順が(\d)番以降/))) return 'slotGe:' + m1[1];
+  if ((m1 = t.match(/このカードの打順が(\d)番なら/))) return 'slotEq:' + m1[1];
+  if (/このカードの1つ前の打順のカードが【覚醒】を持つ/.test(t)) return 'prevBatAwk';
+  if ((m1 = t.match(/相手のサポートエリアにあるカードが(\d)枚以下/))) return 'oppSupLe:' + m1[1];
+  if ((m1 = t.match(/アウトエリアにカードが(\d)枚あり/))) return 'outsEq:' + m1[1];
+  if ((m1 = t.match(/イニングエリアのカードが(\d)枚なら/))) return 'innEq:' + m1[1];
+  if ((m1 = t.match(/レストエリアの戦術カードが(\d)種類以上/))) return 'restTacKinds:' + m1[1];
+  if (/サポートエリアかイニングエリアに《投手》(?:または|か)《捕手》/.test(t)) return 'supOrInnPC';
+  if (/自分のサポートエリアに《投手》があるなら/.test(t)) return 'supPitcher';
+  if (/^【?ZONE[②③④]】?$/.test(t.trim()) || /【ZONE[②③④]】/.test(t) && !/なら|時/.test(t.replace(/【[^】]+】/g, ''))) return 'zoneAny';
   if (/走者がいない/.test(t)) return 'norunner';
-  if (/走者がいる|走者がいれば|走者がいて/.test(t)) return 'runner';
-  var oc = t.match(/相手の投手のコストが(\d)以上/); if (oc) return 'oppCost' + oc[1];
+  if (/走者がいる|走者がいれば|走者がいて|走者がおり/.test(t)) return 'runner';
+  var oc = t.match(/相手の投手のコストが(\d)以上/) || t.match(/^投手のコストが(\d)以上/); if (oc) return 'oppCost' + oc[1];
   if (/イニングエリア(?:の|に)?《投手》(?:または|か)《捕手》があ/.test(t)) return 'inningPC';
   if (/イニングエリアにカードがあ/.test(t)) return 'inning';
   if (/同点時/.test(t)) return 'tie';
@@ -414,7 +484,7 @@ function sitOk_(text, cond) {
   if (cond === true) return true;
   if (!cond) return false;
   var k = sitKind_(text);
-  return k === 'always' ? true : k === 'runner' ? !!(cond.runner || cond.risp) : k === 'behind' ? !!cond.behind : k === 'lead' ? !!cond.lead : k === 'inning' ? !!cond.inning : k === 'prevOn' ? !!cond.prevOn : k === 'norunner' ? !!cond.norunner : k === 'kidou' ? !!cond.kidou : k === 'inningPC' ? !!cond.inningPC : k === 'pinch' ? !!cond.pinch : k === 'zoneSelf' ? !!cond.zoneSelf : k === 'zoneAny' ? !!cond.zoneAny : /^oppCost/.test(k) ? (cond.oppPitCost || 0) >= +k.slice(7) : k === 'tie' ? !!cond.tie : !!cond.risp;
+  return k === 'always' ? true : k === 'runner' ? !!(cond.runner || cond.risp) : k === 'behind' ? !!cond.behind : k === 'lead' ? !!cond.lead : k === 'inning' ? !!cond.inning : k === 'prevOn' ? !!cond.prevOn : k === 'norunner' ? !!cond.norunner : k === 'kidou' ? !!cond.kidou : k === 'inningPC' ? !!cond.inningPC : k === 'pinch' ? !!cond.pinch : k === 'zoneSelf' ? !!cond.zoneSelf : k === 'zoneAny' ? !!cond.zoneAny : /^oppCost/.test(k) ? (cond.oppPitCost || 0) >= +k.slice(7) : k === 'tie' ? !!cond.tie : sitOkMore_(k, cond);
 }
 /** 打者本人の【攻撃】の能力のダイス＋（覚醒・コンボ・走者・得点圏・ビハインド・リードで決まるもの。起動・代打・タイムなどは入れない） */
 function batDice_(eff) {
@@ -428,15 +498,48 @@ function batDice_(eff) {
     while ((m = re.exec(ab))) {
       var sents = ab.slice(head.length, m.index).split('。'), sent = sents.pop();
       if (/さらに/.test(sent) && sents.length) sent = sents.pop() + '。' + sent; // 「さらに」は前の文の条件を引き継ぐ
-      var am = sent.match(/(ミート|強振)で(打撃判定|勝負)を行うなら/);
+      var am = sent.match(/(ミート|強振)で(打撃判定|勝負)を行うなら/), supC = null;
+      var sm = sent.match(/自分のサポートエリアに、?(.+?)(?:があり|があるなら|が(\d)枚以上あり)、?/);
+      if (sm) { supC = sm[1] + (sm[2] ? 'が' + sm[2] + '枚以上' : ''); sent = sent.replace(sm[0], ''); }
+      var sm2 = sent.match(/^(?:.*。)?(\d)枚以上あり、?/);
+      if (!sm && sm2) { var prevX = ab.slice(head.length, m.index).match(/サポートエリアに、?(.+?)があるなら/); if (prevX) { supC = prevX[1] + 'が' + sm2[1] + '枚以上'; sent = sent.replace(/(\d)枚以上あり、?/, '').replace(/^.*。/, ''); } }
       var kd = sitKind_(sent.replace(/(ミート|強振)で(打撃判定|勝負)を行うなら、?/g, '').replace(/^[^:：]*[:：]/, combo ? '' : '$&'));
       if (kd === 'always' && /ビハインド/.test(head)) kd = 'behind';
       if (kd === 'always' && /リード/.test(head)) kd = 'lead';
       if (kd === 'other') continue;
-      out.push({ n: +m[1], attr: am ? am[1] : '両方', awaken: /【覚醒】/.test(head), combo: combo ? normName_(combo[1]) : null, kind: kd, text: sent.trim() });
+      out.push({ n: +m[1], attr: am ? am[1] : '両方', awaken: /【覚醒】/.test(head), combo: combo ? normName_(combo[1]) : null, kind: kd, text: sent.trim(), supCond: supC });
     }
   });
   return out;
+}
+
+/** sitKind_ の追加の種類を、試合の状況 cond（シミュレーターが渡す）で判定する。UI の「条件を満たしたとき」（cond===true）は sitOk_ で先に true になる */
+function sitOkMore_(k, cond) {
+  var p = k.split(':'), n = +p[p.length - 1];
+  switch (p[0]) {
+    case 'tpLe': return cond.tp != null && cond.tp <= n;
+    case 'tpGe': return cond.tp != null && cond.tp >= n;
+    case 'handGe': return cond.hand != null && cond.hand >= n;
+    case 'handLe': return cond.hand != null && cond.hand <= n;
+    case 'fieldCost': return !!cond.fieldCost && (cond.fieldCost[p[1]] || 0) >= n;
+    case 'costs123': return !!cond.costs123;
+    case 'awkFielders': return (cond.awkFielders || 0) >= n;
+    case 'field': var c0 = (cond.field && cond.field[p[1]]) || 0; return p[2] === 'ge' ? c0 >= n : c0 === n;
+    case 'slotGe': return cond.slot != null && cond.slot >= n;
+    case 'slotEq': return cond.slot === n;
+    case 'prevBatAwk': return !!cond.prevBatAwk;
+    case 'oppSupLe': return cond.oppSup != null && cond.oppSup <= n;
+    case 'outsEq': return cond.outs === n;
+    case 'innEq': return cond.innN === n;
+    case 'restTacKinds': return (cond.restTacKinds || 0) >= n;
+    case 'supOrInnPC': return !!(cond.supOrInnPC || cond.inningPC);
+    case 'supPitcher': return !!cond.supPitcher;
+    case 'runner3': return !!cond.runner3;
+    case 'innGe': return (cond.innN || 0) >= n;
+    case 'restTacN': return (cond.restTac || 0) >= n;
+    case 'runnersGe': return (cond.runners || 0) >= n;
+    default: return !!cond.risp;
+  }
 }
 
 function valueTable_(c, main, zone, zoneOn) {
@@ -1043,13 +1146,199 @@ function compareDecks(a, b) {
  *    TP は継投・ZONE のぶんを残してから代打・【タイム①】に使う。
  */
 
+/** 条件の文（「〜なら」まで）を、試合の状況で判定できる形に分ける */
+function supCond_(pre) {
+  var c = {}, t = String(pre || ''), m;
+  var cut = function (re, f) { var mm = t.match(re); if (mm) { f(mm); t = t.replace(mm[0], ''); } };
+  cut(/投手のコストが(\d)以上/, function (mm) { c.pitCost = +mm[1]; });
+  cut(/打者のコストが(\d)以上/, function (mm) { c.batterCost = +mm[1]; });
+  cut(/【先発】を持つ/, function () { c.starter = true; });
+  cut(/投手のAPが(\d)以上/, function (mm) { c.pitAP = +mm[1]; });
+  cut(/【手札①】することで/, function () { c.handCost = 1; });
+  cut(/サポートエリアに選手カードが(\d)枚以上ある/, function (mm) { c.supPlayers = +mm[1]; });
+  cut(/サポートエリアに【本領発揮】を持つ選手カードが(\d)枚以上ある/, function (mm) { c.supHon = +mm[1]; });
+  cut(/サポートエリアに、?サポートにAPを持つ戦術カードがある/, function () { c.supTacAP = true; });
+  cut(/イニングエリアに《投手》(?:または|か)《捕手》(?:のカード)?があ/, function () { c.inningPC = true; });
+  cut(/イニングエリアに《投手》があ/, function () { c.inningP = true; });
+  cut(/「(.+?)」が出場している/, function (mm) { c.named = normName_(mm[1]); });
+  cut(/メインエリアの投手が「(.+?)」/, function (mm) { c.pitName = normName_(mm[1]); });
+  cut(/相手が[“"”]?覚醒[“"”]?しており/, function () { c.oppAwk = true; });
+  if (/打者がZONE状態/.test(t)) { c.kind = 'zoneSelf'; return c; }
+  t = t.replace(/このカードをプレイした時、?|この勝負中、?|(ミート|強振)で(打撃判定|勝負)を(行う|する)なら、?|相手が?(ミート|強振)?で?打撃判定を行うなら、?|打撃判定を行うなら、?|サポートに(ミート|強振)?[AD]P\+\d+(し|する)、?|さらに、?|カードを1枚引き、?|自分の(投手が)?|自分のサポートエリアに、?|自分のイニングエリアに|なら、?|で、|あり、|、|。|\s/g, '');
+  t = t.replace(/このカードの|[るでの]/g, '');
+  c.kind = t ? sitKind_(pre) : 'always';
+  if (c.kind === 'other' && !t) c.kind = 'always';
+  return c;
+}
+// 効果の中の「動作」（これがあって専用の処理が無ければ、計算に入っていない）
+var SIM_ACTION_RE = /引く|引き|捨て|公開|手札に加え|表向きで置|裏向きで置|イニングエリアに置|山札の上|山札に戻|タイムポイントを|アウトにする|本塁打に|二塁打に|単打に|進塁|無効|入れ替え|として扱う|コストを-/;
+
+// ===== 効果の「動作」を読む（引く・捨てる・公開・回収・サポートに置く・TP など）。試合のエンジン（simRun_）が runOpsG で実行する =====
+
+/** 札の種類の書き方 → その札か判定する関数（読めなければ null） */
+function cardFilter_(t) {
+  t = String(t || '').replace(/^自分の/, '').trim();
+  var m;
+  if (/^カード$/.test(t)) return function () { return true; };
+  if (/^選手カード$/.test(t)) return function (x) { return x.kind === '選手'; };
+  if (/^戦術カード$/.test(t)) return function (x) { return x.kind === '戦術'; };
+  if (/^《野手》$/.test(t)) return function (x) { return x.kind === '選手' && x.pos >= 2 && x.pos <= 7; };
+  if (/^《投手》$/.test(t)) return function (x) { return x.kind === '選手' && x.pos === 1; };
+  if ((m = t.match(/^【(覚醒|本領発揮)】を持つ(《野手》|選手カード|カード)$/))) { var tag = '【' + m[1] + '】', sub = cardFilter_(m[2]); return function (x) { return sub(x) && new RegExp(tag).test(x.eff || ''); }; }
+  if ((m = t.match(/^コストが(\d)以上の(《野手》|選手カード|カード)$/))) { var mc = +m[1], sub2 = cardFilter_(m[2]); return function (x) { return sub2(x) && x.kind !== '戦術' && (Number(x.cost) || 0) >= mc; }; }
+  if ((m = t.match(/^サポートに(ミート|強振)?(AP|DP)を持つ(戦術カード|カード)$/))) { var at = m[1], k = m[2] === 'AP' ? 'ap' : 'dp', tac = m[3] === '戦術カード'; return function (x) { return (!tac || x.kind === '戦術') && +x[k + 'Sup'] > 0 && (!at || x[k + 'Attr'] === at); }; }
+  if ((m = t.match(/^元々のサポートのDPが(\d)以下の選手カード$/))) { var lim = +m[1]; return function (x) { return x.kind === '選手' && dpValue_(x) <= lim; }; }
+  if ((m = t.match(/^「(.+?)」(?:または「(.+?)」)?$/))) { var n1 = normName_(m[1]), n2 = m[2] ? normName_(m[2]) : null; return function (x) { var n = normName_(x.name); return n === n1 || n === n2; }; }
+  if ((m = t.match(/^「(.+?)」以外の(.+)$/))) { var ex = normName_(m[1]), sub3 = cardFilter_(m[2]); return sub3 ? function (x) { return normName_(x.name) !== ex && sub3(x); } : null; }
+  return null;
+}
+
+/** 効果の文の「動作」を前から順に読む。読めない文が残ったら null（対応表で未対応のまま） */
+function parseOps_(t, bullets) {
+  var ops = [], rest = String(t || ''), guard = 0, m;
+  var trim = function () { var r0; do { r0 = rest; rest = rest.replace(/^[、。\s]+/, '').replace(/^(その後|さらに|そうしたら)、?/, ''); } while (rest !== r0); };
+  var R = [
+    [/^カードを(\d)枚引いてもよい。そうしたら、手札を(\d)枚捨てる/, function (m) { return { op: 'loot', n: +m[1], d: +m[2], opt: true }; }],
+    [/^カードを(\d)枚引(?:き|いて)、(?:手札を)?(\d)枚捨てる/, function (m) { return { op: 'loot', n: +m[1], d: +m[2] }; }],
+    [/^【手札①】してもよい。そうしたら、カードを(\d)枚引く/, function (m) { return { op: 'cycle', n: +m[1] }; }],
+    [/^カードを(\d)枚引(?:く|き)/, function (m) { return { op: 'draw', n: +m[1] }; }],
+    [/^手札を(\d)枚捨てる/, function (m) { return { op: 'discard', n: +m[1] }; }],
+    [/^山札の上から(\d)枚を?公開(?:する|し)[。、]その中から(?:、)?(.+?)を?(\d)枚まで(?:選び、)?手札に加え(?:、|る。)残りをレストエリアに置く/, function (m) { var f = m[2] === 'カード' ? cardFilter_('カード') : cardFilter_(m[2]); return f && { op: 'revealPick', n: +m[1], filter: f, take: +m[3] }; }],
+    [/^山札の上から(\d)枚を公開し、その中の(.+?)の枚数だけAPをプラスする。公開された\2が(\d)種類で、この勝負中、打撃判定を行うなら、さらに、【ダイス】\+(\d)する。公開したカードをレストエリアに置く/, function (m) { var f = cardFilter_(m[2]); return f && { op: 'revealCount', n: +m[1], filter: f, stat: 'ap', per: 1, kindsAt: +m[3], kindsDice: +m[4] }; }],
+    [/^山札の上から(\d)枚を公開する。その中の(.+?)1枚につき(AP|DP)\+(\d)する。公開したカードをレストエリアに置く/, function (m) { var f = cardFilter_(m[2]); return f && { op: 'revealCount', n: +m[1], filter: f, stat: m[3].toLowerCase(), per: +m[4] }; }],
+    [/^山札の上から1枚を公開する。そのカードが(.+?)なら(AP|DP)\+(\d)する。公開したカードをレストエリアに置く/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'revealCount', n: 1, filter: f, stat: m[2].toLowerCase(), per: +m[3] }; }],
+    [/^山札の上から(\d)枚を?公開し、以下を1つ行う/, function (m) { return bullets && bullets.length ? { op: 'revealChoose', n: +m[1], opts: bullets.map(function (b) { return /手札に加える/.test(b) ? 'hand' : /サポートエリアに/.test(b) ? 'sup' : null; }) } : null; }],
+    [/^(?:自分の)?レストエリア(?:から|の|にある)、?(.+?)を(\d)枚まで(?:選び、)?サポートエリアに(?:表向きで)?置く/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'restToSup', filter: f, n: +m[2] }; }],
+    [/^(?:自分の)?レストエリア(?:から|の|にある)、?(.+?)を(\d)枚まで(?:選び、)?手札に加える/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'fetch', filter: f, n: +m[2] }; }],
+    [/^山札の上から(\d)枚を(?:自分の)?サポートエリアに表向きで置く/, function (m) { return { op: 'topToSup', n: +m[1] }; }],
+    [/^タイムポイントを(\d)つ獲得する/, function (m) { return { op: 'tp', n: +m[1] }; }],
+    [/^(?:この勝負中、)?(AP|DP)\+(\d)(?:する|し)/, function (m) { return { op: 'stat', stat: m[1].toLowerCase(), n: +m[2] }; }],
+    [/^(?:自分の)?サポートエリアにある(?:この)?カードを手札に加える|^(?:自分の)?サポートエリアにあるこのカードを手札に加える|^このカードを手札に加える/, function () { return { op: 'returnSelf' }; }],
+    [/^(?:自分の)?サポートエリアにある「(.+?)」を1枚まで手札に加える/, function (m) { return { op: 'returnNamed', name: normName_(m[1]) }; }],
+    [/^(?:自分の)?サポートエリアにある(.+?)を1枚選び、手札に加える/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'returnPick', filter: f }; }],
+    [/^自分のイニングエリアと手札から1枚ずつ選び、それらを入れ替える/, function () { return { op: 'swapInnHand' }; }],
+    [/^自分のレストエリアから[1１]枚まで選び、イニングエリアに置く。1枚以上置いたなら、イニングエリアにあるカードを1枚選び、レストエリアに置く/, function () { return { op: 'restToInn' }; }],
+    [/^三塁以外の走者を可能なら、1つ進塁させる/, function () { return { op: 'advance' }; }],
+    [/^三塁の走者もアウトにする/, function () { return { op: 'out3' }; }],
+    [/^捨てたカードが(.+?)なら、(?:さらに、)?カードを(\d)枚引く/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'ifDisc', filter: f, then: { op: 'draw', n: +m[2] } }; }],
+    [/^捨てたカードが(.+?)なら、AP\+(\d)する。ビハインド時なら、代わりに、AP\+(\d)する/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'ifDisc', filter: f, then: { op: 'stat', stat: 'ap', n: +m[2], behindN: +m[3] } }; }],
+    [/^捨てたカードが【覚醒】を持つなら、そのカードのコストだけDPをプラスする/, function () { return { op: 'ifDisc', filter: function (x) { return /【覚醒】/.test(x.eff || ''); }, then: { op: 'discCostDP' } }; }],
+    [/^捨てたカードが戦術カードなら、自分のレストエリアから(.+?)を(\d)枚まで手札に加える/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'ifDisc', filter: cardFilter_('戦術カード'), then: { op: 'fetch', filter: f, n: +m[2] } }; }],
+    [/^(\d)枚以上あるなら、(?:さらに、)?カードを(\d)枚引く/, function (m) { return { op: 'ifCount', need: +m[1], then: [{ op: 'draw', n: +m[2] }] }; }],
+    [/^相手のアウトエリアのカードが(\d)枚以下なら、(?:さらに、)?カードを(\d)枚引く/, function (m) { return { op: 'ifOppOutLe', n: +m[1], then: [{ op: 'draw', n: +m[2] }] }; }],
+    [/^自分のイニングエリアにカードがあるなら、【手札①】することで、(?:自分の)?レストエリアから(?:この特殊能力で捨てたカード以外の)?(.+?)を(\d)枚まで手札に加える/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'payThen', needInning: true, then: [{ op: 'fetch', filter: f, n: +m[2] }] }; }],
+    [/^捨てたカードが(.+?)で、1つ前の勝負で、相手の打者が出塁していたなら、/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'ifDisc', filter: f, prevOnOpp: true, then: 'REST' }; }],
+    [/^加えたカードが(.+?)なら、(AP|DP)\+(\d)する/, function (m) { var f = cardFilter_(m[1]); return f && { op: 'ifFetched', filter: f, then: [{ op: 'stat', stat: m[2].toLowerCase(), n: +m[3] }] }; }],
+    [/^自分のレストエリアの「(.+?)」を全て山札に戻しシャッフルをする/, function (m) { return { op: 'restToDeck', name: normName_(m[1]) }; }],
+    [/^一塁の走者をアウトにする/, function () { return { op: 'out1' }; }],
+    [/^(強振|ミート)?の?打撃判定で二塁打なら、代わりに本塁打にする/, function (m) { return { op: 'd2h', attr: m[1] || null }; }],
+    [/^以下(?:から)?を?1つ(?:を)?行う/, function () { if (!bullets || !bullets.length) return null; var opts = bullets.map(function (b) { return parseOps_(b.replace(/^・/, '')); }); return opts.every(Boolean) ? { op: 'choose', opts: opts, texts: bullets.map(function (b) { return b.replace(/^・/, ''); }) } : null; }],
+    // ほかの処理で数えている値（サポートの DP+・ダイス）は飛ばす
+    [/^サポートに(ミート|強振)?[AD]P\+\d(?:する|し)/, function () { return { op: 'skip' }; }],
+    [/^(?:この勝負中、)?(?:相手が)?(?:ミート|強振)?で?打撃判定を行うなら、(?:さらに)?【ダイス】[+-]\d(?:する)?/, function () { return { op: 'skip' }; }],
+    [/^(?:この勝負中、)?(?:ミート|強振)で(?:勝負|打撃判定)を行うなら、(?:さらに、?)?AP\+\d(?:する|し)/, function () { return { op: 'skipAP' }; }]
+  ];
+  trim();
+  while (rest && guard++ < 12) {
+    var hit = false;
+    for (var i = 0; i < R.length; i++) {
+      if ((m = rest.match(R[i][0]))) {
+        var o = R[i][1](m); if (!o) return null; rest = rest.slice(m[0].length); trim();
+        if (o.then === 'REST') { o.then = parseOps_(rest, bullets); if (!o.then) return null; rest = ''; }
+        if (o.then && !Array.isArray(o.then)) o.then = [o.then];
+        if (o.op !== 'skip') ops.push(o); hit = true; break;
+      }
+    }
+    if (!hit) return null;
+  }
+  ops = ops.filter(function (o) { return o.op !== 'skipAP'; });
+  return ops.length ? ops : null;
+}
+
+/** 効果の条件（動作の前の「〜なら」）を読む。読めなければ null */
+function actCond_(pre) {
+  var c = {}, t = String(pre || ''), m;
+  var cut = function (re, f) { var mm = t.match(re); if (mm) { f(mm); t = t.replace(mm[0], ''); return true; } return false; };
+  cut(/【手札①】することで/, function () { c.handCost = 1; });
+  cut(/【タイム①】することで/, function () { c.tpCost = 1; });
+  cut(/打者が出塁しているなら/, function () { c.onBase = true; });
+  cut(/相手が[“"”]?覚醒[“"”]?しているなら/, function () { c.oppAwk = true; });
+  cut(/1つ前の勝負で、?相手の打者が出塁していた/, function () { c.prevOnOpp = true; });
+  cut(/(?:自分の)?(?:登板している)?投手のコストが(\d)以上/, function (mm) { c.pitCost = +mm[1]; });
+  cut(/自分のサポートエリアに、?(.+?)(?:があるなら|があり|が(\d)枚以上あるなら|が(\d)枚あるなら)/, function (mm) { c.supX = mm[1] + (mm[2] || mm[3] ? 'が' + (mm[2] || mm[3]) + '枚以上' : ''); });
+  cut(/^【本領発揮】を持つカードが(\d)枚(?:以上)?(?:あるなら|なら)/, function (mm) { c.supX = '【本領発揮】を持つカードが' + mm[1] + '枚以上'; });
+  cut(/(?:自分の)?アウトエリアのカードが(\d)枚以下/, function (mm) { c.ownOutLe = +mm[1]; });
+  cut(/相手のアウトエリアのカードが(\d)枚以下/, function (mm) { c.oppOutLe = +mm[1]; });
+  cut(/自分のイニングエリアのカードが(\d)枚以下/, function (mm) { c.innLe = +mm[1]; });
+  t = t.replace(/この勝負中、|なら、?|、|。|\s/g, '');
+  if (t) { var k = sitKind_(pre.replace(/【手札①】することで|打者が出塁しているなら|自分のサポートエリアに.+?(?:があるなら|があり)、?/g, '')); if (k === 'other') return null; c.kind = k; }
+  return c;
+}
+
+/**
+ * 1つの能力から「いつ・何をする」を読む。対応していない書き方なら null。
+ *  when: kidou（起動）／awaken（覚醒）／play（自分がカードをプレイした時）／supPlay（サポートとしてプレイした時）／end（勝負が終了した時）
+ *        oppOut（相手の打者がアウトの時）／onBase（出塁した時）／onOut（アウトになった時）／defOut（守備：打者がアウトになった時）
+ *        enter（メインエリアに置かれた時）／relief（交代で出場した時）／inningPlaced（このカードがイニングエリアに置かれた時）
+ *        innAny（自分のイニングエリアにカードが置かれた時）／outPlaced（アウトエリアにカードが置かれた時）
+ */
+function parseAct_(head, body, bullets) {
+  var side = /【攻撃】|＜攻撃＞/.test(head) ? 'atk' : /【守備】|＜守備＞/.test(head) ? 'def' : 'both';
+  var a = { side: side, hon: /【本領発揮】/.test(head), when: null, combo: null };
+  var t = body, m;
+  if ((m = head.match(/【ZONE([②③④])】/))) a.zone = ({ '②': 2, '③': 3, '④': 4 })[m[1]];
+  if ((m = t.match(/^【コンボ】([^:：]+)[:：]/))) { a.combo = normName_(m[1]); t = t.slice(m[0].length); }
+  else if (/【コンボ】/.test(head) && (m = t.match(/^([^:：。]+)[:：]/))) { a.combo = normName_(m[1]); t = t.slice(m[0].length); }
+  var hc = head + (body.match(/^(【[^】]+】)+/) || [''])[0];
+  if (/【メイン・起動】/.test(hc)) {
+    a.when = 'kidou';
+    a.cost = { hand: /【手札②】/.test(hc) ? 2 : /【手札①】/.test(hc) ? 1 : 0, tactic: /【手札\[戦術\]①】/.test(hc), tp: /【タイム①】/.test(hc) ? 1 : 0 };
+    if (a.cost.tactic) a.cost.hand = 1;
+    a.once = /【試合中①】/.test(hc) ? 'game' : /【イニング中①】/.test(hc) ? 'inning' : 'battle';
+  } else if (/起動/.test(hc)) return null;
+  else if (/【覚醒】/.test(hc) && /【メイン】/.test(hc)) a.when = 'awaken';
+  else if (/【サポート】/.test(hc)) {
+    if ((m = t.match(/^(?:この)?勝負が終了した時、/))) { a.when = 'end'; t = t.slice(m[0].length); }
+    else if ((m = t.match(/^このカードをプレイした時、/))) { a.when = 'supPlay'; t = t.slice(m[0].length); }
+    else if ((m = t.match(/相手の打者が(ミート|強振)?で?アウトの時、/))) { a.when = 'oppOut'; a.attr = m[1] || null; t = t.replace(m[0], ''); }
+    else return null;
+  } else if (/【イニング】/.test(hc)) {
+    if ((m = t.match(/^このカードがイニングエリアに置かれた時、/))) { a.when = 'inningPlaced'; t = t.slice(m[0].length); } else return null;
+  } else if (/【メイン】/.test(hc) || /【コンボ】/.test(hc)) {
+    var trig = [
+      [/^自分がカードをプレイした時、/, 'play'], [/^(?:この)?勝負が終了した時、/, 'end'], [/(?:^|。)この勝負が終了した時、/, 'end'],
+      [/^(?:このカードが)?出塁した時、/, 'onBase'], [/^このカードが(ミート|強振)?で?アウトになった時、/, 'onOut'], [/^打者がアウトになった時、/, 'defOut'],
+      [/^(?:このカードが)?メインエリアに置かれた時、/, 'enter'], [/^交代で出場した時、/, 'relief'], [/^アウトエリアにカードが置かれた時、/, 'outPlaced'],
+      [/^(?:自分の)?イニングエリアにカードが置かれた時、/, 'innAny']
+    ];
+    for (var i = 0; i < trig.length && !a.when; i++) if ((m = t.match(trig[i][0]))) { a.when = trig[i][1]; if (a.when === 'onOut' && m[1]) a.attr = m[1]; t = t.slice(m.index + m[0].length); }
+    if (!a.when && a.combo) a.when = 'play';
+    if (!a.when) return null;
+  } else return null;
+  // 条件（最初の「〜なら、」まで）と動作
+  var ops = parseOps_(t, bullets), pre = '';
+  if (!ops) {
+    var cm = t.match(/^(.*?(?:なら|あり|ることで))、(.*)$/);
+    if (!cm) return null;
+    pre = cm[1]; ops = parseOps_(cm[2], bullets);
+    if (!ops) return null;
+  }
+  var cond = actCond_(pre); if (!cond) return null;
+  a.cond = cond; a.ops = ops;
+  return a;
+}
+
+var ACT_WHEN_ = { kidou: '起動', awaken: '覚醒', play: 'プレイした時', supPlay: 'サポートで', end: '勝負の終わり', oppOut: '相手がアウトの時', onBase: '出塁した時', onOut: 'アウトの時', defOut: '打者がアウトの時', enter: '出場した時', relief: '交代で出場', inningPlaced: 'イニングに置かれた時', innAny: 'イニングに札が置かれた時', outPlaced: 'アウトエリアに置かれた時' };
 /** カード1枚の効果を、シミュレーターが使う形に読む（効果テキストの書き方で判定） */
 function simFx_(c) {
   var fx = { handled: [], unhandled: [] };
   var mark = function (ab, ok) { (ok ? fx.handled : fx.unhandled).push(ab); };
   abilities_(c && c.eff).forEach(function (ab, ai, abl) {
-    if (/^\(|^（|^・|^(奇数|偶数)-/.test(ab)) return; // 注記・箇条書きの続き（前の能力で扱う）
+    if (/^\(|^（|^・|^(奇数|偶数)-|^\d+(つ|枚|人)?(以上|以下)?-/.test(ab)) return; // 注記・箇条書きの続き（前の能力で扱う）
     var head = (ab.match(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/) || [''])[0], body = ab.slice(head.length), ok = false;
+    var keys0 = Object.keys(fx).length, hon = /【本領発揮】/.test(head), supHead = /【サポート】/.test(head);
+    var add = function (key, v) { (fx[key] = fx[key] || []).push(v); };
+    var bullets = []; for (var bi0 = ai + 1; bi0 < abl.length && /^(・|\d+(つ|枚|人)?(以上|以下)?-|(奇数|偶数)-)/.test(abl[bi0]); bi0++) bullets.push(abl[bi0].replace(/^・/, ''));
     var atkHead = /【攻撃】|【攻\/守】|【攻・守】|＜攻撃＞/.test(head), defHead = /【守備】|【攻\/守】|【攻・守】|＜守備＞/.test(head);
     var combo = ab.match(/【コンボ】([^:：]+)[:：]/), cmb = combo ? normName_(combo[1]) : null, awk = /【覚醒】/.test(head);
     // ---- 打者として（【メイン】） ----
@@ -1126,12 +1415,13 @@ function simFx_(c) {
         }
         if (k) { k.cost = /【手札①】/.test(head) ? 'hand' : null; k.tp = tm; fx.kidou = k; ok = true; }
       }
-      if (/【コンボ】/.test(head) || awk || /起動/.test(head)) { if (/AP\+\d|ダイス】\+\d/.test(body)) ok = true; }
+      if (/【コンボ】/.test(head) || awk || /起動/.test(head)) { if (/AP\+\d|ダイス】\+\d/.test(body) && !SIM_ACTION_RE.test(body)) ok = true; }
       else if (/AP\+\d|ダイス】\+\d/.test(body)) {
         // 条件の文が、走者・得点圏・ビハインドなど試合の状況で決まるか、サポートエリアの札で決まる（supportCondBonus_）なら扱える
         var sents = body.split('。').filter(function (x) { return /AP\+\d|ダイス】\+\d/.test(x); });
-        ok = ok || sents.every(function (x) { var pre = x.split(/AP\+\d|ダイス】\+\d|【?ダイス/)[0]; return /サポートエリアに.+?があるなら|サポートエリアの.+?1枚につき/.test(pre) || sitKind_(pre) !== 'other'; });
+        ok = ok || sents.every(function (x) { var pre = x.split(/AP\+\d|ダイス】\+\d|【?ダイス/)[0]; return /サポートエリアに.+?があるなら|サポートエリアの.+?1枚につき|サポートエリアに.+?(があり|枚以上あり|枚以上あるなら)|^\d枚以上あ(る|り)|サポートエリアのカード\d枚につき/.test(pre) || sitKind_(pre) !== 'other'; });
       }
+      if (/サポートエリアにあるカードのコストの合計だけAPをプラスする/.test(body)) ok = true;
     }
     // 【ベンチ】：このカードが登板していて、自分の打者が打撃判定を行うならダイス+（奥川）
     if (/【ベンチ】/.test(head) && /このカードが登板していて、打者が打撃判定を行うなら、【ダイス】\+(\d)/.test(body)) { fx.benchDice = +body.match(/【ダイス】\+(\d)/)[1]; ok = true; }
@@ -1156,25 +1446,41 @@ function simFx_(c) {
       if (/アウトエリアから、イニングエリアにカードが置かれた時、自分のイニングエリアとレストエリアから1枚ずつ選び、それらを入れ替えてもよい。その後、自分のイニングエリアのカードがちょうど2枚で、それらのカード名が同じなら、カードを(\d)枚引く/.test(body)) {
         fx.inningPair = +body.match(/カード名が同じなら、カードを(\d)枚引く/)[1]; ok = true;
       }
-      if (/ダイス】?-\d/.test(body)) { ok = true; }
-      if (/DP\+\d/.test(body) || /サポートのAPは、サポートのDPとしても扱う/.test(body)) ok = true;
+      if ((/ダイス】?-\d|DP\+\d/.test(body) || /サポートのAPは、サポートのDPとしても扱う/.test(body)) && !SIM_ACTION_RE.test(body)) {
+        var dsents = body.split('。').filter(function (x) { return /ダイス】?-\d|DP\+\d/.test(x); });
+        ok = ok || /サポートのAPは/.test(body) || dsents.every(function (x) { var pre = x.split(/DP\+\d|【?ダイス/)[0]; return /サポートエリアに.+?があるなら|サポートエリアの.+?1枚につき|サポートエリアにある.+?1枚につき|イニングエリアのカード1枚につき|サポートエリアに.+?枚以上あるなら/.test(pre) || sitKind_(pre) !== 'other'; });
+      }
     }
     if (atkHead && /サポートのDPは、サポートのAPとしても扱う/.test(body)) ok = true;
     // ---- サポートとして ----
-    if (/【サポート】/.test(head)) {
+    if (supHead) {
+      var side0 = atkHead && !defHead ? 'atk' : 'def';
+      body.split(/(?<=。)/).forEach(function (sent) {
+        if (/代わりに/.test(sent)) return;
+        var m = sent.match(/サポートに(ミート|強振)?(AP|DP)\+(\d+)/), viaSup = !!m;
+        if (!m) { m = sent.match(/(投手|打者)の(DP|AP)\+(\d+)/); if (!m) return; var pre0 = sent.slice(0, m.index); if (!/なら|時、|とき|ことで/.test(pre0)) return; }
+        var pre = sent.slice(0, m.index), attr = viaSup ? (m[1] || null) : null, ma = pre.match(/(ミート|強振)で勝負を行うなら/); if (ma) attr = ma[1];
+        if (/【タイム①】することで/.test(pre)) return; // 今宮：TP を使う版は別で扱う
+        var alt = body.match(/(?:^|。)([^。]*?)、?代わりに、?サポートに(ミート|強振)?(AP|DP)\+(\d+)/);
+        add('supBonus', { kind: m[2], attr: attr, n: +m[3], cond: supCond_(pre), hon: hon, zone: /【ZONE[②③④]】/.test(head), side: side0, alt: alt ? { n: +alt[4], cond: supCond_(alt[1]) } : null });
+      });
+      body.split(/(?<=。)/).forEach(function (sent) {
+        var m = sent.match(/【?ダイス】?([+-])(\d+)/); if (!m) return;
+        var pre = sent.slice(0, m.index), attr = (pre.match(/(ミート|強振)で(?:打撃判定|勝負)/) || [])[1] || null;
+        var low = /「(.+?)」以外の元々のサポートのDPが1以下の選手カードがあり/.test(pre);
+        add('supDice', { n: (m[1] === '-' ? -1 : 1) * +m[2], attr: attr, cond: low ? { kind: 'always' } : supCond_(pre.replace(/自分のサポートエリアに、?「.+?」以外の元々のサポートのDPが1以下の選手カードがあり、?/, '')), hon: hon, side: side0, lowDPother: low ? normName_(pre.match(/「(.+?)」以外/)[1]) : null, opp: /相手/.test(pre) || side0 === 'def' });
+      });
       if (/勝負が終了した時、投手のコストが(\d)以上で打者が出塁しているなら、サポートエリアにあるこのカードを手札に加える/.test(body)) { fx.fukutsu = +body.match(/投手のコストが(\d)以上/)[1]; ok = true; }
       if (/相手の打者がZONE状態なら、カードを(\d)枚引く/.test(body)) { fx.zoneDraw = +body.match(/ZONE状態なら、カードを(\d)枚引く/)[1]; ok = true; }
       if (/相手がメインエリアと同じカードをプレイしているなら、そのカードをレストエリアに置く/.test(body)) { fx.shobushi = true; ok = true; }
       if (/相手のサポートエリアに、メインエリアと同じカードがあるなら、そのカードを相手の手札に戻し、カードを1枚引く/.test(body)) { fx.iatsu = true; ok = true; }
       if (/【本領発揮】/.test(head) && /【手札①】できる。捨てたカードのコストが(２|2)以上なら、以下1つを行う/.test(body)) { fx.honDiscard = { draw: 1, dp: +((body.match(/投手のDP＋(\d)/) || body.match(/投手のDP\+(\d)/) || [0, 4])[1]) }; ok = true; }
       if (/【本領発揮】/.test(head) && /自分のイニングエリアと手札から1枚ずつ選び、それらを入れ替えてもよい/.test(body)) { fx.honSwap = true; ok = true; }
-      if (/相手がミートで打撃判定を行うなら、【ダイス】-(\d)/.test(body)) { fx.supOppDice = { attr: 'ミート', n: +body.match(/【ダイス】-(\d)/)[1], hon: /【本領発揮】/.test(head) }; ok = true; }
       if (/このカードをプレイした時、自分のサポートエリアに「(.+?)」以外のカードがあり、自分のサポートエリアのカードのコストの合計が偶数なら、カードを(\d)枚引く/.test(body)) { fx.supParityDraw = { n: +body.match(/偶数なら、カードを(\d)枚引く/)[1], hon: /【本領発揮】/.test(head) }; ok = true; }
-      if (/このカードをプレイした時、投手のコストが(\d)以上なら、サポートに(ミート|強振)DP\+(\d)/.test(body)) { var sd2 = body.match(/投手のコストが(\d)以上なら、サポートに(ミート|強振)DP\+(\d)/); fx.supPitCostDP = { min: +sd2[1], attr: sd2[2], n: +sd2[3], hon: /【本領発揮】/.test(head), zone: (head.match(/【ZONE([②③④])】/) || [])[1] || null }; ok = true; }
       if (/相手の打者がミートでアウトの時、一塁の走者もアウトにする/.test(body)) { fx.dpMeet = { hon: /【本領発揮】/.test(head) }; ok = true; }
       if (/相手の打者がアウトになった時、山札の上から(\d)枚を見て/.test(body)) { fx.outScry = { n: +body.match(/山札の上から(\d)枚を見て/)[1], hon: /【本領発揮】/.test(head) }; ok = true; }
       if (/打者がミートでアウトになった時、三塁以外の走者を可能なら、1つ進塁させる/.test(body)) { fx.endrun = { drawIfOutsLe: /アウトエリアのカードが(\d)枚以下なら、さらに、カードを1枚引く/.test(body) ? +body.match(/アウトエリアのカードが(\d)枚以下/)[1] : null }; ok = true; }
-      if (/ダイス】?\+\d|[AD]P\+\d|AP\+\d|打撃判定をマイナスされない/.test(body)) ok = true; // 値・ダイスは valueTable_／diceFromEffect_ で扱う
+      if (/打撃判定をマイナスされない/.test(body) || (/(打者|投手)の[AD]P\+\d/.test(body) && !SIM_ACTION_RE.test(body))) ok = true; // 無条件の値は valueTable_ で扱う
     }
     // ---- イニングエリア・レストエリア・グラウンド ----
     if (/【イニング】/.test(head) && /イニングエリアに置かれた時、カードを(\d)枚引く/.test(body)) { fx.inningDraw = { n: +body.match(/カードを(\d)枚引く/)[1], hon: /【本領発揮】/.test(head) }; ok = true; }
@@ -1189,8 +1495,64 @@ function simFx_(c) {
     }
     if (/【ZONE】選手カードは/.test(ab)) ok = true;
     if (!ok && /^[\s\-ー]*$/.test(body)) return;
+    if (Object.keys(fx).length > keys0 || (fx.supBonus && fx.supBonus.length && fx.supBonus[fx.supBonus.length - 1].__ab === undefined && false)) ok = true;
+    if (supHead && ((fx.supBonus || []).length || (fx.supDice || []).length) && (fx._lastSupLen || 0) < (fx.supBonus || []).length + (fx.supDice || []).length) { ok = true; }
+    fx._lastSupLen = (fx.supBonus || []).length + (fx.supDice || []).length;
+    // 「〜の数により、以下（すべて）を行う」：段階ごとの効果（柳田・大関・金丸・北山・平良・牧）
+    if (!ok && /により|によって/.test(body) && /以下(すべて)?を?行う|以下すべて行う/.test(body) && bullets.length) {
+      var subj = /タイムポイント/.test(body) ? 'tp' : /イニングエリアのカードの枚数/.test(body) ? 'inn' : /コストが3以上の《野手》の枚数/.test(body) ? 'fc3' : /レストエリアの戦術カードの枚数/.test(body) ? 'restTac' : /走者の数/.test(body) ? 'runners' : null;
+      var tiers = [], allOk = !!subj;
+      bullets.forEach(function (bl) {
+        var mm = bl.match(/^(\d+)(つ|枚|人)?(以上|以下)?-(.*)$/); if (!mm || !subj) { allOk = false; return; }
+        var nn = +mm[1], dir = mm[3] || '', kind;
+        if (subj === 'tp') kind = dir === '以上' ? 'tpGe:' + nn : 'tpLe:' + nn;
+        else if (subj === 'inn') kind = dir === '以上' ? 'innGe:' + nn : 'innEq:' + nn;
+        else if (subj === 'fc3') kind = 'fieldCost:3:' + nn;
+        else if (subj === 'restTac') kind = 'restTacN:' + nn;
+        else kind = 'runnersGe:' + nn;
+        var tx = mm[4], tr = { kind: kind, ap: 0, dp: 0, dice: [], d2h: false };
+        var st0 = tx.match(/^(AP|DP)\+(\d)する/); if (st0) tr[st0[1].toLowerCase()] = +st0[2];
+        var re0 = /(?:相手が)?(ミート|強振)?で?打撃判定を行うなら、(代わりに、)?(?:さらに)?【ダイス】([+-])(\d)する/g, dm;
+        while ((dm = re0.exec(tx))) tr.dice.push({ attr: dm[1] || null, n: (dm[3] === '-' ? -1 : 1) * +dm[4], replace: !!dm[2] });
+        if (/打撃判定で二塁打なら、代わりに本塁打にする/.test(tx)) tr.d2h = true;
+        var endM = tx.match(/勝負が終了した時、(.*)$/);
+        if (endM) { var ea = parseAct_('【守備】【メイン】', '勝負が終了した時、' + endM[1], []); if (ea) { ea.cond.kind = kind; add('acts', ea); } else allOk = false; }
+        if (!st0 && !tr.dice.length && !tr.d2h && !endM) allOk = false;
+        tiers.push(tr);
+      });
+      if (tiers.length) { (fx.tiers = fx.tiers || []).push.apply(fx.tiers, tiers); ok = allOk; }
+    }
+    // 【イニング】：相手の打撃判定のダイス −（伏見。同じ名前の効果は重ならない）
+    if (!ok && /【イニング】/.test(head) && /打撃判定を行うなら、【ダイス】-(\d)する/.test(body) && !/置かれた時/.test(body)) {
+      var idm = body.match(/^(.*?)(?:相手が)?(ミート|強振)?で?打撃判定を行うなら、【ダイス】-(\d)する/), ik = sitKind_(idm[1]);
+      if (ik !== 'other') { fx.innDice = { n: +idm[3], attr: idm[2] || null, kind: ik, hon: /【本領発揮】/.test(head) }; ok = true; }
+    }
+    // 「このカードは戦術カードとしても扱う」「名称は「X」としても扱う」
+    if (!ok && /としても扱う/.test(body) && !/コスト/.test(body)) {
+      if (/戦術カードとしても扱う/.test(body)) fx.alsoTactic = true;
+      var an0 = body.match(/名称は「(.+?)」としても扱う/); if (an0) fx.alsoName = normName_(an0[1]);
+      ok = true;
+    }
+    // 中川：サポートエリアの選手カードのコストの偶数・奇数（戦術はコスト0なので、全部の札の合計と同じ）
+    if (!ok && /サポートエリアにある選手カードのコストによって、以下すべてを行う/.test(body)) {
+      fx.parity = fx.parity || { even: {}, odd: {} };
+      bullets.forEach(function (bl) { var pk3 = /^奇数/.test(bl) ? 'odd' : 'even', pa3 = bl.match(/AP\+(\d)/), pd3 = bl.match(/【?ダイス】?\+(\d)/); if (pa3) fx.parity[pk3].ap = (fx.parity[pk3].ap || 0) + +pa3[1]; if (pd3) fx.parity[pk3].dice = (fx.parity[pk3].dice || 0) + +pd3[1]; });
+      ok = true;
+    }
+    // まだ扱っていない能力：「いつ・何をする」の形で読めれば、試合のエンジンが実行する
+    if (!ok) {
+      var act = parseAct_(head, body, bullets);
+      if (act) {
+        // AP/DP の値は別の所で数えている（覚醒の無条件の値・サポートエリアの条件・サポートの「サポートに◯◯+N」）
+        if (act.when === 'awaken' && act.ops[0].op === 'stat') act.ops.shift();
+        if (act.when === 'play' || act.when === 'supPlay') act.ops = act.ops.filter(function (o) { return o.op !== 'stat'; });
+        if (act.ops.length) { act.text = ab; add('acts', act); }
+        ok = true;
+      }
+    }
     mark(ab, ok);
   });
+  delete fx._lastSupLen;
   return fx;
 }
 
@@ -1229,9 +1591,13 @@ function simRun_(SA, SB, opt) {
   var shuffleIn = function (l) { for (var i = l.length - 1; i > 0; i--) { var j = Math.floor(rnd() * (i + 1)); var t = l[i]; l[i] = l[j]; l[j] = t; } return l; };
   var expand = function (main) { var l = []; main.forEach(function (x) { for (var i = 0; i < x.num; i++) l.push(x); }); return l; };
   var memo = opt.memo || {};
+  // 値の計算の覚えに入れる状況：両デッキの効果に出てくる条件だけ（関係ない値で覚えが分かれて遅くならないように）
+  var allTxt = [SA, SB].map(function (S0) { return S0.X.mainCards.concat(S0.X.order || []).map(function (x) { return x.eff || ''; }).join('\n'); }).join('\n');
+  var KEYF = { tp: /タイムポイント/, hand: /手札が\d枚/, outs: /アウトエリアにカードが/, innN: /イニングエリアのカード(が\d枚なら|の枚数)/, slot: /打順が\d番/, prevBatAwk: /1つ前の打順/, restTacKinds: /レストエリアの戦術カードが/, restTac: /レストエリアの戦術カードの枚数/, runners: /走者の数/, oppSup: /相手のサポートエリアにあるカードが/, fsig: /出場している/, costs123: /『1』と『2』と『3』/, awkFielders: /【覚醒】を持つ《野手》が/, runner3: /走者が三塁にいる/, supPitcher: /サポートエリアに《投手》/, supOrInnPC: /サポートエリアかイニングエリア/ };
+  var skipF = {}; for (var kf in KEYF) if (!KEYF[kf].test(allTxt)) skipF[kf] = 1;
   var calc = function (v, set, a, sit) {
     var live = set.filter(function (x) { return !isKill(x); });
-    var sk = ''; for (var f in sit) if (sit[f]) sk += f.charAt(0) + f.length;
+    var sk = ''; for (var f in sit) { var sv = sit[f]; if (sv && typeof sv !== 'object' && !skipF[f]) sk += f + (sv === true ? '' : sv) + ';'; }
     var k = v.no + '|' + (live.length === 1 ? live[0].no : live.map(function (x) { return x.no; }).sort().join(',')) + '|' + a + '|' + sk;
     if (!(k in memo)) memo[k] = v.t.calc(live, a, sit);
     return memo[k];
@@ -1261,6 +1627,61 @@ function simRun_(SA, SB, opt) {
     }
   };
   var topCard = function (T) { if (!T.deck.length) { draw(T, 0); if (!T.deck.length && T.rest.length) { var h = T.hand; T.hand = []; draw(T, 1); var c = T.hand.pop(); T.hand = h; return c || null; } } return T.deck.shift() || null; };
+  // サポートの条件つき効果の条件を判定する（T＝そのサポートを出したチーム、sx＝そのチームから見た状況、b＝打者、pit＝投手）
+  var supCondOk = function (T, c, sx, b, pit, cards, opp, card) {
+    if (!c) return true;
+    var row = function (v) { return T.S.rowOf[v.no] || {}; };
+    if (c.pitCost != null && rowCost(T, T.pitcher) < c.pitCost) return false;
+    if (c.batterCost != null && (row(b).cost || 0) < c.batterCost) return false;
+    if (c.starter && row(T.pitcher).role !== '先発') return false;
+    if (c.pitAP != null && (row(T.pitcher).ap || 0) < c.pitAP) return false;
+    if (c.handCost && sx.paid && sx.paid.indexOf(card) < 0) return false;
+    if (c.supPlayers && (cards || []).filter(function (x) { return x.kind === '選手'; }).length < c.supPlayers) return false;
+    if (c.supHon && (cards || []).filter(function (x) { return x.kind === '選手' && /【本領発揮】/.test(x.eff || ''); }).length < c.supHon) return false;
+    if (c.supTacAP && !(cards || []).some(function (x) { return x.kind === '戦術' && +x.apSup > 0; })) return false;
+    if (c.inningPC && !T.inning.some(function (x) { return x.kind === '選手' && (x.pos === 1 || x.pos === 2); })) return false;
+    if (c.inningP && !T.inning.some(function (x) { return x.kind === '選手' && x.pos === 1; })) return false;
+    if (c.named && !T.lineup.concat([T.pitcher]).some(function (v) { return nm(v) === c.named; })) return false;
+    if (c.pitName && nm(T.pitcher) !== c.pitName) return false;
+    if (c.oppAwk && !(opp && opp.awk)) return false;
+    return !c.kind || c.kind === 'always' || okSitK(c.kind, sx);
+  };
+  var okSitK = function (kind, sx) { if (/^(tpLe|tpGe|handGe|handLe|fieldCost|costs123|awkFielders|field|slotGe|slotEq|prevBatAwk|oppSupLe|outsEq|innEq|restTacKinds|supOrInnPC|supPitcher|runner3)/.test(kind)) return sitOkMore_(kind, sx); if (/^oppCost/.test(kind)) return (sx.oppPitCost || 0) >= +kind.slice(7); if (kind === 'tie') return !!sx.tie; return !!okSit(kind, sx); };
+  // 出したサポートの「サポートに◯◯+N」（属性が合うときだけ）。kind＝'AP' か 'DP'
+  var supBonusOf = function (T, cards, kind, attr, sx, b, pit, opp) {
+    var add0 = 0;
+    cards.forEach(function (x) {
+      (T.S.fx(x).supBonus || []).forEach(function (e) {
+        if (e.kind !== kind || (e.attr && e.attr !== attr)) return;
+        if (e.hon && !honActive(T, x.no, x)) return;
+        if (e.zone && !(T.zoneActive && ((T.S.rowOf[T.zoneActive] || {}).cost || 0) >= 3)) return;
+        if (!supCondOk(T, e.cond, sx, b, pit, cards, opp, x)) return;
+        add0 += e.alt && supCondOk(T, e.alt.cond, sx, b, pit, cards, opp, x) ? e.alt.n : e.n;
+      });
+    });
+    return add0;
+  };
+  // 出したサポートのダイス（攻撃側は自分の打撃判定に +、守備側は相手の打撃判定に −）
+  var supDiceOf = function (T, cards, attr, sx, b, pit, side, opp) {
+    var d = 0;
+    cards.forEach(function (x) {
+      (T.S.fx(x).supDice || []).forEach(function (e) {
+        if (e.side !== side || (e.attr && e.attr !== attr)) return;
+        if (e.hon && !honActive(T, x.no, x)) return;
+        if (e.lowDPother && !cards.some(function (y) { return y !== x && y.kind === '選手' && nm(y) !== e.lowDPother && dpValue_(y) <= 1; })) return;
+        if (!supCondOk(T, e.cond, sx, b, pit, cards, opp, x)) return;
+        d += e.n;
+      });
+    });
+    return d;
+  };
+  // 段階の効果（柳田・大関など）：今の状況で満たす段の AP/DP・ダイス
+  var tierOf = function (T, v, sx) { var f = T.S.fx(T.S.rowOf[v.no] || v); return (f.tiers || []).filter(function (tr) { return okSitK(tr.kind, sx); }); };
+  var tierVal = function (T, v, key, sx) { return tierOf(T, v, sx).reduce(function (t, tr) { return t + tr[key]; }, 0); };
+  var tierDice = function (T, v, attr, sx) {
+    var d = 0; tierOf(T, v, sx).forEach(function (tr) { var base0 = null, rep0 = null; tr.dice.forEach(function (e) { if (e.attr && e.attr !== attr) return; if (e.replace) rep0 = e.n; else base0 = (base0 || 0) + e.n; }); d += rep0 != null ? rep0 : (base0 || 0); });
+    return d;
+  };
   var costOf = function (T, x) { if (x.kind !== '選手') return 0; var f = T.S.fx(x); if (f.costAs && (!f.costAs.hon || honActive(T, x.no, x))) return f.costAs.n; return x.cost || 0; };
   var costSum = function (T, cards) { return cards.reduce(function (t, x) { return t + costOf(T, x); }, 0); };
   var reveal = function (T, n) {
@@ -1331,6 +1752,152 @@ function simRun_(SA, SB, opt) {
   var logf = opt.log || null;
   var LG = function (t) { if (logf) logf(t); };
   var who = function (T) { return T.human ? '自分' : 'CPU'; };
+  // ===== 効果の動作を実行する（parseAct_ が読んだもの）。人の判断が要る所は yield で聞き、答えが無ければ CPU と同じ選び方 =====
+  var junkIdx = function (T, filter) { var bi = -1, bv = 1e9; T.hand.forEach(function (x, i) { if (filter && !filter(x)) return; var w = worth(T, x) - discardGain(T, x) * 6; if (w < bv) { bv = w; bi = i; } }); return { i: bi, w: bv }; };
+  var bestIdx = function (T, list, filter, val) { var bi = -1, bv = -1e9; list.forEach(function (x, i) { if (filter && !filter(x)) return; var w = val ? val(x) : worth(T, x); if (w > bv) { bv = w; bi = i; } }); return bi; };
+  var uniqIdx = function (list, filter) { var seen = {}, out = []; list.forEach(function (x, i) { if (filter && !filter(x)) return; var k = x.no + nm(x); if (seen[k]) return; seen[k] = 1; out.push(i); }); return out; };
+  var runOpsG = function* (T, ops, cx) {
+    for (var oi = 0; oi < ops.length; oi++) {
+      var o = ops[oi], ask = T.human && !cx.auto, an, i, k;
+      switch (o.op) {
+        case 'draw': draw(T, o.n); break;
+        case 'tp': T.tp += o.n; LG(who(T) + '：' + cx.label + '（TP+' + o.n + '）'); break;
+        case 'stat': cx.add[o.stat] += o.behindN && cx.behind ? o.behindN : o.n; break;
+        case 'd2h': cx.d2h = o.attr || '両方'; break;
+        case 'loot': case 'discard': case 'cycle': {
+          if (o.op === 'loot') draw(T, o.n);
+          var nd = o.op === 'cycle' ? 1 : (o.op === 'loot' ? o.d : o.n), picked = null;
+          if (ask && T.hand.length) {
+            an = yield { type: 'discardPick', side: T, n: nd, optional: o.op === 'cycle', title: cx.label + '：手札を' + nd + '枚捨てる' + (o.op === 'cycle' ? '（捨てたら' + o.n + '枚引く。捨てなくてもよい）' : '') };
+            picked = an && an.idx ? an.idx.slice(0, nd) : null;
+          }
+          if (picked) { var did0 = 0; picked.slice().sort(function (x, y) { return y - x; }).forEach(function (j) { var d0 = discard(T, j, true); if (d0) { cx.discarded = d0; did0++; } }); if (o.op === 'cycle' && did0) draw(T, o.n); }
+          else if (!(ask && o.op === 'cycle')) {
+            var did = 0;
+            for (k = 0; k < nd && T.hand.length; k++) { var jj = junkIdx(T); if (o.op === 'cycle' && jj.w > 2) break; var d2 = discard(T, jj.i, true); if (d2) { cx.discarded = d2; did++; } }
+            if (o.op === 'cycle' && did) draw(T, o.n);
+          }
+          break;
+        }
+        case 'revealPick': {
+          var rv = reveal(T, o.n), okL = rv.map(o.filter), pick = [];
+          var sug = rv.map(function (x, j) { return j; }).filter(function (j) { return okL[j]; }).sort(function (p2, q2) { return worth(T, rv[q2]) - worth(T, rv[p2]); }).slice(0, o.take);
+          if (ask && rv.length) { an = yield { type: 'pick', side: T, title: cx.label + '：公開した札から ' + o.take + ' 枚まで手札へ（印の付いた札だけ選べます）', cards: rv.slice(), ok: okL, take: o.take, suggest: sug }; pick = (an && an.idx || sug).filter(function (j) { return okL[j]; }).slice(0, o.take); }
+          else pick = sug;
+          rv.forEach(function (x, j) { (pick.indexOf(j) >= 0 ? T.hand : T.rest).push(x); });
+          LG(who(T) + '：' + cx.label + '（' + rv.map(nm).join('・') + ' を公開' + (pick.length ? '、' + pick.map(function (j) { return nm(rv[j]); }).join('・') + ' を手札へ' : '') + '）');
+          break;
+        }
+        case 'revealCount': {
+          var rc = reveal(T, o.n), hitC = rc.filter(o.filter), kinds = {};
+          hitC.forEach(function (x) { kinds[nm(x)] = 1; });
+          cx.add[o.stat] += hitC.length * o.per;
+          if (o.kindsAt && Object.keys(kinds).length >= o.kindsAt) cx.add.dice += o.kindsDice;
+          rc.forEach(function (x) { T.rest.push(x); });
+          LG(who(T) + '：' + cx.label + '（' + (rc.map(nm).join('・') || 'なし') + ' を公開、' + o.stat.toUpperCase() + '+' + hitC.length * o.per + '）');
+          break;
+        }
+        case 'revealChoose': {
+          var rx = reveal(T, o.n)[0]; if (!rx) break;
+          var toSup = cx.live && cx.gain ? cx.gain(rx) > 0 : false;
+          if (ask) { an = yield { type: 'choice', side: T, title: cx.label + '：' + nm(rx) + ' を公開', opts: ['手札に加える', 'サポートエリアに置く'] }; if (an && an.i != null) toSup = an.i === 1; }
+          if (toSup && cx.live) cx.live.push(rx); else T.hand.push(rx);
+          LG(who(T) + '：' + cx.label + '（' + nm(rx) + ' を' + (toSup ? 'サポートエリアへ' : '手札へ') + '）');
+          break;
+        }
+        case 'fetch': case 'restToSup': {
+          for (k = 0; k < o.n; k++) {
+            var cand = uniqIdx(T.rest, o.filter); if (!cand.length) break;
+            var val = o.op === 'restToSup' && cx.gain ? cx.gain : null;
+            var ri = -1, rb = -1e9; cand.forEach(function (j) { var w = val ? val(T.rest[j]) : worth(T, T.rest[j]); if (w > rb) { rb = w; ri = j; } });
+            if (ask) { an = yield { type: 'pick', side: T, title: cx.label + '：レストエリアから ' + (o.op === 'restToSup' ? 'サポートエリアに置く' : '手札に加える') + '札', cards: cand.map(function (j) { return T.rest[j]; }), take: 1, suggest: [cand.indexOf(ri)] }; if (an && an.idx && an.idx.length) ri = cand[an.idx[0]]; else if (an) ri = -1; }
+            if (ri < 0) break;
+            var got = T.rest.splice(ri, 1)[0];
+            if (o.op === 'restToSup' && cx.live) cx.live.push(got); else { T.hand.push(got); cx.fetched = got; }
+            LG(who(T) + '：' + cx.label + '（レストから ' + nm(got) + ' を' + (o.op === 'restToSup' ? 'サポートエリアへ' : '手札へ') + '）');
+          }
+          break;
+        }
+        case 'topToSup': for (k = 0; k < o.n; k++) { var tc = topCard(T); if (!tc) break; if (cx.live) cx.live.push(tc); else T.rest.push(tc); LG(who(T) + '：' + cx.label + '（山札の上の ' + nm(tc) + ' をサポートエリアへ）'); } break;
+        case 'returnSelf': if (cx.keep) cx.keep.push(cx.self); break;
+        case 'returnNamed': if (cx.keep && cx.live) { var rn = cx.live.find(function (x) { return nm(x) === o.name && cx.keep.indexOf(x) < 0; }); if (rn) cx.keep.push(rn); } break;
+        case 'returnPick': if (cx.keep && cx.live) { var rp = bestIdx(T, cx.live, function (x) { return o.filter(x) && cx.keep.indexOf(x) < 0; }); if (rp >= 0) cx.keep.push(cx.live[rp]); } break;
+        case 'swapInnHand': {
+          if (!T.inning.length || !T.hand.length) break;
+          var ii = -1, hi = -1;
+          if (ask) { an = yield { type: 'honSwap', side: T, card: cx.self, inning: T.inning.slice() }; if (an && an.inIdx != null && an.handIdx != null) { ii = an.inIdx; hi = an.handIdx; } }
+          else { var iv = -1, hv = 1e9; T.inning.forEach(function (y, j) { var w = worth(T, y); if (w > iv) { iv = w; ii = j; } }); T.hand.forEach(function (y, j) { var w = worth(T, y); if (w < hv) { hv = w; hi = j; } }); if (!(iv > hv + 1)) ii = -1; }
+          if (ii >= 0 && hi >= 0 && T.inning[ii] && T.hand[hi]) { var toI = T.hand.splice(hi, 1)[0], toH = T.inning.splice(ii, 1)[0]; T.hand.push(toH); T.inning.push(toI); onInningPlaced(T, toI); LG(who(T) + '：' + cx.label + '（' + nm(toI) + ' をイニングへ、' + nm(toH) + ' を手札へ）'); }
+          break;
+        }
+        case 'restToInn': {
+          // イニングで働く札（【イニング】のドロー）をレストから置き、イニングの一番要らない札をレストへ
+          var innV = function (x) { var f = T.S.fx(x); return (f.inningDraw ? 5 : 0) + (x.kind === '選手' && (x.pos === 1 || x.pos === 2) ? 2 : 0) + ((f.acts || []).some(function (q) { return q.when === 'inningPlaced'; }) ? 4 : 0); };
+          var r2 = bestIdx(T, T.rest, function (x) { return innV(x) > 0; }, innV); if (r2 < 0) break;
+          var pl = T.rest.splice(r2, 1)[0]; T.inning.push(pl); onInningPlaced(T, pl);
+          var lo = -1, lv = 1e9; T.inning.forEach(function (y, j) { var w = innV(y) + worth(T, y) * 0.1; if (w < lv) { lv = w; lo = j; } });
+          if (lo >= 0) T.rest.push(T.inning.splice(lo, 1)[0]);
+          LG(who(T) + '：' + cx.label + '（レストから ' + nm(pl) + ' をイニングへ）');
+          break;
+        }
+        case 'restToDeck': { var back = []; T.rest = T.rest.filter(function (x) { if (nm(x) === o.name) { back.push(x); return false; } return true; }); T.deck = shuffleIn(T.deck.concat(back)); break; }
+        case 'advance': if (cx.base) { if (cx.base[1] && !cx.base[2]) { cx.base[2] = 1; cx.base[1] = 0; } if (cx.base[0] && !cx.base[1]) { cx.base[1] = 1; cx.base[0] = 0; } } break;
+        case 'out3': case 'out1': { var bx = o.op === 'out3' ? 2 : 0; if (cx.base && cx.base[bx] && cx.half && cx.half.outs < 3) { cx.base[bx] = 0; cx.half.outs++; var oc3 = topCard(T); if (oc3) T.out.push(oc3); LG(who(T) + '：' + cx.label + '（' + (bx ? '三塁' : '一塁') + 'の走者もアウト）'); } break; }
+        case 'ifDisc': if (cx.discarded && o.filter(cx.discarded) && (!o.prevOnOpp || cx.prevOnOpp)) yield* runOpsG(T, o.then, cx); break;
+        case 'discCostDP': if (cx.discarded) cx.add.dp += Number(cx.discarded.cost) || 0; break;
+        case 'ifFetched': if (cx.fetched && o.filter(cx.fetched)) yield* runOpsG(T, o.then, cx); break;
+        case 'ifCount': if (cx.supX && supCountOk_(cx.supX.replace(/が\d枚以上$/, '') + 'が' + o.need + '枚以上', cx.live || [])) yield* runOpsG(T, o.then, cx); break;
+        case 'ifOppOutLe': if (cx.opp && cx.opp.out.length <= o.n) yield* runOpsG(T, o.then, cx); break;
+        case 'payThen': {
+          if (o.needInning && !T.inning.length) break;
+          var tgt = o.then[0] && o.then[0].filter; if (tgt && !T.rest.some(tgt)) break;
+          var pj = -1;
+          if (ask) { an = yield { type: 'discardPick', side: T, n: 1, optional: true, title: cx.label + '：手札を1枚捨てて、レストから回収する（捨てなくてもよい）' }; pj = an && an.idx && an.idx.length ? an.idx[0] : -1; }
+          else { var jq = junkIdx(T); if (jq.i >= 0 && jq.w <= 4) pj = jq.i; }
+          if (pj >= 0 && T.hand[pj]) { cx.discarded = discard(T, pj, true); yield* runOpsG(T, o.then, cx); }
+          break;
+        }
+        case 'choose': {
+          var ci = 0;
+          if (cx.pickOpt) ci = cx.pickOpt(o);
+          if (ask) { an = yield { type: 'choice', side: T, title: cx.label + '：1つ選ぶ', opts: o.texts }; if (an && an.i != null) ci = an.i; }
+          if (o.opts[ci]) yield* runOpsG(T, o.opts[ci], cx);
+          break;
+        }
+      }
+    }
+  };
+  var runOps = function (T, ops, cx) { cx.auto = true; var it = runOpsG(T, ops, cx), r = it.next(); while (!r.done) r = it.next(null); return r.value; };
+  // 効果の条件（その場の状況 cx で）
+  var actOk = function (T, a, cx) {
+    var c = a.cond || {};
+    if (a.side === 'atk' && cx.role === 'def' || a.side === 'def' && cx.role === 'atk') return false;
+    if (a.hon && !(cx.honOk != null ? cx.honOk : honActive(T, cx.self.no, cx.self))) return false;
+    if (a.combo && !(cx.live || []).some(function (x) { return nm(x) === a.combo || (T.S.fx(x).alsoName === a.combo && honActive(T, x.no, x)); })) return false;
+    if (a.zone && !(T.zoneActive && rowCost(T, { no: T.zoneActive }) >= a.zone)) return false;
+    if (a.attr && cx.attr && a.attr !== cx.attr) return false;
+    if (c.onBase && !cx.onBase) return false;
+    if (c.oppAwk && !cx.oppAwk) return false;
+    if (c.prevOnOpp && !cx.prevOnOpp) return false;
+    if (c.pitCost && rowCost(T, T.pitcher) < c.pitCost) return false;
+    if (c.supX && !supCountOk_(c.supX, cx.live || [])) return false;
+    if (c.ownOutLe != null && T.out.length > c.ownOutLe) return false;
+    if (c.oppOutLe != null && cx.opp && cx.opp.out.length > c.oppOutLe) return false;
+    if (c.innLe != null && T.inning.length > c.innLe) return false;
+    if (c.kind && c.kind !== 'always' && !okSitK(c.kind, cx.sx || {})) return false;
+    if (c.handCost && !(cx.paid && cx.paid.indexOf(cx.self) >= 0)) return false;
+    return true;
+  };
+  var actsOf = function (T, x, when, main) { var f = main ? T.S.fx(T.S.rowOf[x.no] || x) : T.S.fx(x); return (f.acts || []).filter(function (a) { return a.when === when; }); };
+  // その場でまとめて実行（人には聞かない）。TP を払う効果は、TP が2つ以上あるときだけ
+  var fireSync = function (T, x, when, cx, main) {
+    actsOf(T, x, when, main).forEach(function (a) {
+      cx.self = x; cx.label = nm(x); cx.supX = a.cond && a.cond.supX;
+      if (!actOk(T, a, cx)) return;
+      if (a.cond.tpCost) { if (T.tp < 2) return; T.tp -= a.cond.tpCost; }
+      runOps(T, a.ops, cx); ev(T, nm(x) + '（' + ACT_WHEN_[when] + '）');
+    });
+  };
   var paG = function* (atk, def, half, fixedAttr) {
     var hA = atk.hand, hB = def.hand, st = stats ? stats(half) : {}, d1, d2;
     var slot = atk.bi % 9, b = atk.lineup[slot], pinchNow = false;
@@ -1354,6 +1921,7 @@ function simRun_(SA, SB, opt) {
     var pinchDo = function (pp) {
       ev(atk, '代打（' + nm(pp) + '）'); atk.tp--; atk.usedPinch[pp.no] = true; atk.lineup[slot] = pp; LG(who(atk) + '：代打 ' + nm(pp) + '（' + nm(b) + ' に代わって）'); b = pp; pinchNow = true; st.pinch = (st.pinch || 0) + 1;
       draw(atk, atk.S.base(pp.no).pinch || 0);
+      fireSync(atk, pp, 'enter', { sx: { slot: slot + 1 } }, true);
     };
     var pinchCands = function () { return atk.S.pinch.filter(function (pp) { return !atk.usedPinch[pp.no] && !atk.lineup.some(function (v) { return v.no === pp.no; }); }); };
     if (atk.human) {
@@ -1412,6 +1980,20 @@ function simRun_(SA, SB, opt) {
     var inPC = def.inning.some(function (x) { return x.kind === '選手' && (x.pos === 1 || x.pos === 2); });
     var sitD = { runner: runner, risp: risp, norunner: !runner, behind: diff > 0, lead: diff < 0, inning: def.inning.length > 0, inningPC: inPC, zoneAny: !!def.zoneActive };
     sit.oppPitCost = rowCost(def, pit);
+    // 条件の判定に使う値：TP・手札・出場している選手の構成・打順・イニング・アウト・レストの戦術
+    var fieldInfo = function (T) {
+      var f = { '野手': 0 }, fc = {}, costs = {}, awkF = 0;
+      T.lineup.concat([T.pitcher]).forEach(function (v) {
+        var r = T.S.rowOf[v.no] || {}; if (!r.pos) return; f[r.pos] = (f[r.pos] || 0) + 1;
+        if (r.pos !== '投手') { f['野手']++; costs[r.cost || 0] = 1; for (var q = 1; q <= (r.cost || 0); q++) fc[q] = (fc[q] || 0) + 1; if (/【覚醒】/.test(r.eff || '')) awkF++; }
+      });
+      return { field: f, fieldCost: fc, costs123: !!(costs[1] && costs[2] && costs[3]), awkFielders: awkF };
+    };
+    var restTac = function (T) { var u = {}; T.rest.forEach(function (x) { if (x.kind === '戦術') u[nm(x)] = 1; }); return Object.keys(u).length; };
+    var fiA = fieldInfo(atk), fiD = fieldInfo(def);
+    var prevRow = atk.S.rowOf[atk.lineup[(slot + 8) % 9].no] || {};
+    Object.assign(sit, { tp: atk.tp, hand: hA.length, field: fiA.field, fieldCost: fiA.fieldCost, costs123: fiA.costs123, awkFielders: fiA.awkFielders, slot: slot + 1, prevBatAwk: /【覚醒】/.test(prevRow.eff || ''), innN: atk.inning.length, outs: half.outs, runner3: !!base[2], restTac: atk.rest.filter(function (x) { return x.kind === '戦術'; }).length, runners: base[0] + base[1] + base[2], restTacKinds: restTac(atk), fsig: JSON.stringify([fiA.field, fiA.fieldCost]) });
+    Object.assign(sitD, { tp: def.tp, hand: hB.length, field: fiD.field, fieldCost: fiD.fieldCost, costs123: fiD.costs123, awkFielders: fiD.awkFielders, innN: def.inning.length, outs: half.outs, runner3: !!base[2], restTac: def.rest.filter(function (x) { return x.kind === '戦術'; }).length, runners: base[0] + base[1] + base[2], restTacKinds: restTac(def), fsig: JSON.stringify([fiD.field, fiD.fieldCost]) });
     // 打席に入った時（度会：レストの無能力戦術を1枚手札へ）
     if (bfx.onEnter) {
       ev(atk, nm(b) + '（打席に入った時）');
@@ -1419,12 +2001,46 @@ function simRun_(SA, SB, opt) {
       atk.rest.forEach(function (x, i) { if (x.kind !== '戦術' || String(x.eff || '').trim()) return; var v = Math.max(calc(b, [x], 'ミート', sit), calc(b, [x], '強振', sit)); if (v > bv0) { bv0 = v; bi0 = i; } });
       if (bi0 >= 0) hA.push(atk.rest.splice(bi0, 1)[0]);
     }
+    var kidouDP = def.reliefDP || 0, preD = []; def.reliefDP = 0;
+    var dks = (pfx.acts || []).filter(function (a) { return a.when === 'kidou' && a.side !== 'atk'; });
+    for (var dk = 0; dk < dks.length; dk++) {
+      var ka = dks[dk], kc = ka.cost, kkey = 'D' + pit.no + dk; def.usedK = def.usedK || {};
+      if (ka.once === 'game' && def.usedK[kkey]) continue;
+      if (ka.once === 'inning' && def.usedK[kkey] === half.inn + ':' + half.first) continue;
+      var dcx = { self: pit, label: nm(pit) + 'の起動', live: preD, add: { ap: 0, dp: 0, dice: 0 }, sx: sitD, role: 'def', opp: atk, prevOnOpp: !!half.prevOn, base: base, half: half, supX: ka.cond && ka.cond.supX };
+      if (!actOk(def, ka, dcx)) continue;
+      var canPay = (!kc.tp || def.tp >= 1) && (!kc.hand || hB.filter(function (y) { return !kc.tactic || y.kind === '戦術'; }).length >= kc.hand);
+      if (!canPay) continue;
+      var useK = false, payIdx = [];
+      var statK = ka.ops.some(function (o) { return o.op === 'stat' || o.op === 'revealCount' || (o.op === 'ifDisc' && o.then.some(function (q) { return q.op === 'stat' || q.op === 'discCostDP'; })); });
+      if (def.human) {
+        var ansDK = yield { type: 'kidou', side: def, batter: pit, kd: { type: 'acts', cost: kc.hand ? 'hand' : null, tp: !!kc.tp }, text: ka.text };
+        if (ansDK && ansDK.use) { useK = true; if (kc.hand && ansDK.discardIdx != null) payIdx = [ansDK.discardIdx]; if (kc.hand && !payIdx.length) useK = false; }
+      } else {
+        var need = statK ? (runner || final) : true;
+        if (kc.tp && def.tp - reserve(def) < (statK ? 1 : 2)) need = false;
+        if (kc.hand && need) {
+          var hasAwkCost = ka.ops.some(function (o) { return o.op === 'ifDisc' && o.then.some(function (q) { return q.op === 'discCostDP'; }); });
+          for (var hp = 0; hp < kc.hand; hp++) {
+            var jk = junkIdx(def, function (y) { return (!kc.tactic || y.kind === '戦術') && payIdx.indexOf(def.hand.indexOf(y)) < 0 && (!hasAwkCost || /【覚醒】/.test(y.eff || '')) && y.no !== pit.no; });
+            if (jk.i < 0 || jk.w > (statK ? 5 : 3)) { need = false; break; } payIdx.push(jk.i);
+          }
+        }
+        useK = need;
+      }
+      if (!useK) continue;
+      def.usedK[kkey] = ka.once === 'inning' ? half.inn + ':' + half.first : true;
+      if (kc.tp) def.tp -= kc.tp;
+      payIdx.sort(function (x, y) { return y - x; }).forEach(function (j) { var dd = discard(def, j, true); if (dd) dcx.discarded = dd; });
+      yield* runOpsG(def, ka.ops, dcx);
+      kidouDP += dcx.add.dp; ev(def, nm(pit) + 'の起動'); LG(who(def) + '：' + nm(pit) + 'の起動' + (dcx.add.dp ? '（DP+' + dcx.add.dp + '）' : ''));
+    }
     var dpM = calc(pit, [], 'ミート', sitD), dpS = calc(pit, [], '強振', sitD);
     var upM = function (x) { return calc(pit, [x], 'ミート', sitD) > dpM; }, upS = function (x) { return calc(pit, [x], '強振', sitD) > dpS; };
     var nPl = function (set) { return set.filter(function (x) { return x.kind === '選手' && (upM(x) || upS(x)); }).length; };
     var honCost = function (y) { return y.kind === '選手' && (y.cost || 0) >= 2; };
     var dVal = function (set, a) {
-      var v = calc(pit, set, a, sitD), avail = hB.filter(function (y) { return set.indexOf(y) < 0 && honCost(y); }).length;
+      var v = calc(pit, set, a, sitD) + supBonusOf(def, set, 'DP', a, sitD, b, pit) + tierVal(def, pit, 'dp', sitD), avail = hB.filter(function (y) { return set.indexOf(y) < 0 && honCost(y); }).length;
       set.forEach(function (x) { var f = def.S.fx(x); if (f.honDiscard && honActive(def, x.no) && avail > 0) { v += f.honDiscard.dp; avail--; } });
       return v;
     };
@@ -1495,7 +2111,7 @@ function simRun_(SA, SB, opt) {
       if (kill >= 0) { var one = bestSet(hB, mn, 1, function (x) { return !isKill(x); }); dSel = { idx: [kill].concat(one.score >= 10 ? one.idx : []) }; }
       else { dSel = bestSet(hB, mn, 2); if (dSel.score < 10) dSel.idx = []; }
     }
-    var dCards = take(hB, dSel.idx);
+    var dCards = take(hB, dSel.idx).concat(preD);
     // 攻撃側の起動
     var ownPit = atk.S.starter ? atk.S.starter.no : null;
     var junk = function (filter) {
@@ -1628,6 +2244,34 @@ function simRun_(SA, SB, opt) {
       if (used && kd.scry) scryAuto(atk, kd.scry);
       if (used) { st.kidou = (st.kidou || 0) + 1; if (kd.tp) atk.tp--; ev(atk, nm(b) + 'の起動'); }
     }
+    var preA = [];
+    var aks = (bfx.acts || []).filter(function (a) { return a.when === 'kidou' && a.side !== 'def'; });
+    for (var ak = 0; ak < aks.length; ak++) {
+      var ka2 = aks[ak], kc2 = ka2.cost, akey = 'A' + b.no + ak; atk.usedK = atk.usedK || {};
+      if (ka2.once === 'game' && atk.usedK[akey]) continue;
+      if (ka2.once === 'inning' && atk.usedK[akey] === half.inn + ':' + half.first) continue;
+      var acx = { self: b, label: nm(b) + 'の起動', live: preA, add: { ap: 0, dp: 0, dice: 0 }, sx: sit, role: 'atk', opp: def, base: base, half: half, behind: diff < 0, supX: ka2.cond && ka2.cond.supX,
+        gain: function (x) { return Math.max(calc(b, preA.concat([x]), 'ミート', sit) - calc(b, preA, 'ミート', sit), calc(b, preA.concat([x]), '強振', sit) - calc(b, preA, '強振', sit)); } };
+      if (!actOk(atk, ka2, acx)) continue;
+      if (!((!kc2.tp || atk.tp >= 1) && (!kc2.hand || hA.filter(function (y) { return !kc2.tactic || y.kind === '戦術'; }).length >= kc2.hand))) continue;
+      var statA = ka2.ops.some(function (o) { return o.op === 'stat' || o.op === 'revealCount' || o.op === 'topToSup' || o.op === 'restToSup'; });
+      var useA = false, payA = [];
+      if (atk.human) {
+        var ansAK = yield { type: 'kidou', side: atk, batter: b, kd: { type: 'acts', cost: kc2.hand ? 'hand' : null, tp: !!kc2.tp }, text: ka2.text };
+        if (ansAK && ansAK.use) { useA = true; if (kc2.hand) { if (ansAK.discardIdx != null && hA[ansAK.discardIdx] && (!kc2.tactic || hA[ansAK.discardIdx].kind === '戦術')) payA = [ansAK.discardIdx]; else useA = false; } }
+      } else {
+        var needA = statA ? (risp || final || runner) : true;
+        if (kc2.tp && atk.tp - reserve(atk) < (statA ? 1 : 2)) needA = false;
+        if (kc2.hand && needA) { var ja = junk(function (y) { return !kc2.tactic || y.kind === '戦術'; }); if (ja.i < 0 || ja.score > (statA ? 5 : 3)) needA = false; else payA = [ja.i]; }
+        useA = needA;
+      }
+      if (!useA) continue;
+      atk.usedK[akey] = ka2.once === 'inning' ? half.inn + ':' + half.first : true;
+      if (kc2.tp) atk.tp -= kc2.tp;
+      payA.forEach(function (j) { var dd = discard(atk, j, true); if (dd) acx.discarded = dd; });
+      yield* runOpsG(atk, ka2.ops, acx);
+      extraAP += acx.add.ap; extraDice += acx.add.dice; st.kidou = (st.kidou || 0) + 1; ev(atk, nm(b) + 'の起動'); LG(who(atk) + '：' + nm(b) + 'の起動' + (acx.add.ap ? '（AP+' + acx.add.ap + '）' : ''));
+    }
     // 相手の伏せた札に勝負師・威圧が入っている見込み：見えていない勝負師・威圧の枚数と、相手の手札の枚数から（得点圏は使われやすい）
     var killTotal = def.S.X.mainCards.filter(isKill).reduce(function (t, x) { return t + x.num; }, 0);
     var killSeen = def.rest.concat(def.inning, def.out).filter(isKill).length;
@@ -1637,9 +2281,9 @@ function simRun_(SA, SB, opt) {
     // 偶数・奇数で AP が変わる打者（泉口・吉川・キャベッジ）：伏せる札のコストの合計も見て選ぶ
     var parAP = function (s) { if (!bfx.parity) return 0; var q = bfx.parity[costSum(atk, s) % 2 === 0 ? 'even' : 'odd'] || {}; return (q.ap || 0) + (q.dice || 0) * 0.5; };
     var withRisk = function (s, a, base0) {
-      var full = calc(b, s, a, sit) - base0 + parAP(s);
+      var full = calc(b, s, a, sit) - base0 + parAP(s) + supBonusOf(atk, s, 'AP', a, sit, b, pit) + tierVal(atk, b, 'ap', sit);
       if (!s.some(function (x) { return x.no === b.no; })) return full;
-      var wo = calc(b, s.filter(function (x) { return x.no !== b.no; }), a, sit) - base0 + parAP(s.filter(function (x) { return x.no !== b.no; }));
+      var wo = calc(b, s.filter(function (x) { return x.no !== b.no; }), a, sit) - base0 + parAP(s.filter(function (x) { return x.no !== b.no; })) + supBonusOf(atk, s.filter(function (x) { return x.no !== b.no; }), 'AP', a, sit, b, pit);
       return (1 - pKill) * full + pKill * wo - pKill * 0.5; // 勝負師なら覚醒札はレストへ（失う）
     };
     // 宣言：届きやすさ＋相手がこの試合で張ってこなかった属性
@@ -1648,7 +2292,7 @@ function simRun_(SA, SB, opt) {
     var keepDef = function (x) { return !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4)); };
     var attr = fixedAttr, ansA = null;
     if (atk.human) {
-      var prevA = function (idx, a) { var cs = idx.map(function (i) { return hA[i]; }); var q = bfx.parity ? (bfx.parity[costSum(atk, cs) % 2 === 0 ? 'even' : 'odd'] || {}) : {}; return calc(b, cs, a, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + (q.ap || 0); };
+      var prevA = function (idx, a) { var cs = idx.map(function (i) { return hA[i]; }).concat(preA); var q = bfx.parity ? (bfx.parity[costSum(atk, cs) % 2 === 0 ? 'even' : 'odd'] || {}) : {}; return calc(b, cs, a, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + (q.ap || 0) + supBonusOf(atk, cs, 'AP', a, sit, b, pit) + tierVal(atk, b, 'ap', sit); };
       ansA = yield { type: 'atkSelect', side: atk, batter: b, pitcher: pit, preview: prevA, pitDP: { ミート: calc(pit, [], 'ミート', sitD), 強振: calc(pit, [], '強振', sitD) }, kidouOn: sit.kidou };
       attr = (ansA && ansA.attr) || 'ミート';
     }
@@ -1678,7 +2322,7 @@ function simRun_(SA, SB, opt) {
     if (ansA) aSel = { idx: (ansA.idx || []).slice(0, 2) };
     else if (risp && aKill >= 0) { var o1 = bestSet(hA, sc, 1, function (x) { return !isKill(x); }); aSel = { idx: [aKill].concat(o1.score > 0 ? o1.idx : []) }; }
     else { aSel = bestSet(hA, sc, size, function (x) { return !isKill(x) && !keepDef(x); }); if (aSel.score <= 0) aSel.idx = []; }
-    var aCards = take(hA, aSel.idx);
+    var aCards = take(hA, aSel.idx).concat(preA);
     // 公開：勝負師・威圧（覚醒＝メインエリアと同じ番号の札を消す。覚醒は発動しない）
     var dSho = dCards.some(function (x) { return def.S.fx(x).shobushi; }), dIatsu = dCards.some(function (x) { return def.S.fx(x).iatsu; });
     var aSho = aCards.some(function (x) { return atk.S.fx(x).shobushi; });
@@ -1707,12 +2351,7 @@ function simRun_(SA, SB, opt) {
     if (pfx.costDraw && dLive.filter(function (x) { return costOf(def, x) >= pfx.costDraw.min; }).length >= pfx.costDraw.count) { draw(def, pfx.costDraw.draw); ev(def, nm(pit) + '（コスト2以上が2枚で引く）'); }
     for (var dl = 0; dl < dLive.length; dl++) {
       var x = dLive[dl], f = def.S.fx(x);
-      if (f.supOppDice && (!f.supOppDice.hon || honActive(def, x.no, x)) && attr === f.supOppDice.attr) { oppDiceSup += f.supOppDice.n; }
       if (f.supParityDraw && (!f.supParityDraw.hon || honActive(def, x.no, x)) && dLive.some(function (y) { return nm(y) !== nm(x); }) && dSum % 2 === 0) { draw(def, f.supParityDraw.n); ev(def, nm(x) + 'の本領発揮（偶数で引く）'); }
-      if (f.supPitCostDP && (!f.supPitCostDP.hon || honActive(def, x.no, x)) && rowCost(def, pit) >= f.supPitCostDP.min && attr === f.supPitCostDP.attr) {
-        var zOk = !f.supPitCostDP.zone || (def.zoneActive && (def.S.rowOf[def.zoneActive] || {}).cost >= 3);
-        if (zOk) { extraDP += f.supPitCostDP.n; ev(def, nm(x) + 'の本領発揮（DP+' + f.supPitCostDP.n + '）'); }
-      }
       if (f.zoneDraw && zoneSelf) { draw(def, f.zoneDraw); ev(def, '強心臓（ZONE の打者で引く）'); }
       if (f.honDiscard && honActive(def, x.no)) {
         var apNow = calc(b, aLive, attr, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP, dpNow = calc(pit, dLive, attr, sitD) + extraDP;
@@ -1746,25 +2385,73 @@ function simRun_(SA, SB, opt) {
         }
       }
     }
+    // 公開の後の効果：覚醒・自分がカードをプレイした時（メイン）
+    var addA = { ap: 0, dp: 0, dice: 0 }, addD = { ap: 0, dp: 0, dice: 0 }, d2hA = null;
+    var aOrig = aLive.filter(function (x) { return preA.indexOf(x) < 0; }), dOrig = dLive.filter(function (x) { return preD.indexOf(x) < 0; });
+    var gainA = function (x) { return Math.max(0, calc(b, aLive.concat([x]), attr, sit) - calc(b, aLive, attr, sit)); }, gainD = function (x) { return Math.max(0, calc(pit, dLive.concat([x]), attr, sitD) - calc(pit, dLive, attr, sitD)); };
+    var fireG = function* (T, x, when, cx, main) {
+      var L0 = actsOf(T, x, when, main);
+      for (var q = 0; q < L0.length; q++) { var a = L0[q]; cx.self = x; cx.label = nm(x) + '（' + ACT_WHEN_[when] + '）'; cx.supX = a.cond && a.cond.supX; if (!actOk(T, a, cx)) continue; yield* runOpsG(T, a.ops, cx); if (cx.d2h) d2hA = cx.d2h; ev(T, nm(x) + '（' + ACT_WHEN_[when] + '）'); }
+    };
+    var cxA = function () { return { live: aLive, add: addA, sx: sit, role: 'atk', opp: def, attr: attr, behind: diff < 0, gain: gainA, oppAwk: dLive.some(function (x) { return x.no === pit.no; }), base: base, half: half }; };
+    var cxD = function () { return { live: dLive, add: addD, sx: sitD, role: 'def', opp: atk, attr: attr, behind: diff > 0, gain: gainD, oppAwk: aLive.some(function (x) { return x.no === b.no; }), prevOnOpp: !!half.prevOn, base: base, half: half }; };
+    if (aLive.some(function (x) { return x.no === b.no; })) yield* fireG(atk, b, 'awaken', cxA(), true);
+    if (dLive.some(function (x) { return x.no === pit.no; })) yield* fireG(def, pit, 'awaken', cxD(), true);
+    yield* fireG(atk, b, 'play', cxA(), true);
+    yield* fireG(def, pit, 'play', cxD(), true);
+    // サポートの【手札①】することで（手札を1枚捨てて効果を使う）
+    var oppA = { awk: dLive.some(function (x) { return x.no === pit.no; }) }, oppD = { awk: aLive.some(function (x) { return x.no === b.no; }) };
+    sit.paid = []; sitD.paid = [];
+    var payFor = [[def, dLive, hB, sitD, 'DP'], [atk, aLive, hA, sit, 'AP']];
+    for (var pf = 0; pf < payFor.length; pf++) {
+      var PT = payFor[pf][0], PL = payFor[pf][1], PH = payFor[pf][2], PS = payFor[pf][3];
+      for (var pl = 0; pl < PL.length; pl++) {
+        var px0 = PL[pl], pfx0 = PT.S.fx(px0);
+        var needs = (pfx0.supBonus || []).concat(pfx0.supDice || []).concat((pfx0.acts || []).filter(function (e) { return e.when === 'supPlay'; })).filter(function (e) { return e.cond && e.cond.handCost && (!e.hon || honActive(PT, px0.no, px0)); });
+        if (!needs.length || !PH.length) continue;
+        var pIdx = -1;
+        if (PT.human) {
+          var ansP = yield { type: 'payHand', side: PT, card: px0, text: needs.map(function (e) { return e.kind ? 'サポートに' + (e.attr || '') + e.kind + '+' + e.n : '【ダイス】' + e.n; }).join('・') };
+          if (ansP && ansP.idx != null && PH[ansP.idx]) pIdx = ansP.idx;
+        } else {
+          var pv0 = 1e9; PH.forEach(function (y, i) { var w = worth(PT, y) - discardGain(PT, y) * 6; if (w < pv0) { pv0 = w; pIdx = i; } });
+          if (pv0 > 7) pIdx = -1;
+        }
+        if (pIdx >= 0) { discard(PT, pIdx, true); PS.paid.push(px0); ev(PT, nm(px0) + 'の本領発揮（手札1枚で）'); LG((PT === def ? '守備' : '攻撃') + '：' + nm(px0) + ' の【手札①】で効果を使う'); }
+      }
+    }
+    // サポートとしてプレイした時（伏せた札だけ。効果で表向きに置いた札は除く）
+    for (var sp1 = 0; sp1 < aOrig.length; sp1++) { var sc1 = cxA(); sc1.paid = sit.paid; yield* fireG(atk, aOrig[sp1], 'supPlay', sc1, false); }
+    for (var sp2 = 0; sp2 < dOrig.length; sp2++) { var sc2 = cxD(); sc2.paid = sitD.paid; yield* fireG(def, dOrig[sp2], 'supPlay', sc2, false); }
+    extraAP += addA.ap; extraDice += addA.dice; extraDP += addD.dp + kidouDP;
     // サンタナ：相手が覚醒している（相手の投手と同じ番号の札が生きている）なら AP+
     var oppAwk = bfx.oppAwkAP && dLive.some(function (x) { return x.no === pit.no; }) ? bfx.oppAwkAP : 0;
     var aSum = costSum(atk, aLive), par = bfx.parity ? bfx.parity[aSum % 2 === 0 ? 'even' : 'odd'] : null;
     if (par && par.ap) extraAP += par.ap;
-    var AP = calc(b, aLive, attr, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + oppAwk, DP = calc(pit, dLive, attr, sitD) + extraDP;
+    sit.oppSup = dLive.length; sitD.supPitcher = dLive.some(function (x) { return x.kind === '選手' && x.pos === 1; }); sitD.supOrInnPC = dLive.some(function (x) { return x.kind === '選手' && (x.pos === 1 || x.pos === 2); });
+    var AP = calc(b, aLive, attr, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + oppAwk + supBonusOf(atk, aLive, 'AP', attr, sit, b, pit, oppA) + tierVal(atk, b, 'ap', sit), DP = calc(pit, dLive, attr, sitD) + extraDP + supBonusOf(def, dLive, 'DP', attr, sitD, b, pit, oppD) + tierVal(def, pit, 'dp', sitD);
     var res = 'アウト';
     if (AP >= DP) {
       st.through = (st.through || 0) + 1;
       var dice = (atk.S.base(b.no).dice || {})[attr] || 0;
-      aLive.forEach(function (x) { diceFromEffect_(x.eff, true).forEach(function (d) { if (d.attr === '両方' || d.attr === attr) dice += d.n; }); });
+      dice += supDiceOf(atk, aLive, attr, sit, b, pit, 'atk', oppA);
       batDice_((atk.S.rowOf[b.no] || {}).eff).forEach(function (e) {
         if (e.attr !== '両方' && e.attr !== attr) return;
         if (e.awaken && !aLive.some(function (x) { return x.no === b.no; })) return;
-        if (e.combo && !aLive.some(function (x) { return nm(x) === e.combo; })) return;
-        if (okSit(e.kind, sit)) dice += e.n;
+        if (e.combo && !aLive.some(function (x) { return nm(x) === e.combo || (atk.S.fx(x).alsoName === e.combo && honActive(atk, x.no, x)); })) return;
+        if (e.supCond && !supCountOk_(e.supCond, aLive)) return;
+        if (okSitK(e.kind, sit)) dice += e.n;
       });
       dice += extraDice;
+      dice += tierDice(atk, b, attr, sit);
+      var noMinus = aLive.some(function (x) { return /打撃判定をマイナスされない/.test(x.eff || ''); });
+      if (!noMinus) {
+        dice += tierDice(def, pit, attr, sitD);
+        var innSeen = {};
+        def.inning.forEach(function (x) { var f = def.S.fx(x).innDice; if (!f || innSeen[nm(x)] || (f.attr && f.attr !== attr) || (f.hon && !inningHon(def, x)) || !okSitK(f.kind, sitD)) return; innSeen[nm(x)] = 1; dice -= f.n; });
+      }
       if (par && par.dice) dice += par.dice;
-      if (!aLive.some(function (x) { return /打撃判定をマイナスされない/.test(x.eff || ''); })) { dice -= oppDiceSup; if (pfx.supCostDice && dLive.some(function (y) { return y.kind === '選手' && costOf(def, y) >= pfx.supCostDice.min; })) dice -= pfx.supCostDice.n; }
+      if (!aLive.some(function (x) { return /打撃判定をマイナスされない/.test(x.eff || ''); })) { dice += supDiceOf(def, dLive, attr, sitD, b, pit, 'def', oppD); if (pfx.supCostDice && dLive.some(function (y) { return y.kind === '選手' && costOf(def, y) >= pfx.supCostDice.min; })) dice -= pfx.supCostDice.n; }
       var apit = atk.pitcher && atk.S.fx(atk.S.rowOf[atk.pitcher.no] || atk.pitcher);
       if (apit && apit.benchDice) dice += apit.benchDice;
       if (bfx.revealDice) {
@@ -1777,7 +2464,7 @@ function simRun_(SA, SB, opt) {
         if (d.restName && atk.rest.filter(function (x) { return nm(x) === d.restName; }).length >= d.restMin) dice += d.n;
         if (d.prevOnBase && half.prevOn) dice += d.n;
       });
-      if (!aLive.some(function (x) { return /打撃判定をマイナスされない/.test(x.eff || ''); })) pitDiceOf(def, pit).forEach(function (d) { if (okSit(d.kind, sitD)) dice -= d.n; });
+      if (!aLive.some(function (x) { return /打撃判定をマイナスされない/.test(x.eff || ''); })) pitDiceOf(def, pit).forEach(function (d) { if (d.attr && d.attr !== attr) return; if (d.supCond && !supCountOk_(d.supCond, dLive)) return; if (okSitK(d.kind, sitD)) dice -= d.n; });
       d1 = 1 + Math.floor(rnd() * 6); d2 = 1 + Math.floor(rnd() * 6); var roll = d1 + d2 + dice;
       res = JUDGE[attr](roll);
       (bfx.mods || []).forEach(function (md) {
@@ -1791,9 +2478,16 @@ function simRun_(SA, SB, opt) {
         if (md.parity && (aSum % 2 === 0 ? 'even' : 'odd') !== md.parity) return;
         if (md.type === 's2d' && res === '単打') { res = '二塁打'; ev(atk, nm(b) + '：単打→二塁打'); }
       });
+      if (d2hA && res === '二塁打' && (d2hA === '両方' || d2hA === attr)) { res = '本塁打'; ev(atk, nm(b) + '：二塁打→本塁打'); }
+      if (res === '二塁打' && tierOf(atk, b, sit).some(function (tr) { return tr.d2h; })) { res = '本塁打'; ev(atk, nm(b) + '：二塁打→本塁打（走者3人）'); }
     }
     // 伏せた札の行き先（石井の覚醒で AP 戦術を回収、藤原の【グラウンド】で選手を回収）
-    var keepHand = [];
+    var keepHand = [], keepD = [];
+    var endA = cxA(), endD = cxD(); endA.onBase = endD.onBase = res !== 'アウト'; endA.keep = keepHand; endD.keep = keepD;
+    for (var e1 = 0; e1 < aLive.length; e1++) yield* fireG(atk, aLive[e1], 'end', endA, false);
+    yield* fireG(atk, b, 'end', endA, true);
+    for (var e2 = 0; e2 < dLive.length; e2++) yield* fireG(def, dLive[e2], 'end', endD, false);
+    yield* fireG(def, pit, 'end', endD, true);
     if (bfx.awkFetchAP && res !== 'アウト' && aLive.some(function (x) { return x.no === b.no; })) {
       var apT = function (x) { return x.kind === '戦術' && x.apAttr; };
       var fi = aCards.findIndex(function (x) { return apT(x) && nm(x) === 'フルスイング'; }); if (fi < 0) fi = aCards.findIndex(apT);
@@ -1802,12 +2496,18 @@ function simRun_(SA, SB, opt) {
     }
     if (bfx.ground) { var gp = null; aLive.forEach(function (x) { if (x.kind === '選手' && keepHand.indexOf(x) < 0 && (!gp || x.no === b.no)) gp = x; }); if (gp) { keepHand.push(gp); ev(atk, nm(b) + '（選手を回収）'); } }
     aCards.forEach(function (x) { if (keepHand.indexOf(x) >= 0) hA.push(x); else atk.rest.push(x); });
-    dCards.forEach(function (x) { var f = def.S.fx(x); if (f.fukutsu && rowCost(def, def.pitcher) >= f.fukutsu && res !== 'アウト') { hB.push(x); ev(def, '不屈が手札に戻る'); } else def.rest.push(x); });
+    dCards.forEach(function (x) { var f = def.S.fx(x); if (keepD.indexOf(x) >= 0) hB.push(x); else if (f.fukutsu && rowCost(def, def.pitcher) >= f.fukutsu && res !== 'アウト') { hB.push(x); ev(def, '不屈が手札に戻る'); } else def.rest.push(x); });
     half.prevOn = res !== 'アウト';
     var runs = 0;
     if (res === 'アウト') {
       half.outs++;
       var oc = topCard(def); if (oc) def.out.push(oc);
+      var outD = cxD(), outA = cxA();
+      outD.pickOpt = function (o) { return base[0] && half.outs < 3 && o.opts.length > 1 && o.opts[1][0] && o.opts[1][0].op === 'out1' ? 1 : 0; };
+      fireSync(def, pit, 'outPlaced', outD, true);
+      for (var o1 = 0; o1 < dLive.length; o1++) yield* fireG(def, dLive[o1], 'oppOut', outD, false);
+      yield* fireG(def, pit, 'defOut', outD, true);
+      yield* fireG(atk, b, 'onOut', outA, true);
       dLive.forEach(function (x) {
         var f = def.S.fx(x);
         if (f.dpMeet && (!f.dpMeet.hon || honActive(def, x.no)) && attr === 'ミート' && base[0] && half.outs < 3) { base[0] = 0; half.outs++; var oc2b = topCard(def); if (oc2b) def.out.push(oc2b); ev(def, nm(x) + '（併殺）'); }
@@ -1826,6 +2526,7 @@ function simRun_(SA, SB, opt) {
       else if (res === '二塁打') { runs = base[2] + base[1]; half.base = [0, 1, base[0]]; }
       else { runs = base[0] + base[1] + base[2] + 1; half.base = [0, 0, 0]; }
       if (bfx.onBaseDraw) { draw(atk, bfx.onBaseDraw); ev(atk, nm(b) + '（出塁で引く）'); }
+      yield* fireG(atk, b, 'onBase', cxA(), true);
       if (pfx.onBaseDrawDef && (def.deck.length || def.rest.length)) {
         draw(def, pfx.onBaseDrawDef.draw);
         var dw = function (x) { return worth(def, x) - discardGain(def, x) * 6; };
@@ -1852,7 +2553,13 @@ function simRun_(SA, SB, opt) {
     abilities_((T.S.rowOf[pit.no] || {}).eff).forEach(function (ab) {
       if (!/【守備】|＜守備＞/.test(ab) || MAIN_AREA_RE.test(ab) || /【メイン・起動】/.test(ab)) return;
       var re = /【?ダイス】?-(\d+)/g, mm;
-      while ((mm = re.exec(ab))) { var sent = ab.slice(0, mm.index).replace(/^(【[^】]+】|＜[^＞]+＞)+/, '').split('。').pop(); var kd = sitKind_(sent); if (kd !== 'other') out.push({ n: +mm[1], kind: kd, text: sent }); }
+      while ((mm = re.exec(ab))) {
+        var sents = ab.slice(0, mm.index).replace(/^(【[^】]+】|＜[^＞]+＞)+/, '').split('。'), sent = sents.pop(), supC = null;
+        var am = sent.match(/(ミート|強振)で打撃判定/);
+        if (/さらに/.test(sent) && sents.length) { var px = sents[sents.length - 1].match(/サポートエリアに(.+?)があるなら/); if (px) supC = px[1]; }
+        var kd = sitKind_(sent.replace(/(?:相手が)?(ミート|強振)?で?打撃判定を行うなら、?(さらに、?)?/g, ''));
+        if (kd !== 'other') out.push({ n: +mm[1], kind: kd, text: sent, attr: am ? am[1] : null, supCond: supC });
+      }
     });
     return (pitDiceCache[k] = out);
   };
@@ -1863,7 +2570,11 @@ function simRun_(SA, SB, opt) {
   };
   // イニングエリアに置かれた時（寺地：【イニング】【本領発揮】で1枚引く）
   var ev = function (T, k) { T.ev[k] = (T.ev[k] || 0) + 1; if (logf) LG(who(T) + '：' + k); };
-  var onInningPlaced = function (T, x) { var f = T.S.fx(x); if (f.inningDraw && (!f.inningDraw.hon || inningHon(T, x))) { draw(T, f.inningDraw.n); ev(T, 'イニングで引く（' + nm(x) + '）'); } };
+  var onInningPlaced = function (T, x) {
+    var f = T.S.fx(x); if (f.inningDraw && (!f.inningDraw.hon || inningHon(T, x))) { draw(T, f.inningDraw.n); ev(T, 'イニングで引く（' + nm(x) + '）'); }
+    fireSync(T, x, 'inningPlaced', { honOk: inningHon(T, x), sx: {} }, false);
+    if (T.pitcher) fireSync(T, T.pitcher, 'innAny', { sx: { tp: T.tp } }, true);
+  };
   // 3アウト：守備側がアウトエリアから1枚をイニングエリアへ（残りはレスト）。黒木：イニングとレストを入れ替え、イニングがちょうど2枚で同じ名前なら引く
   var changeSidesG = function* (def) {
     if (!def.out.length) return;
@@ -1913,7 +2624,8 @@ function simRun_(SA, SB, opt) {
     }
   };
   var changeSides = function (def) { var it = changeSidesG(def), r = it.next(); if (!r.done) throw new Error('人の判断が要る場面です'); };
-  var reliefDo = function (def, rel) { var of2 = def.S.fx(def.S.rowOf[def.pitcher.no] || def.pitcher); if (of2.onRelievedDraw) draw(def, of2.onRelievedDraw); def.relieved = true; def.tp--; def.pitcher = rel; var bb = def.S.base(rel.no); draw(def, bb.closer || bb.relief || 0); LG(who(def) + '：継投 ' + nm(rel) + '（' + ((bb.closer || bb.relief || 0)) + '枚引く）'); };
+  var reliefDo = function (def, rel) { var of2 = def.S.fx(def.S.rowOf[def.pitcher.no] || def.pitcher); if (of2.onRelievedDraw) draw(def, of2.onRelievedDraw); def.relieved = true; def.tp--; def.pitcher = rel; var bb = def.S.base(rel.no); draw(def, bb.closer || bb.relief || 0); LG(who(def) + '：継投 ' + nm(rel) + '（' + ((bb.closer || bb.relief || 0)) + '枚引く）');
+    var rcx = { add: { ap: 0, dp: 0, dice: 0 }, sx: { lead: def.score > (def === A ? B : A).score } }; fireSync(def, rel, 'relief', rcx, true); def.reliefDP = rcx.add.dp; fireSync(def, rel, 'enter', { sx: {} }, true); };
   // 継投：最終回の守備で、先発で使う札（覚醒札・強心臓・不屈）が手札に無くなったら
   var maybeRelieve = function (def, inn) {
     if (opt.noRelief || def.relieved || inn < finalInn || def.tp < 1) return;
@@ -1938,6 +2650,8 @@ function simRun_(SA, SB, opt) {
     out.forEach(function (x) { if (x) T.rest.push(x); }); draw(T, out.length); T.mull = out.length;
   };
   if (opt.mulligan !== false) { mulligan(A); mulligan(B); }
+  // メインエリアに置かれた時（試合開始時の打順と先発）
+  [A, B].forEach(function (T) { T.lineup.forEach(function (v, i) { fireSync(T, v, 'enter', { sx: { slot: i + 1 } }, true); }); if (T.pitcher) fireSync(T, T.pitcher, 'enter', { sx: {} }, true); });
   return { A: A, B: B, pa: pa, paG: paG, draw: draw, changeSides: changeSides, changeSidesG: changeSidesG, maybeRelieve: maybeRelieve, mulligan: mulligan, worth: worth, LG: LG };
 }
 
@@ -2320,7 +3034,7 @@ function soloStart() {
 }
 function soloStep(ans) {
   const r = SO.it.next(ans);
-  SO.req = r.done ? null : r.value; SO.sel = SO.req && (SO.req.type === "zoneReveal" || SO.req.type === "revealPick") ? (SO.req.suggest || []).slice() : SO.req && SO.req.type === "scry" ? SO.req.cards.map((x, i) => i) : []; SO.extra = {};
+  SO.req = r.done ? null : r.value; SO.sel = SO.req && (SO.req.type === "zoneReveal" || SO.req.type === "revealPick" || SO.req.type === "pick") ? (SO.req.suggest || []).slice() : SO.req && SO.req.type === "scry" ? SO.req.cards.map((x, i) => i) : []; SO.extra = {};
   render();
 }
 function boardHtml(req) {
@@ -2394,6 +3108,14 @@ function vSolo() {
       panel = `<h3>${esc(q.card.name)} の本領発揮：入れ替える札を選ぶ</h3><p class="small">イニングエリアから手札に戻す札</p><div class="hand" id="inn">${q.inning.map((x, i) => `<button class="chip${SO.extra.inIdx === i ? " on" : ""}" data-in="${i}"><b>${esc(x.name)}</b></button>`).join("")}</div><p class="small">手札からイニングエリアに置く札</p>${handPick(1)}<button class="primary" data-act="ok" ${SO.sel.length && SO.extra.inIdx != null ? "" : "disabled"}>この2枚で入れ替える</button> <button data-act="back">戻る</button>`; break;
     case "honDiscard":
       panel = `<h3>${esc(q.card.name)} の本領発揮</h3><p class="small">相手：${esc(q.attr)} AP <b>${q.ap}</b>　自分：今の DP <b>${q.dpNow}</b>（DP+${q.dp} なら ${q.dpNow + q.dp}。同じ値は打撃判定に入ります）</p><p class="small">手札を1枚捨てられます（コスト2以上の札なら効果が働きます）。</p>${SO.extra.step ? `<p class="small"><b>${SO.extra.step === "dp" ? "DP+" + q.dp : "1枚引く"}</b>：捨てる札を選んでください</p>${handPick(1, { mark: x => x.kind === "選手" && (x.cost || 0) >= 2 ? "コスト" + x.cost : "" })}<button class="primary" data-act="${SO.extra.step}" ${SO.sel.length ? "" : "disabled"}>この札を捨てる</button> <button data-act="back">戻る</button>` : `<button class="primary" data-act="step" data-s="dp">DP+${q.dp}</button> <button data-act="step" data-s="draw">1枚引く</button> <button data-act="none">使わない</button>`}`; break;
+    case "discardPick":
+      panel = `<h3>${esc(q.title)}</h3>${handPick(q.n)}<button class="primary" data-act="ok" ${SO.sel.length || q.optional ? "" : "disabled"}>${SO.sel.length ? "この札を捨てる" : "捨てない"}</button>${q.optional ? "" : `<p class="small muted">選ばずに進めることはできません。</p>`}`; break;
+    case "pick":
+      panel = `<h3>${esc(q.title)}</h3><div class="hand">${q.cards.map((x, i) => chip(x, i, { dis: q.ok ? (x2 => !q.ok[q.cards.indexOf(x2)]) : null, mark: q.ok ? (x2 => q.ok[q.cards.indexOf(x2)] ? "選べる" : "") : null })).join("")}</div><p class="small muted">選んだ札：${SO.sel.length} / ${q.take} 枚（おすすめを選んだ状態にしてあります）</p><button class="primary" data-act="ok">これで決定</button> <button data-act="none">選ばない</button>`; break;
+    case "choice":
+      panel = `<h3>${esc(q.title)}</h3><div class="row">${q.opts.map((o, i) => `<button class="primary" data-act="opt" data-i2="${i}">${esc(o)}</button>`).join("")}</div>`; break;
+    case "payHand":
+      panel = `<h3>${esc(q.card.name)}：手札を1枚捨てて効果を使う</h3><p class="small">${esc(q.text)}${q.extra ? "（" + esc(q.extra) + "）" : ""}</p>${handPick(1)}<button class="primary" data-act="ok" ${SO.sel.length ? "" : "disabled"}>この札を捨てて使う</button> <button data-act="none">使わない</button>`; break;
     case "inningPick":
       panel = `<h3>3アウト：イニングエリアに置く札</h3><div class="hand">${q.out.map((x, i) => chip(x, i)).join("")}</div><button class="primary" data-act="ok">この札を置く</button>`; break;
     case "inningSwap":
@@ -2420,7 +3142,7 @@ function wireSolo() {
   const st = $("#soStart"); if (st) { const f = $("#soFirst"); st.onclick = () => { SO.aFirst = f.checked; soloStart(); }; wireCommon(); return; }
   const q = SO.req; if (!q) return;
   const lg = $("#solog"); if (lg) lg.scrollTop = lg.scrollHeight;
-  const maxSel = { zoneReveal: q.take || 2, revealPick: q.take || 1, scry: q.cards ? q.cards.length : 0, mulligan: 99, kidou: q.kd && q.kd.type === "cycle" ? q.kd.n : 1, atkSelect: 2, defPre: 1, defPlace: 2, honSwap: 1, honDiscard: 1, takeBack: 1, inningPick: 1 }[q.type] || 0;
+  const maxSel = { zoneReveal: q.take || 2, revealPick: q.take || 1, scry: q.cards ? q.cards.length : 0, mulligan: 99, kidou: q.kd && q.kd.type === "cycle" ? q.kd.n : 1, atkSelect: 2, defPre: 1, defPlace: 2, honSwap: 1, honDiscard: 1, takeBack: 1, inningPick: 1, payHand: 1, discardPick: q.n || 1, pick: q.take || 1 }[q.type] || 0;
   document.querySelectorAll(".chip[data-i]").forEach(b => b.onclick = () => {
     const i = +b.dataset.i, k = SO.sel.indexOf(i);
     if (k >= 0) SO.sel.splice(k, 1); else { if (SO.sel.length >= maxSel) SO.sel.shift(); SO.sel.push(i); }
@@ -2445,6 +3167,10 @@ function wireSolo() {
       case "defPlace": return soloStep({ idx: a === "ok" ? sel : [] });
       case "honSwap": return soloStep(a === "ok" && sel.length && SO.extra.inIdx != null ? { inIdx: SO.extra.inIdx, handIdx: sel[0] } : {});
       case "honDiscard": return soloStep(a === "none" || !sel.length ? {} : { idx: sel[0], mode: a });
+      case "discardPick": return soloStep({ idx: sel });
+      case "pick": return soloStep({ idx: a === "ok" ? sel : [] });
+      case "choice": return soloStep({ i: +b.dataset.i2 });
+      case "payHand": return soloStep(a === "ok" && sel.length ? { idx: sel[0] } : {});
       case "inningPick": return soloStep({ idx: sel[0] != null ? sel[0] : 0 });
       case "inningSwap": { const o = q.options[SO.extra.opt]; return soloStep(a === "ok" && o ? { ii: o.ii, ri: o.ri } : {}); }
       case "result": return soloStep(undefined);
