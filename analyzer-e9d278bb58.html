@@ -304,6 +304,154 @@ function condMatch_(sent, list) {
  * 覚醒札（同じカード）を伏せたとき、その札自身が打者／投手の「サポートエリアに○○があるなら AP+N（DP+N）」を満たすか。
  * 満たすなら覚醒の値に +N が乗る（例：藤原 BP03-M03 は自分も"ビハインド時"の能力を持つので AP+1）。
  */
+/**
+ * 打者／投手の【メイン】の「サポートエリアに○○があるなら AP+N（DP+N）」のうち、伏せた札の集まり cards で満たされるものの合計。
+ * 同じ能力は何枚満たしても1回分。
+ */
+function supportCondBonus_(c, cards) {
+  var sum = 0, kind = c.pos === 1 ? 'DP' : 'AP';
+  abilities_(c.eff).forEach(function (ab) {
+    var head = (ab.match(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/) || [''])[0];
+    if (!/【メイン】/.test(head) || /【覚醒】|【サポート】|起動/.test(head)) return;
+    ab.split(/(?<=。)/).forEach(function (sent) {
+      var m = sent.match(new RegExp('サポートエリアに(.+?)があるなら、(?:打者の|投手の)?' + kind + '\\+(\\d+)'));
+      if (!m) return;
+      var hit = condMatch_(m[1], cards);
+      if (hit && hit.length) sum += +m[2];
+    });
+    // 「サポートエリアの○○1枚につき、DP+1」：満たす札の枚数ぶん
+    ab.split(/(?<=。)/).forEach(function (sent) {
+      var m2 = sent.match(c.pos === 1 ? /サポートエリアの(.+?)1枚につき、(?:投手の)?DP\+(\d+)/ : /サポートエリアの(.+?)1枚につき、(?:打者の)?AP\+(\d+)/);
+      if (!m2) return;
+      cards.forEach(function (x) { var h = condMatch_(m2[1], [x]); if (h && h.length) sum += +m2[2]; });
+    });
+  });
+  return sum;
+}
+
+/**
+ * 伏せ方ごとの最終的な数値（打者は AP、投手は DP）。サポートは宣言の属性に合うものだけ。
+ * 覚醒は同じ番号の札：元々の値＋【覚醒】の無条件の効果（枚数ぶん）。戦術・選手の無条件の効果も足す。
+ */
+/**
+ * 打者・投手自身の【メイン】の能力（【覚醒】【サポート】【コンボ】以外）から、自分の AP/DP が上がる効果を拾う。
+ *  - 「サポートエリアに○○があるなら」は supportCondBonus_ で扱うので除く
+ *  - 前に条件が無いものは uncond、条件つきは conds（「代わりに」で上がるなら大きいほう）
+ */
+function ownStat_(c) {
+  var re = c.pos === 1 ? /(?:投手の)?DP\+(\d+)/ : /(?:打者の)?AP\+(\d+)/;
+  var r = { uncond: 0, conds: [] };
+  abilities_(c.eff).forEach(function (ab) {
+    var head = (ab.match(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/) || [''])[0];
+    if (!/【メイン(・起動)?】/.test(head) || /【覚醒】|【サポート】/.test(head) || /【コンボ】/.test(ab)) return;
+    var body = ab.slice(head.length), best = null, starter = /起動/.test(head);
+    // 頭のアイコンが条件になっているもの（【ZONE②】＝コスト2以上の ZONE 状態の選手がいる、【本領発揮】＝同じカードが出場している、【代打】など）
+    var tagCond = (head.match(/【(ZONE[②③④]|本領発揮|ビハインド時?|リード時?|デッキ40|タイム[①-⑩])】/g) || []).join('');
+    body.split(/(?<=。)/).forEach(function (sent) {
+      var m = sent.match(re);
+      if (!m) return;
+      if (/サポートエリアに.+?があるなら|1枚につき/.test(sent)) return;
+      var pre = sent.slice(0, m.index);
+      var alt = /代わり/.test(pre);
+      var cond = pre.replace(/、?(さらに|代わりに?)、?$/, '').replace(/、$/, '').trim();
+      var n = +m[1];
+      if (!cond && !alt && !starter && !tagCond && !best) { r.uncond += n; return; }
+      if (!cond && tagCond) cond = tagCond;
+      if (best && alt) { if (n > best.n) { best.cond += '（' + cond.replace(/なら$/, '') + 'なら' + n + '）'; best.n = n; } return; }
+      if (best) r.conds.push(best);
+      best = { n: n, cond: (starter ? '起動：' : '') + (cond || body.replace(/。.*$/, '')).slice(0, 70) };
+    });
+    if (best) r.conds.push(best);
+  });
+  return r;
+}
+
+/** 【コンボ】X：伏せた札に X があり（宣言の属性も合えば）AP+N（投手なら DP+N） */
+function comboBonus_(c, set, attr) {
+  var re = c.pos === 1 ? /DP\+(\d+)/ : /AP\+(\d+)/, sum = 0;
+  abilities_(c.eff).forEach(function (ab) {
+    var m = ab.match(/【コンボ】([^:：]+)[:：](.*)$/); if (!m) return;
+    var name = normName_(m[1]);
+    if (!set.some(function (x) { return normName_(x.name) === name; })) return;
+    var a = m[2].match(/(ミート|強振)で(?:勝負|打撃判定)を行うなら/);
+    if (a && a[1] !== attr) return;
+    var v = m[2].match(re);
+    if (v) sum += +v[1];
+  });
+  return sum;
+}
+
+function valueTable_(c, main, zone, zoneOn) {
+  var pit = c.pos === 1, kind = pit ? 'DP' : 'AP', k2 = kind.toLowerCase();
+  var zoneN = zone ? zone[k2] : 0; // 控えに同じ選手のZONE札があれば、ZONE状態でその【メイン】の効果（全ZONE札でAP+1）が乗る
+  var base = pit ? c.dp : c.ap; if (base == null) return null;
+  // 自分自身の【メイン】の効果：無条件と【デッキ40】（メイン40枚なら満たす）は素の値に、それ以外は条件つきの最大に
+  var own = ownStat_(c), mainTotal = main.reduce(function (s2, x) { return s2 + x.num; }, 0);
+  var ownConds = own.conds.filter(function (x) { if (/デッキ40/.test(x.cond) && mainTotal === 40) { own.uncond += x.n; return false; } return true; });
+  base += own.uncond;
+  var ownCondSum = ownConds.reduce(function (s2, x) { return s2 + x.n; }, 0);
+  var awk = awakenStat_(c.eff), awkEff = awk[k2];
+  var awkAltN = (awk[k2 + 'Alt'] || []).reduce(function (m2, x) { return Math.max(m2, x.n); }, 0);
+  // cond=true のときは「代わりに／さらに」で上がる値を使う（条件つきの最大）
+  var cardVal = function (x, attr, cond, used) {
+    if (x.no === c.no) {
+      if (cond && awkAltN > awkEff) { used.push('覚醒の効果：' + awk[k2 + 'Alt'].map(function (a2) { return a2.cond; }).join('／')); return base + awkAltN; }
+      return base + awkEff;
+    }
+    var st = supportStat_(x.eff), eff = st[k2];
+    var altN = (st[k2 + 'Alt'] || []).reduce(function (m2, a2) { return Math.max(m2, a2.n); }, 0);
+    // ZONE後で計算するときは「ZONE状態の選手がいるなら代わりに」も普通の値として使う
+    if (zoneOn) (st[k2 + 'Alt'] || []).forEach(function (a2) { if (/ZONE状態/.test(a2.cond) && a2.n > eff) eff = a2.n; });
+    if (cond && altN > eff) { used.push(x.name + '：' + st[k2 + 'Alt'].map(function (a2) { return a2.cond; }).join('／')); eff = altN; }
+    if (pit) return (x.dpAttr === attr ? dpValue_(x) : 0) + eff;
+    return (x.apAttr === attr ? (x.apSup === '4+' ? 4 : Number(x.apSup) || 0) : 0) + eff;
+  };
+  var total = function (set, attr, cond, used) {
+    used = used || [];
+    // ZONE は一度なれば試合終了まで続く。zoneOn（ZONE後で計算）なら常に、そうでなければ条件つきの最大だけで足す
+    var z = 0; if (zoneN && (zoneOn || cond)) { z = zoneN; if (!zoneOn) used.push('ZONE後（試合終了まで）' + kind + '+' + zoneN); }
+    var oc = 0; if (cond && ownCondSum) { oc = ownCondSum; ownConds.forEach(function (x) { used.push('自分の効果：' + x.cond + ' +' + x.n); }); }
+    return base + z + oc + set.reduce(function (a2, x) { return a2 + cardVal(x, attr, cond, used); }, 0) + supportCondBonus_(c, set) + comboBonus_(c, set, attr);
+  };
+  var dupName = {}; main.forEach(function (x) { var k = normName_(x.name); dupName[k] = (dupName[k] || 0) + 1; });
+  var label = function (x) { return x.name + (dupName[normName_(x.name)] > 1 ? '（' + x.no + '）' : ''); };
+  var nm = function (set) { return set.map(function (x) { return x.no === c.no ? '覚醒' : label(x); }).join('＋'); };
+  var cand = main.filter(function (x) { return x.num > 0 && !/^(勝負師|威圧)$/.test(normName_(x.name)); });
+  var self = cand.find(function (x) { return x.no === c.no; });
+  var others = cand.filter(function (x) { return x.no !== c.no; });
+  // 1つの伏せ方の値：v＝条件を満たしたとき（主に見る値）、v0＝条件を満たさないとき、cond＝使った条件
+  var ev = function (set, attr, prefix) {
+    var used = [];
+    var v = total(set, attr, true, used), v0 = total(set, attr, false);
+    return { v: v, v0: v0, cards: (prefix || '') + nm(set), cond: used.filter(function (x, i, a2) { return a2.indexOf(x) === i; }) };
+  };
+  var better = function (p, q) { return !p || (q && (q.v > p.v || (q.v === p.v && q.v0 > p.v0))) ? q : p; };
+  var out = { kind: kind, base: base + (zoneOn ? zoneN : 0), zone: zoneN, zoneOn: !!zoneOn, ownUncond: own.uncond, ownConds: ownConds, copies: self ? self.num : 0, awk1: null, awk2: null, single: {}, awkPlus: {}, max: {}, shoUse: {}, shoHit: {} };
+  if (self) out.awk1 = ev([self], 'ミート');
+  if (self && self.num >= 2) out.awk2 = ev([self, self], 'ミート');
+  ['ミート', '強振'].forEach(function (attr) {
+    var best = null;
+    others.forEach(function (x) { best = better(best, ev([x], attr)); });
+    out.single[attr] = best;
+    var bp = null, bpRem = null;
+    if (self) others.forEach(function (x) { var e = ev([self, x], attr); var nb = better(bp, e); if (nb === e) { bp = e; bpRem = ev([x], attr); } });
+    out.awkPlus[attr] = bp;
+    // 相手に勝負師・威圧を使われたとき：覚醒札が消えて、もう1枚だけが残る
+    out.shoHit[attr] = bpRem ? Object.assign({}, bpRem, { cards: bpRem.cards + '（覚醒は消える）' }) : null;
+    // 自分が勝負師を使うとき：枠の1つが勝負師なので、残り1枚（覚醒1枚か覚醒以外の1枚の大きいほう）
+    var s1 = better(best ? Object.assign({}, best, { cards: '勝負師＋' + best.cards }) : null, out.awk1 ? Object.assign({}, ev([self], attr), { cards: '勝負師＋覚醒' }) : null);
+    out.shoUse[attr] = s1;
+    var mx = null;
+    for (var i = 0; i < cand.length; i++) {
+      mx = better(mx, ev([cand[i]], attr));
+      if (cand[i].num >= 2) mx = better(mx, ev([cand[i], cand[i]], attr));
+      for (var j = i + 1; j < cand.length; j++) mx = better(mx, ev([cand[i], cand[j]], attr));
+    }
+    out.max[attr] = mx;
+  });
+  return out;
+}
+
 function selfSupportBonus_(c) {
   var out = [], kind = c.pos === 1 ? 'DP' : 'AP';
   abilities_(c.eff).forEach(function (ab) {
@@ -745,6 +893,9 @@ function analyzeDeck(deck, db, opt) {
   ];
 
   return {
+    hasShobushi: main.some(function (x) { return normName_(x.name) === '勝負師'; }),
+    hasIatsu: main.some(function (x) { return normName_(x.name) === '威圧'; }),
+    values: order.filter(function (c) { return c.kind === '選手'; }).map(function (c) { var z = zones.find(function (zz) { return normName_(zz.name).replace(/【ZONE】/, '') === normName_(c.name); }); return { no: c.no, name: c.name, pos: POS_SHORT[c.pos], role: c.role || (c.pinch ? '代打' : ''), slot: c.slot, t: valueTable_(c, main, z ? supportStat_(z.eff, /【メイン】/) : null, !!opt.zoneOn) }; }).filter(function (x) { return x.t; }),
     draws: draws, env: env, diceCards: diceCards, teamDice: teamDice,
     title: deck.title || '', code: deck.deck_id || '', team: team, checks: checks, summary: summary,
     starter: starter ? { name: starter.name, dp: starter.dp, hand: H } : null, hand: H, deckSize: N, oppDice: diceMod,
@@ -755,6 +906,36 @@ function analyzeDeck(deck, db, opt) {
 }
 
 /** 2つのデッキの違い（メインの枚数差・サマリー差・打順差） */
+/**
+ * 対戦表：攻撃側の打者×守備側の投手を、伏せ方の組み合わせごとに比べる（AP ≧ DP なら打撃判定、DP が上ならアウト）。
+ * atk / def は analyzeDeck の結果。勝負師の場面は、それぞれのデッキに勝負師が入っているときだけ。
+ */
+function matchupTable(atk, def) {
+  var bats = atk.values.filter(function (v) { return v.t.kind === 'AP'; });
+  var pits = def.values.filter(function (v) { return v.t.kind === 'DP'; });
+  var rows = [];
+  pits.forEach(function (p) {
+    bats.forEach(function (b) {
+      var sc = [];
+      var push = function (label, A, D) {
+        var na = !A || !D;
+        sc.push({ label: label, na: na, ap: na ? null : A.v, dp: na ? null : D.v, ap0: na ? null : A.v0, dp0: na ? null : D.v0, hit: na ? null : A.v >= D.v, hit0: na ? null : A.v0 >= D.v0,
+          an: na ? '' : A.cards + (A.cond.length ? '〔' + A.cond.join('／') + '〕' : ''), dn: na ? '' : D.cards + (D.cond.length ? '〔' + D.cond.join('／') + '〕' : '') });
+      };
+      var defKill = def.hasShobushi && def.hasIatsu ? '勝負師か威圧' : def.hasShobushi ? '勝負師' : def.hasIatsu ? '威圧' : '';
+      ['ミート', '強振'].forEach(function (attr) {
+        var B = b.t, P = p.t;
+        push(attr + '：覚醒1枚 vs 覚醒1枚', B.awk1, P.awk1);
+        push(attr + '：最大 vs 最大', B.max[attr], P.max[attr]);
+        if (defKill) push(attr + '：覚醒＋1枚 vs ' + defKill + '＋1枚', B.shoHit[attr], P.shoUse[attr] && Object.assign({}, P.shoUse[attr], { cards: P.shoUse[attr].cards.replace('勝負師', defKill) }));
+        if (atk.hasShobushi) push(attr + '：勝負師＋1枚 vs 覚醒＋1枚', B.shoUse[attr], P.shoHit[attr]);
+      });
+      rows.push({ bat: b.name, batNo: b.no, pit: p.name, pitNo: p.no, pitRole: p.role, sc: sc });
+    });
+  });
+  return rows;
+}
+
 function compareDecks(a, b) {
   var rowsA = {}, rowsB = {};
   a.twoWay.concat(a.tactics).forEach(function (r) { rowsA[r.no] = r; });
@@ -772,7 +953,7 @@ function compareDecks(a, b) {
   return { main: diff, summary: sum, batting: bat };
 }
 
-if (typeof module !== 'undefined') module.exports = { normalizeDeck: normalizeDeck, analyzeDeck: analyzeDeck, compareDecks: compareDecks, parseDeckText: parseDeckText, deckToText: deckToText, parseBase_: parseBase_, probAtLeastOne_: probAtLeastOne_, judgeProb_: judgeProb_, teamOf_: teamOf_ };
+if (typeof module !== 'undefined') module.exports = { matchupTable: matchupTable, normalizeDeck: normalizeDeck, analyzeDeck: analyzeDeck, compareDecks: compareDecks, parseDeckText: parseDeckText, deckToText: deckToText, parseBase_: parseBase_, probAtLeastOne_: probAtLeastOne_, judgeProb_: judgeProb_, teamOf_: teamOf_ };
 
 </script>
 <script>
@@ -785,7 +966,7 @@ const LS = (() => { try { const k = "__t"; localStorage.setItem(k, "1"); localSt
 const lsGet = (k, d) => { try { const v = LS && LS.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
 const lsSet = (k, v) => { try { LS && LS.setItem(k, JSON.stringify(v)); } catch (e) {} };
 
-const S = { A: null, B: null, origA: null, tab: lsGet("dorio_an_tab", "summary"), oppDice: 0 };
+const S = { A: null, B: null, origA: null, tab: lsGet("dorio_an_tab", "summary"), oppDice: 0, zoneA: false, zoneB: false };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const pct = p => p == null ? "—" : Math.round(p * 100) + "%";
@@ -856,7 +1037,7 @@ function renderOpp() {
 }
 
 const TABS = [
-  ["summary", "サマリー"], ["batting", "打順・投手"], ["twoway", "攻守2役"], ["synergy", "シナジー"],
+  ["summary", "サマリー"], ["batting", "打順・投手"], ["twoway", "攻守2役"], ["values", "伏せたときの数値"], ["matchup", "対戦表"], ["synergy", "シナジー"],
   ["tp", "TP・手札"], ["prob", "引ける確率"], ["edit", "入れ替えを試す"], ["compare", "比較"], ["export", "書き出し"],
 ];
 function renderTabs() {
@@ -864,17 +1045,18 @@ function renderTabs() {
   $("#tabs").querySelectorAll("button").forEach(b => b.onclick = () => { S.tab = b.dataset.k; lsSet("dorio_an_tab", S.tab); render(); });
 }
 
-function analyze(d) { return d ? analyzeDeck(d, DB, { oppDice: S.oppDice }) : null; }
+function analyze(d, zoneOn) { return d ? analyzeDeck(d, DB, { oppDice: S.oppDice, zoneOn: !!zoneOn }) : null; }
 
 function render() {
   renderTabs();
   const v = $("#view");
   if (!S.A) { v.innerHTML = '<div class="empty">DeckLog のデッキコードを入れて「読み込む」を押してください。DeckLog で公開されているデッキならそのまま読み込めます。</div>'; return; }
-  const a = analyze(S.A), b = analyze(S.B);
+  const a = analyze(S.A, S.zoneA), b = analyze(S.B, S.zoneB);
   const head = `<div class="row" style="justify-content:space-between;margin-bottom:10px"><div><span class="tag a">A</span> <b>${esc(a.title || "（無題）")}</b> <span class="muted small">${esc(a.code)}　${esc(a.team.name)}</span>${isEdited() ? ' <span class="badge pin">入れ替え中</span>' : ""}</div>${b ? `<div><span class="tag b">B</span> <b>${esc(b.title || "（無題）")}</b> <span class="muted small">${esc(b.code)}</span></div>` : ""}</div>`;
-  const fn = { summary: vSummary, batting: vBatting, twoway: vTwoWay, synergy: vSynergy, tp: vTp, prob: vProb, edit: vEdit, compare: vCompare, export: vExport }[S.tab] || vSummary;
+  const fn = { summary: vSummary, batting: vBatting, twoway: vTwoWay, values: vValues, matchup: vMatchup, synergy: vSynergy, tp: vTp, prob: vProb, edit: vEdit, compare: vCompare, export: vExport }[S.tab] || vSummary;
   v.innerHTML = head + fn(a, b);
   v.querySelectorAll(".cname").forEach(el => el.onclick = () => openCard(el.dataset.no));
+  if (S.tab === "values" || S.tab === "matchup") wireZone();
   if (S.tab === "edit") wireEdit();
   if (S.tab === "export") wireExport(a);
 }
@@ -930,6 +1112,26 @@ function vBatting(a) {
   ${zone.length ? `<p class="small">ZONE選手：${zone.map(z => cname(z.no, z.name)).join("・")}</p>` : ""}`;
 }
 
+const zoneToggle = (a, b) => `<div class="row small" style="margin-bottom:8px"><label><input type="checkbox" id="zoneA" ${S.zoneA ? "checked" : ""}> A を ZONE 後で計算</label>${b ? `<label><input type="checkbox" id="zoneB" ${S.zoneB ? "checked" : ""}> B を ZONE 後で計算</label>` : ""}<span class="muted">（ZONE は一度なれば試合終了まで続く。オンにすると ZONE 札がある選手は素の値から +1、研ぎ澄まされた一振りの「ZONE 状態なら代わりに AP+3」も通常の値として計算）</span></div>`;
+function wireZone() { const za = $("#zoneA"), zb = $("#zoneB"); if (za) za.onchange = () => { S.zoneA = za.checked; render(); }; if (zb) zb.onchange = () => { S.zoneB = zb.checked; render(); }; }
+function vValues(a, b) {
+  // 主に見る値＝条件を満たしたとき。条件を満たさないと下がる分を「条件なし −N」で出す
+  const cell = x => !x ? '<span class="muted">—</span>' : `<b class="num" style="font-size:17px">${x.v}</b>${x.v0 < x.v ? ` <span class="small warnc">条件なし −${x.v - x.v0}</span>` : ""}<div class="small muted">${esc(x.cards)}</div>${x.cond && x.cond.length ? `<div class="small hl" style="padding:0 3px;border-radius:3px">${x.cond.map(esc).join("<br>")}</div>` : ""}`;
+  const both = o => `<td>${o["ミート"] ? `<span class="meet small">ミート</span> ${cell(o["ミート"])}` : '<span class="muted small">—</span>'}</td><td>${o["強振"] ? `<span class="power small">強振</span> ${cell(o["強振"])}` : '<span class="muted small">—</span>'}</td>`;
+  const tbl = (rows, kind) => `<div class="scroll"><table style="min-width:1750px"><thead><tr><th>選手</th><th class="n">素の${kind}</th><th>覚醒1枚</th><th colspan="2">覚醒以外の1枚（一番大きいもの）</th><th>ダブル覚醒</th><th colspan="2">覚醒1枚＋1枚</th><th colspan="2">最大（2枚まで）</th><th colspan="2">相手に勝負師・威圧を使われたら</th><th colspan="2">自分が勝負師を使うとき</th></tr></thead><tbody>
+  ${rows.map(v => { const t = v.t; return `<tr><td>${cname(v.no, v.name)}<div class="small muted">${esc(v.pos)}${v.role ? "・" + esc(v.role) : ""}　メインに同番号 ${t.copies}枚</div>${t.zone ? `<span class="badge awk">ZONE札あり（ZONE後 ${t.kind}+${t.zone}${t.zoneOn ? "・計算に込み" : ""}）</span>` : ""}${(t.ownConds || []).length ? `<div class="small muted" style="margin-top:3px">自分の条件つき効果：${t.ownConds.map(x => esc(x.cond) + " +" + x.n).join("／")}</div>` : ""}</td>
+   <td class="n num" style="font-size:16px">${t.base}</td>
+   <td style="min-width:110px">${cell(t.awk1)}</td>
+   ${both(t.single)}
+   <td style="min-width:110px">${cell(t.awk2)}</td>
+   ${both(t.awkPlus)}${both(t.max)}${both(t.shoHit)}${both(t.shoUse)}</tr>`; }).join("")}</tbody></table></div>`;
+  const bat = a.values.filter(v => v.t.kind === "AP"), pit = a.values.filter(v => v.t.kind === "DP");
+  return zoneToggle(a, b) + `<p class="note" style="margin-top:0">サポートエリアに伏せる札（1〜2枚）ごとに、最後に出る数値（打者は AP、投手は DP）。<b>大きい数字は条件を満たしたとき</b>（条件つきの札を置く前提）。条件を満たさないと下がる分を「条件なし −N」で、使った条件を黄色で出している。<br>
+  入れているもの：サポート値（宣言の属性に合う札だけ）、覚醒（元々の値＋【覚醒】の効果、枚数ぶん）、伏せた札の効果（好球必打の AP+2、強心臓の DP+2・走者二三塁で DP+4、研ぎ澄まされた一振りの AP+2・ZONE で AP+3 など）、その選手の「サポートエリアに○○があるなら」「○○1枚につき」「【コンボ】」、その選手自身の条件つき効果（走者・ビハインド・起動・代打で出たとき など）、ZONE 後の +1。<br>
+  入れていないもの：カード効果のダイス＋、相手のカード効果によるマイナス。「4以上」のサポートは 4 として計算（内野警戒・外野警戒は 5、不屈は 4）。ダブル覚醒・2枚の組み合わせはメインの枚数の範囲で。「勝負師・威圧を使われたら」は「覚醒1枚＋1枚」の覚醒札が消えて、もう1枚だけ残ったとき。「自分が勝負師を使うとき」は勝負師＋1枚。</p>${a.hasShobushi ? "" : '<p class="note">このデッキには勝負師が入っていないので「自分が勝負師を使うとき」は参考値。</p>'}
+  <h3>打者（攻撃）</h3>${tbl(bat, "AP")}
+  <h3>投手（守備）</h3>${tbl(pit, "DP")}`;
+}
 const totHtml = (tot, kind, eff) => tot ? `<div class="small">効果で${kind}+${eff}（属性問わず）<br><b>実質 <span class="meet">ミート${kind}${tot["ミート"]}</span>・<span class="power">強振${kind}${tot["強振"]}</span></b></div>` : "";
 const altHtml = (alts, kind, base, eff) => (alts || []).map(x => { const d = x.n - eff; return `<div class="small hl" style="padding:1px 4px;border-radius:4px;margin-top:2px">${esc(x.cond)}なら代わりに${kind}+${x.n}<br>→ <span class="meet">ミート${kind}${base["ミート"] + d}</span>・<span class="power">強振${kind}${base["強振"] + d}</span></div>`; }).join("");
 const atkHtml = r => supHtml(r.atkSup) + totHtml(r.atkTotal, "AP", r.effAp) + (r.atkTotal ? altHtml(r.effApAlt, "AP", r.atkTotal, r.effAp) : "");
@@ -1064,6 +1266,23 @@ function wireEdit() {
   };
 }
 
+function vMatchup(a, b) {
+  if (!b) return '<div class="empty">「B 比べるデッキ」に相手のデッキを入れると、自分の打者×相手の投手、相手の打者×自分の投手を、伏せ方の組み合わせごとに比べます。</div>';
+  const block = (rows, title, atkName, defName) => {
+    const pits = [...new Set(rows.map(r => r.pit))];
+    return `<h3>${esc(title)}</h3>` + pits.map(p => {
+      const rs = rows.filter(r => r.pit === p);
+      const labels = rs[0] ? rs[0].sc.map(s => s.label) : [];
+      return `<div class="small" style="margin:8px 0 4px"><b>${esc(defName)}の投手：${esc(p)}</b>${rs[0] && rs[0].pitRole ? "（" + esc(rs[0].pitRole) + "）" : ""}</div>
+      <div class="scroll"><table style="min-width:${300 + labels.length * 110}px"><thead><tr><th>${esc(atkName)}の打者</th>${labels.map(l => `<th class="small">${esc(l)}</th>`).join("")}</tr></thead><tbody>
+      ${rs.map(r => `<tr><td>${cname(r.batNo, r.bat)}</td>${r.sc.map(s => s.na ? '<td class="small muted">—</td>' : `<td class="small" title="${esc(s.an + ' / ' + s.dn)}"><b class="num ${s.hit ? "ok" : "ng"}" style="font-size:15px">${s.ap}</b> vs <b class="num">${s.dp}</b><br>${s.hit ? '<span class="ok">打撃判定</span>' : '<span class="ng">アウト</span>'}${(s.ap0 !== s.ap || s.dp0 !== s.dp) ? `<div class="muted">条件なし ${s.ap0} vs ${s.dp0}${s.hit0 !== s.hit ? (s.hit0 ? '→打撃判定' : '→アウト') : ''}</div>` : ''}</td>`).join("")}</tr>`).join("")}
+      </tbody></table></div>`;
+    }).join("");
+  };
+  return zoneToggle(a, b) + `<p class="note" style="margin-top:0">数字は「伏せたときの数値」タブの値どうし（打者の AP vs 投手の DP）。大きい数字はどちらも条件を満たしたとき、下の「条件なし」はどちらも満たさないとき（結果が変わるときは→で表示）。AP が DP 以上なら打撃判定、DP が上ならアウト。カード効果のダイス＋や試合中の条件（走者・ビハインドなど）は入っていない。勝負師・威圧の場面は、それを持っているデッキのときだけ出す（威圧は守備のみ）。覚醒札が無いなど、その場面が成り立たない欄は「—」。セルにマウスを乗せると、伏せた札が出る。</p>
+  ${block(matchupTable(a, b), "自分が攻撃（A の打者 × B の投手）", "A", "B")}
+  ${block(matchupTable(b, a), "相手が攻撃（B の打者 × A の投手）", "B", "A")}`;
+}
 function vCompare(a, b) {
   if (!b) return '<div class="empty">「B 比べるデッキ」にコードを入れると、ここに違いが出ます。入れ替えタブの「元のデッキをBに置いて比べる」でも使えます。</div>';
   const c = compareDecks(a, b);
