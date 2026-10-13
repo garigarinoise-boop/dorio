@@ -1482,6 +1482,13 @@ function simRun_(SA, SB, opt) {
       ansA = yield { type: 'atkSelect', side: atk, batter: b, pitcher: pit, preview: prevA, pitDP: { ミート: calc(pit, [], 'ミート', sitD), 強振: calc(pit, [], '強振', sitD) }, kidouOn: sit.kidou };
       attr = (ansA && ansA.attr) || 'ミート';
     }
+    // 攻撃の方針（opt.atkPlan[チーム] = { def: 全体, per: { 打者の番号: 方針 } }）。auto は手札で決める
+    if (!attr && !atk.human && opt.atkPlan && opt.atkPlan[atk.key]) {
+      var pl = opt.atkPlan[atk.key], md = (pl.per && pl.per[b.no]) || pl.def || 'auto';
+      if (md === 'ミート' || md === '強振') attr = md;
+      else if (md === 'norunnerPower') attr = runner ? 'ミート' : '強振';
+      else if (md === 'rispPower') attr = risp ? '強振' : 'ミート';
+    }
     if (!attr) {
       var tot = def.obsDef['ミート'] + def.obsDef['強振'];
       var gap = function (a) {
@@ -1743,7 +1750,7 @@ function simulateGame2(XA, XB, opt) {
     innA: [0, 0, 0], innB: [0, 0, 0], relA: 0, relB: 0, zoneA: 0, zoneB: 0, pinchA: 0, pinchB: 0, refresh: 0, swapsA: 0, swapsB: 0, mullA: 0, mullB: 0, tpLeftA: 0, tpLeftB: 0, scores: {} };
   for (var tr = 0; tr < trials; tr++) {
     var aFirst = tr % 2 === 0;
-    var R = simRun_(SA, SB, { rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn });
+    var R = simRun_(SA, SB, { rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -1796,7 +1803,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
@@ -1824,7 +1831,7 @@ function simulateScene2(XA, XB, attr, opt) {
 function* soloGame(XA, XB, opt) {
   opt = opt || {};
   var SA = simSide_(XA), SB = simSide_(XB);
-  var R = simRun_(SA, SB, { rnd: opt.rnd, swapLevel: opt.swapLevel, memo: {}, worthMemo: {}, human: 'A', mulligan: false, log: opt.log, bet: opt.bet, adapt: opt.adapt });
+  var R = simRun_(SA, SB, { rnd: opt.rnd, swapLevel: opt.swapLevel, memo: {}, worthMemo: {}, human: 'A', mulligan: false, log: opt.log, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan });
   R.A.human = true;
   var ctx = { R: R, inn: 1, top: true, half: null, atkKey: null, line: { A: [], B: [] }, aFirst: !!opt.aFirst, over: false };
   var relay = function* (it) { var r = it.next(); while (!r.done) { r.value.ctx = ctx; var a = yield r.value; r = it.next(a); } return r.value; };
@@ -1887,8 +1894,11 @@ const $ = (s, el = document) => el.querySelector(s);
 const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const pc = x => (x * 100).toFixed(0) + "%";
 const S = { A: null, B: null, tab: lsGet("dorio_sim_tab", "game"), lv: 1, trials: 1000, res: {}, sceneIdx: 0, lead: null, running: false, betA: lsGet("dorio_sim_betA", "強振"), betB: lsGet("dorio_sim_betB", "強振"), adA: lsGet("dorio_sim_adA", 2), adB: lsGet("dorio_sim_adB", 2) };
-const betOpt = () => ({ bet: { A: S.betA, B: S.betB }, adapt: { A: S.adA, B: S.adB } });
-const betKey = () => [S.betA, S.betB, S.adA, S.adB].join(",");
+const planOf = k => { const X = S[k] && S[k].X; const key = "dorio_sim_plan_" + (X && (X.code || X.title) || k); return S["plan" + k] && S["plan" + k]._key === key ? S["plan" + k] : (S["plan" + k] = Object.assign({ def: "auto", per: {} }, lsGet(key, {}), { _key: key })); };
+const savePlan = k => { const p = planOf(k); lsSet(p._key, { def: p.def, per: p.per }); };
+const planOpt = () => ({ A: { def: planOf("A").def, per: planOf("A").per }, B: { def: planOf("B").def, per: planOf("B").per } });
+const betOpt = () => ({ bet: { A: S.betA, B: S.betB }, adapt: { A: S.adA, B: S.adB }, atkPlan: planOpt() });
+const betKey = () => [S.betA, S.betB, S.adA, S.adB, JSON.stringify(planOpt())].join(",");
 const SWAP_LV = ["控えめ", "標準", "積極"];
 const SCENES = [
   { label: "1回・同点", start: 1, diff: 0, lead: 0 },
@@ -1941,9 +1951,21 @@ const head = () => `<div class="row" style="justify-content:space-between;margin
 const lvSel = id => `<label>投手の「手札を捨てて引く」効果（石田など）の使い方 <select id="${id}">${SWAP_LV.map((x, i) => `<option value="${i}" ${i === S.lv ? "selected" : ""}>${x}</option>`).join("")}</select></label>`;
 const AD_OPTS = [[1, "相手が逆を1回多く宣言したら"], [2, "相手が逆を2回多く宣言したら"], [3, "相手が逆を3回多く宣言したら"], [99, "張り替えない"]];
 const betRow = (who, k, ak) => `<span class="small"><b>${who}の守備</b>　張る属性（得点圏の外）：<select id="bet${k}">${["強振", "ミート"].map(a => `<option ${S["bet" + k] === a ? "selected" : ""}>${a}</option>`).join("")}</select>　張り替え：<select id="ad${k}">${AD_OPTS.map(([v, l]) => `<option value="${v}" ${S[ak] === v ? "selected" : ""}>${l}</option>`).join("")}</select></span>`;
+const PLAN_OPTS = [["auto", "手札で決める（自動）"], ["ミート", "ミート"], ["強振", "強振"], ["norunnerPower", "走者なしは強振、走者ありはミート"], ["rispPower", "得点圏は強振、それ以外はミート"]];
+const planRow = (who, k) => {
+  const p = planOf(k), X = S[k].X, bats = X.values.filter(v => v.t.kind === "AP");
+  const opt = (sel, list) => list.map(([v, l]) => `<option value="${v}" ${sel === v ? "selected" : ""}>${l}</option>`).join("");
+  const nper = Object.keys(p.per).filter(no => p.per[no]).length;
+  return `<div class="small"><b>${who}の攻撃</b>　宣言：<select class="plandef" data-k="${k}">${opt(p.def, PLAN_OPTS)}</select>
+    <details style="display:inline-block;margin-left:8px"><summary>打者ごとに決める${nper ? `（${nper}人 設定中）` : ""}</summary>
+    <table style="width:auto;margin-top:4px"><tbody>${bats.map((v, i) => `<tr><td>${v.role === "代打" ? "代打" : (i + 1) + "番"}</td><td>${esc(v.name)}</td><td><select class="planper" data-k="${k}" data-no="${esc(v.no)}">${opt(p.per[v.no] || "", [["", "全体と同じ"]].concat(PLAN_OPTS))}</select></td></tr>`).join("")}</tbody></table></details></div>`;
+};
+const atkSel = (onlyB) => `<div class="row" style="gap:6px 14px;margin-bottom:8px;flex-direction:column;align-items:flex-start">${onlyB ? "" : planRow("自分", "A")}${planRow("仮想敵（CPU）", "B")}</div>`;
 const betSel = (onlyB) => `<div class="row" style="gap:6px 14px;margin-bottom:8px;flex-direction:column;align-items:flex-start">${onlyB ? "" : betRow("自分", "A", "adA")}${betRow("仮想敵（CPU）", "B", "adB")}</div>`;
 const trSel = id => `<label>回数 <select id="${id}">${[300, 1000, 3000].map(n => `<option value="${n}" ${n === S.trials ? "selected" : ""}>${n}試合</option>`).join("")}</select></label>`;
 function wireCommon() {
+  document.querySelectorAll(".plandef").forEach(el => el.onchange = () => { planOf(el.dataset.k).def = el.value; savePlan(el.dataset.k); render(); });
+  document.querySelectorAll(".planper").forEach(el => el.onchange = () => { const p = planOf(el.dataset.k); if (el.value) p.per[el.dataset.no] = el.value; else delete p.per[el.dataset.no]; savePlan(el.dataset.k); render(); });
   ["A", "B"].forEach(k => { const be = $("#bet" + k); if (be) be.onchange = () => { S["bet" + k] = be.value; lsSet("dorio_sim_bet" + k, be.value); render(); }; const ad = $("#ad" + k); if (ad) ad.onchange = () => { S["ad" + k] = +ad.value; lsSet("dorio_sim_ad" + k, +ad.value); render(); }; });
   const lv = $("#lv"); if (lv) lv.onchange = () => { S.lv = +lv.value; render(); };
   const tr = $("#tr"); if (tr) tr.onchange = () => { S.trials = +tr.value; render(); };
@@ -1971,7 +1993,7 @@ function mergeGame(acc, g, w) {
 }
 function vGame() {
   const key = [S.lv, S.trials, betKey()].join("|"), r = S.res.game && S.res.game.key === key ? S.res.game.r : null;
-  const ctrl = betSel() + `<div class="row small" style="gap:12px;margin-bottom:8px">${lvSel("lv")}${trSel("tr")}<button id="run" class="primary">${r ? "もう一度計算する" : "計算する"}</button></div>`;
+  const ctrl = betSel() + atkSel() + `<div class="row small" style="gap:12px;margin-bottom:8px">${lvSel("lv")}${trSel("tr")}<button id="run" class="primary">${r ? "もう一度計算する" : "計算する"}</button></div>`;
   if (!r) return ctrl + `<p class="note">自分と仮想敵を3イニング戦わせて、勝ち・引き分け・負けの割合を数えます（先攻・後攻を半分ずつ）。1000試合で10秒ほどかかります。決まりは「前提と決まり」タブにあります。</p>`;
   // 効果ごとに1行。自分・仮想敵のどちらで働いたかを列に分ける
   const evTable = r => {
@@ -2011,15 +2033,15 @@ function vScene() {
   const sc = SCENES[S.sceneIdx], lead = S.lead == null ? sc.lead : S.lead;
   const bats = S.A.X.values.filter(v => v.t.kind === "AP" && v.role !== "代打").slice(0, 9);
   const key = [S.lv, S.sceneIdx, lead, S.trials, betKey()].join("|"), r = S.res.scene && S.res.scene.key === key ? S.res.scene.r : null;
-  const ctrl = betSel(true) + `<div class="row small" style="gap:12px;margin-bottom:8px"><label>場面 <select id="sc">${SCENES.map((x, i) => `<option value="${i}" ${i === S.sceneIdx ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
+  const ctrl = betSel(true) + `<div class="small" style="margin-bottom:6px">${planRow("自分", "A")}</div>` + `<div class="row small" style="gap:12px;margin-bottom:8px"><label>場面 <select id="sc">${SCENES.map((x, i) => `<option value="${i}" ${i === S.sceneIdx ? "selected" : ""}>${esc(x.label)}</option>`).join("")}</select></label>
    <label>先頭打者 <select id="ld">${bats.map((x, i) => `<option value="${i}" ${i === lead ? "selected" : ""}>${i + 1}番 ${esc(x.name)}</option>`).join("")}</select></label>${lvSel("lv")}${trSel("tr")}<button id="run" class="primary">${r ? "もう一度計算する" : "計算する"}</button></div>`;
-  const note = `<p class="note">その回だけ、自分の攻撃を回します。<b>毎打席ミート</b>・<b>毎打席強振</b>・<b>手札で選ぶ</b>の3通り。手札は初手と同じ枚数から始めます（2回・3回は実際と違うので目安）。最終回は仮想敵の継投も入ります。</p>`;
+  const note = `<p class="note">その回だけ、自分の攻撃を回します。<b>毎打席ミート</b>・<b>毎打席強振</b>・<b>攻撃の設定どおり</b>（上の「自分の攻撃」の設定）の3通り。手札は初手と同じ枚数から始めます（2回・3回は実際と違うので目安）。最終回は仮想敵の継投も入ります。</p>`;
   if (!r) return ctrl + note;
   const need = -sc.diff;
   const row = (l, x) => `<tr><td>${l}</td><td class="n num"><b>${x.runs.toFixed(2)}</b></td><td class="n num">${pc(x.p1)}</td><td class="n num">${pc(x.p2)}</td>${need > 0 ? `<td class="n num">${pc(x.pTie)}</td><td class="n num">${pc(x.pAhead)}</td>` : `<td class="n num">${pc(x.pAhead)}</td>`}</tr>`;
   const per = (x) => x.perPA.filter(p => p.reach >= 0.02).map(p => `<tr><td class="num">${p.k}</td><td>${esc(p.batter)}${p.reach < 0.995 ? ` <span class="small muted">（回る ${pc(p.reach)}）</span>` : ""}</td><td class="n num">${pc(p.through)}</td><td class="n num">${pc(p.hit)}</td><td class="n num">${pc(p.xbh)}</td><td class="n num muted">${pc(p.defDry)}</td></tr>`).join("");
   return ctrl + note + `<table><thead><tr><th>${esc(sc.label)}</th><th class="n">得点</th><th class="n">1点以上</th><th class="n">2点以上</th>${need > 0 ? '<th class="n">追いつく</th><th class="n">逆転</th>' : '<th class="n">' + (need === 0 ? "勝ち越し" : "リードを保つ") + "</th>"}</tr></thead><tbody>
-  ${row("毎打席ミート", r.m)}${row("毎打席強振", r.p)}${row("手札で選ぶ", r.a)}</tbody></table>
+  ${row("毎打席ミート", r.m)}${row("毎打席強振", r.p)}${row("攻撃の設定どおり", r.a)}</tbody></table>
   <h3>打席ごと（毎打席ミート／毎打席強振）</h3><p class="small muted">通る＝AP が DP 以上。出塁＝単打以上。札なし＝その打席の前に、仮想敵の手札にその属性の DP を上げる札が1枚も無かった割合。</p>
   <div class="loaders"><div><b class="small">毎打席ミート</b><div class="scroll"><table style="min-width:420px"><thead><tr><th>打席</th><th>打者</th><th class="n">通る</th><th class="n">出塁</th><th class="n">長打</th><th class="n">札なし</th></tr></thead><tbody>${per(r.m)}</tbody></table></div></div>
   <div><b class="small">毎打席強振</b><div class="scroll"><table style="min-width:420px"><thead><tr><th>打席</th><th>打者</th><th class="n">通る</th><th class="n">出塁</th><th class="n">長打</th><th class="n">札なし</th></tr></thead><tbody>${per(r.p)}</tbody></table></div></div></div>`;
@@ -2060,7 +2082,7 @@ function vRules() {
   ・3イニング。後攻が3回表の終わりでリードしていれば3回裏なし、3回裏に勝ち越せば終了。同点は引き分け（延長なし）。<br>
   <h3>判断の決まり（両チーム同じ）</h3>
   ・守備：得点圏の外では、画面で選んだ属性（既定は強振）に張る。相手がこの試合で逆の属性を、選んだ回数（既定は2回）以上多く宣言していれば張り替える。手札が初手の枚数以上なら2枚、少なければ1枚。得点圏では勝負師／威圧＋1枚、無ければミート・強振の低いほうが高くなる2枚（強心臓も使う）。得点圏の外でも、手札に余裕があり相手打者の覚醒札が残っていそうなら 35% で勝負師・威圧を混ぜる。同じ値なら選手札を先に伏せる。中嶋の「捨てて DP+4」は、捨てられる札があれば見込んで選ぶ。<br>
-  ・攻撃：手札で伏せられる値と相手投手の素の DP の差で宣言し、相手がこの試合で張ってこなかった属性に少し寄せる。覚醒札は、相手の伏せた札に勝負師・威圧が入っている見込み（見えていない枚数と相手の手札の枚数から計算、得点圏ほど高く見る）で割り引いて比べる。得点圏の外では守備の要の札（先発と同じ番号・強心臓・不屈・DP4以上。打者本人の覚醒札は除く）を使わない。2枚伏せるのは得点圏か、手札に初手より2枚以上余裕があるとき。<br>
+  ・攻撃：画面の「攻撃」の設定（全体・打者ごと）で宣言を決める。「手札で決める（自動）」なら、手札で伏せられる値と相手投手の素の DP の差で宣言し、相手がこの試合で張ってこなかった属性に少し寄せる。覚醒札は、相手の伏せた札に勝負師・威圧が入っている見込み（見えていない枚数と相手の手札の枚数から計算、得点圏ほど高く見る）で割り引いて比べる。得点圏の外では守備の要の札（先発と同じ番号・強心臓・不屈・DP4以上。打者本人の覚醒札は除く）を使わない。2枚伏せるのは得点圏か、手札に初手より2枚以上余裕があるとき。<br>
   ・ZONE：ZONE 選手の最初の打席で使う。代打：最終回、得点圏かビハインドで代打のほうが値が高いとき。継投：最終回の守備で、先発で使う札（覚醒札・強心臓・不屈）が手札に無くなったら抑え（いなければ中継ぎ）に。TP は継投・ZONE のぶんを残してから代打・【タイム①】に使う。<br>
   ・投手の「手札を捨てて引く」（石田など）：控えめ＝特殊能力なしで DP が上がらない札だけ捨てる／標準＝得点圏では攻撃用の戦術も捨てる／積極＝守備札が4枚以上なら警戒も捨てる。<br>
   ・3アウトでイニングエリアに置く札：引ける札（寺地の【本領発揮】など）、黒木で同じ名前の2枚になる札、投手・捕手を優先。黒木はイニングとレストを入れ替えて同じ名前の2枚を作れるなら作る。<br>
@@ -2113,7 +2135,7 @@ function boardHtml(req) {
     <div class="loaders">${side(A, true)}${side(B, false)}</div>`;
 }
 function vSolo() {
-  if (!SO.req) return betSel(true) + `<div class="row small" style="gap:12px;margin-bottom:8px"><label><input type="checkbox" id="soFirst" ${SO.aFirst ? "checked" : ""}> 自分が先攻</label>${lvSel("lv")}<button id="soStart" class="primary">試合を始める</button></div>
+  if (!SO.req) return betSel(true) + atkSel(true) + `<div class="row small" style="gap:12px;margin-bottom:8px"><label><input type="checkbox" id="soFirst" ${SO.aFirst ? "checked" : ""}> 自分が先攻</label>${lvSel("lv")}<button id="soStart" class="primary">試合を始める</button></div>
     <p class="note">自分のデッキを1打席ずつ操作し、仮想敵は CPU が回します（CPU の判断は「前提と決まり」タブの型）。カードにマウスを乗せると効果が出ます。${SO.log.length ? "" : ""}</p>${SO.log.length ? `<h3>前の試合の記録</h3><div class="small" style="max-height:300px;overflow:auto">${SO.log.map(esc).join("<br>")}</div>` : ""}`;
   const q = SO.req, me = q.ctx.R.A;
   let panel = "";
