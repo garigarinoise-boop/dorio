@@ -117,7 +117,7 @@ h3:first-child{margin-top:0}
   <p class="panel small" style="padding:9px 14px;margin-bottom:14px">知り合い内で使っているツールです。<b>URL を SNS などに載せたり、ほかの人に広めたりしないでください。</b></p>
   <div class="loaders">
     <section class="panel loader" data-slot="A">
-      <h2><span class="tag a">A</span>分析するデッキ</h2>
+      <h2><span class="tag a">自分</span>分析するデッキ</h2>
       <div class="row"><input type="text" class="code" placeholder="DeckLogのデッキコード（例 1KQZVE）" style="flex:1;min-width:160px"><button class="primary load">読み込む</button></div>
       <details class="small" style="margin-top:6px"><summary>文字で入力する（対戦卓のデッキ文字と同じ形）</summary>
         <textarea class="text" placeholder="# オーダー&#10;TEAM-S03&#10;BP03-S04&#10;…（打順どおり1行1枚）&#10;# メイン&#10;3x BP01-S01&#10;…"></textarea>
@@ -125,8 +125,8 @@ h3:first-child{margin-top:0}
       <div class="status"></div><div class="recent"></div>
     </section>
     <section class="panel loader" data-slot="B">
-      <h2><span class="tag b">B</span>比べるデッキ（任意）</h2>
-      <div class="row"><input type="text" class="code" placeholder="比べたいデッキコード（例 AXWSC）" style="flex:1;min-width:160px"><button class="load">読み込む</button><button class="ghost clear">外す</button></div>
+      <h2><span class="tag b">仮想敵</span>当たりそうな相手のデッキ（任意）</h2>
+      <div class="row"><input type="text" class="code" placeholder="当たりそうな相手のデッキコード（例 ZYLV）" style="flex:1;min-width:160px"><button class="load">読み込む</button><button class="ghost clear">外す</button></div>
       <details class="small" style="margin-top:6px"><summary>文字で入力する</summary>
         <textarea class="text"></textarea><button class="loadtext">この文字で読み込む</button></details>
       <div class="status"></div><div class="recent"></div>
@@ -1008,7 +1008,7 @@ function setDeck(slot, d) {
   normalizeDeck(d); withTeam(d);
   S[slot] = d;
   if (slot === "A") S.origA = deckClone(d);
-  if (slot === "B" && S.tab === "summary") S.tab = "compare";
+  if (slot === "B" && S.tab === "summary") S.tab = "matchup";
   render();
 }
 
@@ -1027,7 +1027,7 @@ document.querySelectorAll(".loader").forEach(sec => {
     setDeck(slot, d);
   };
   const clr = $(".clear", sec);
-  if (clr) clr.onclick = () => { S.B = null; $(".code", sec).value = ""; st.textContent = ""; if (S.tab === "compare") S.tab = "summary"; render(); };
+  if (clr) clr.onclick = () => { S.B = null; $(".code", sec).value = ""; st.textContent = ""; if (S.tab === "matchup") S.tab = "summary"; render(); };
 });
 
 const DICE_OPTS = [-2, -1, 0, 1, 2];
@@ -1038,7 +1038,7 @@ function renderOpp() {
 
 const TABS = [
   ["summary", "サマリー"], ["batting", "打順・投手"], ["twoway", "攻守2役"], ["values", "伏せたときの数値"], ["matchup", "対戦表"], ["synergy", "シナジー"],
-  ["tp", "TP・手札"], ["prob", "引ける確率"], ["edit", "入れ替えを試す"], ["compare", "比較"], ["export", "書き出し"],
+  ["tp", "TP・手札"], ["prob", "引ける確率"], ["edit", "入れ替えを試す"], ["export", "書き出し"],
 ];
 function renderTabs() {
   $("#tabs").innerHTML = TABS.map(([k, l]) => `<button class="${S.tab === k ? "on" : ""}" data-k="${k}">${l}</button>`).join("");
@@ -1052,8 +1052,8 @@ function render() {
   const v = $("#view");
   if (!S.A) { v.innerHTML = '<div class="empty">DeckLog のデッキコードを入れて「読み込む」を押してください。DeckLog で公開されているデッキならそのまま読み込めます。</div>'; return; }
   const a = analyze(S.A, S.zoneA), b = analyze(S.B, S.zoneB);
-  const head = `<div class="row" style="justify-content:space-between;margin-bottom:10px"><div><span class="tag a">A</span> <b>${esc(a.title || "（無題）")}</b> <span class="muted small">${esc(a.code)}　${esc(a.team.name)}</span>${isEdited() ? ' <span class="badge pin">入れ替え中</span>' : ""}</div>${b ? `<div><span class="tag b">B</span> <b>${esc(b.title || "（無題）")}</b> <span class="muted small">${esc(b.code)}</span></div>` : ""}</div>`;
-  const fn = { summary: vSummary, batting: vBatting, twoway: vTwoWay, values: vValues, matchup: vMatchup, synergy: vSynergy, tp: vTp, prob: vProb, edit: vEdit, compare: vCompare, export: vExport }[S.tab] || vSummary;
+  const head = `<div class="row" style="justify-content:space-between;margin-bottom:10px"><div><span class="tag a">自分</span> <b>${esc(a.title || "（無題）")}</b> <span class="muted small">${esc(a.code)}　${esc(a.team.name)}</span>${isEdited() ? ' <span class="badge pin">入れ替え中</span>' : ""}</div>${b ? `<div><span class="tag b">仮想敵</span> <b>${esc(b.title || "（無題）")}</b> <span class="muted small">${esc(b.code)}</span></div>` : ""}</div>`;
+  const fn = { summary: vSummary, batting: vBatting, twoway: vTwoWay, values: vValues, matchup: vMatchup, synergy: vSynergy, tp: vTp, prob: vProb, edit: vEdit, export: vExport }[S.tab] || vSummary;
   v.innerHTML = head + fn(a, b);
   v.querySelectorAll(".cname").forEach(el => el.onclick = () => openCard(el.dataset.no));
   if (S.tab === "values" || S.tab === "matchup") wireZone();
@@ -1112,7 +1112,7 @@ function vBatting(a) {
   ${zone.length ? `<p class="small">ZONE選手：${zone.map(z => cname(z.no, z.name)).join("・")}</p>` : ""}`;
 }
 
-const zoneToggle = (a, b) => `<div class="row small" style="margin-bottom:8px"><label><input type="checkbox" id="zoneA" ${S.zoneA ? "checked" : ""}> A を ZONE 後で計算</label>${b ? `<label><input type="checkbox" id="zoneB" ${S.zoneB ? "checked" : ""}> B を ZONE 後で計算</label>` : ""}<span class="muted">（ZONE は一度なれば試合終了まで続く。オンにすると ZONE 札がある選手は素の値から +1、研ぎ澄まされた一振りの「ZONE 状態なら代わりに AP+3」も通常の値として計算）</span></div>`;
+const zoneToggle = (a, b) => `<div class="row small" style="margin-bottom:8px"><label><input type="checkbox" id="zoneA" ${S.zoneA ? "checked" : ""}> 自分を ZONE 後で計算</label>${b ? `<label><input type="checkbox" id="zoneB" ${S.zoneB ? "checked" : ""}> 仮想敵を ZONE 後で計算</label>` : ""}<span class="muted">（ZONE は一度なれば試合終了まで続く。オンにすると ZONE 札がある選手は素の値から +1、研ぎ澄まされた一振りの「ZONE 状態なら代わりに AP+3」も通常の値として計算）</span></div>`;
 function wireZone() { const za = $("#zoneA"), zb = $("#zoneB"); if (za) za.onchange = () => { S.zoneA = za.checked; render(); }; if (zb) zb.onchange = () => { S.zoneB = zb.checked; render(); }; }
 function vValues(a, b) {
   // 主に見る値＝条件を満たしたとき。条件を満たさないと下がる分を「条件なし −N」で出す
@@ -1184,6 +1184,13 @@ function isEdited() { return S.origA && (mainSig(S.A) !== mainSig(S.origA) || or
 function sortedOrder() { return (S.A.p_list || []).slice().sort((x, y) => (x.slot || 0) - (y.slot || 0)); }
 function renumber(list) { list.forEach((c, i) => c.slot = i + 1); S.A.p_list = list; }
 const statLine = d => `${d.kind === "戦術" ? "戦術" : d.kind === "ZONE選手" ? "ZONE" : (POS_SHORT[d.pos] || "") + " c" + (d.cost ?? "?") + " " + (d.pos === 1 ? "DP" + d.dp : "AP" + d.ap)}　${d.apAttr ? d.apAttr + "AP" + d.apSup : ""} ${d.dpAttr ? d.dpAttr + "DP" + d.dpSup : ""}`;
+function shapeDiff(a) {
+  if (!isEdited()) return "";
+  const L = { players: "選手", tactics: "戦術", fielders: "メインの野手", pitchers: "メインの投手", apMeet: "APミート", apPower: "AP強振", dpMeet: "DPミート（全部）", dpPower: "DP強振（全部）", dpMeet4: "DPミート4以上", dpPower4: "DP強振4以上" };
+  const rows = compareDecks(a, analyze(S.origA, S.zoneA)).summary.filter(r => r.a !== r.b);
+  if (!rows.length) return "";
+  return `<h3>元との差</h3><table><thead><tr><th></th><th class="n">元</th><th class="n">今</th><th class="n">差</th></tr></thead><tbody>${rows.map(r => `<tr><td>${L[r.key]}</td><td class="n num">${r.b}</td><td class="n num">${r.a}</td><td class="n num ${r.a > r.b ? "chg-up" : "chg-down"}">${(r.a - r.b > 0 ? "+" : "") + (r.a - r.b)}</td></tr>`).join("")}</tbody></table>`;
+}
 function vEdit(a) {
   const orig = {}; (S.origA.list || []).forEach(c => orig[c.card_number] = c.num);
   const total = (S.A.list || []).reduce((s, c) => s + c.num, 0);
@@ -1211,10 +1218,11 @@ function vEdit(a) {
   const mode = S.addMode || "main";
   const chg = [...changes.map(esc), ordIn.length ? "オーダーに入れた：" + esc(ordIn.join("・")) : "", ordOut.length ? "オーダーから外した：" + esc(ordOut.join("・")) : "", reordered ? "打順の並び" : ""].filter(Boolean);
   return `<p class="note" style="margin-top:0">変えるとほかのタブもすぐ作り直されます。元のデッキは消えません。案は名前を付けて保存できます（このブラウザの中だけに保存）。</p>
-  <div class="row"><button id="undoEdit">元に戻す</button><button id="toB">元のデッキをBに置いて比べる</button>
+  <div class="row"><button id="undoEdit">元に戻す</button>
    <input type="text" id="vname" placeholder="案の名前（例 案E ミートDP5）" style="width:200px"><button id="saveVar" class="primary">この案を保存</button></div>
   ${saved.length ? `<div class="recent" style="margin-top:8px"><span class="small muted">保存した案：</span>${saved.map((v, i) => `<span class="badge" style="padding:2px 6px"><a href="#" class="loadVar" data-i="${i}">${esc(v.name)}</a> <a href="#" class="delVar" data-i="${i}" title="削除">×</a></span>`).join(" ")}</div>` : ""}
   ${chg.length ? `<p class="small">変更：${chg.join("　")}</p>` : ""}
+  ${shapeDiff(a)}
   <h3>カードを探して足す</h3>
   <div class="row"><span class="toggle" id="addmode"><button data-m="main" class="${mode === "main" ? "on" : ""}">メインに足す</button><button data-m="order" class="${mode === "order" ? "on" : ""}">${S.replaceAt != null ? "オーダーの " + (S.replaceAt + 1) + " 番目と交換" : "オーダーに足す"}</button></span>
    <input type="text" id="addq" placeholder="名前か番号（例 内野警戒、山田、BP03-S07）" style="flex:1;min-width:180px"></div><div id="addres"></div>
@@ -1236,7 +1244,6 @@ function wireEdit() {
   document.querySelectorAll("button.rep").forEach(b => b.onclick = () => { S.replaceAt = +b.dataset.i; S.addMode = "order"; render(); $("#addq").focus(); });
   document.querySelectorAll("#addmode button").forEach(b => b.onclick = () => { S.addMode = b.dataset.m; if (S.addMode === "main") S.replaceAt = null; render(); });
   $("#undoEdit").onclick = () => { S.A = deckClone(S.origA); S.replaceAt = null; render(); };
-  $("#toB").onclick = () => { S.B = deckClone(S.origA); S.B.title = (S.B.title || "") + "（元）"; S.tab = "compare"; render(); };
   $("#saveVar").onclick = () => {
     const name = $("#vname").value.trim() || ((S.A.title || "案") + " " + new Date().toLocaleString("ja-JP").slice(0, 16));
     const list = lsGet("dorio_an_variants", []).filter(v => v.name !== name);
@@ -1267,7 +1274,7 @@ function wireEdit() {
 }
 
 function vMatchup(a, b) {
-  if (!b) return '<div class="empty">「B 比べるデッキ」に相手のデッキを入れると、自分の打者×相手の投手、相手の打者×自分の投手を、伏せ方の組み合わせごとに比べます。</div>';
+  if (!b) return '<div class="empty">「仮想敵のデッキ」にコードを入れると、自分の打者×仮想敵の投手、仮想敵の打者×自分の投手を、伏せ方の組み合わせごとに比べます。</div>';
   const block = (rows, title, atkName, defName) => {
     const pits = [...new Set(rows.map(r => r.pit))];
     return `<h3>${esc(title)}</h3>` + pits.map(p => {
@@ -1280,19 +1287,9 @@ function vMatchup(a, b) {
     }).join("");
   };
   return zoneToggle(a, b) + `<p class="note" style="margin-top:0">数字は「伏せたときの数値」タブの値どうし（打者の AP vs 投手の DP）。大きい数字はどちらも条件を満たしたとき、下の「条件なし」はどちらも満たさないとき（結果が変わるときは→で表示）。AP が DP 以上なら打撃判定、DP が上ならアウト。カード効果のダイス＋や試合中の条件（走者・ビハインドなど）は入っていない。勝負師・威圧の場面は、それを持っているデッキのときだけ出す（威圧は守備のみ）。覚醒札が無いなど、その場面が成り立たない欄は「—」。セルにマウスを乗せると、伏せた札が出る。</p>
-  ${block(matchupTable(a, b), "自分が攻撃（A の打者 × B の投手）", "A", "B")}
-  ${block(matchupTable(b, a), "相手が攻撃（B の打者 × A の投手）", "B", "A")}`;
+  ${block(matchupTable(a, b), "自分が攻撃（自分の打者 × 仮想敵の投手）", "自分", "仮想敵")}
+  ${block(matchupTable(b, a), "仮想敵が攻撃（仮想敵の打者 × 自分の投手）", "仮想敵", "自分")}`;
 }
-function vCompare(a, b) {
-  if (!b) return '<div class="empty">「B 比べるデッキ」にコードを入れると、ここに違いが出ます。入れ替えタブの「元のデッキをBに置いて比べる」でも使えます。</div>';
-  const c = compareDecks(a, b);
-  const L = { players: "選手", tactics: "戦術", fielders: "メインの野手", pitchers: "メインの投手", apMeet: "APミート", apPower: "AP強振", dpMeet: "DPミート（全部）", dpPower: "DP強振（全部）", dpMeet4: "DPミート4以上", dpPower4: "DP強振4以上" };
-  return `<h3>デッキの形の違い</h3><table><thead><tr><th></th><th class="n"><span class="tag a">A</span></th><th class="n"><span class="tag b">B</span></th><th class="n">差</th></tr></thead><tbody>
-  ${c.summary.map(r => `<tr><td>${L[r.key]}</td><td class="n num">${r.a}</td><td class="n num">${r.b}</td><td class="n num diffcell ${r.a > r.b ? "chg-up" : r.a < r.b ? "chg-down" : "muted"}">${r.a - r.b ? (r.a - r.b > 0 ? "+" : "") + (r.a - r.b) : "0"}</td></tr>`).join("")}</tbody></table>
-  <h3>メインの枚数が違うカード</h3>${c.main.length ? `<table><thead><tr><th>カード</th><th class="n"><span class="tag a">A</span></th><th class="n"><span class="tag b">B</span></th></tr></thead><tbody>${c.main.map(r => `<tr><td>${cname(r.no, r.name)} <span class="small muted">${esc(r.no)}${r.kind === "戦術" ? "・戦術" : ""}</span></td><td class="n num ${r.a > r.b ? "chg-up" : ""}">${r.a}</td><td class="n num ${r.b > r.a ? "chg-up" : ""}">${r.b}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">メインは同じです。</p>'}
-  <h3>打順</h3><table><thead><tr><th>打順</th><th><span class="tag a">A</span></th><th><span class="tag b">B</span></th></tr></thead><tbody>${c.batting.map(r => `<tr class="${r.same ? "" : "hl"}"><td class="num">${r.n}</td><td>${esc(r.a)}</td><td>${esc(r.b)}</td></tr>`).join("")}</tbody></table>`;
-}
-
 function mdExport(a) {
   const L = [];
   L.push(`## ${a.title || "デッキ"}${a.code ? `（[${a.code}](https://decklog.bushiroad.com/view/${a.code})）` : ""}`, "");
