@@ -162,7 +162,7 @@ var JUDGE = {
 };
 
 // 「4以上」の中で正確な値が分かっている戦術カード（公式カード画像で確認済み）
-// チームカードの効果（DeckLog・公式カードリストに文字が無いので、公式のカード画像から書き起こしたもの。2026-10-13 時点で3枚）
+// チームカードの効果（DeckLog・公式カードリストに文字が無いので、公式のカード画像から書き起こしたもの。2026-10-14 時点で全球団）
 var TEAM_FX = {
   'TEAM-B03': { text: '【攻撃】自分のレストエリアに「フルスイング」が2枚以上あり、打撃判定を行うなら、ダイス+1する。【攻守】リフレッシュする際、レストエリアの「フルスイング」を3枚までレストエリアに残してもよい。', dice: [{ n: 1, restName: 'フルスイング', restMin: 2 }], keep: { name: 'フルスイング', n: 3 } },
   'TEAM-DB03': { text: '【攻撃】1つ前の勝負で、自分の打者が出塁していて、打撃判定を行うなら、ダイス+1する。', dice: [{ n: 1, prevOnBase: true }] },
@@ -170,6 +170,19 @@ var TEAM_FX = {
   'TEAM-S03': { text: '試合の開始前、先攻と後攻を決める際、自分が決めることができる。（相手が同じチームカードなら、この能力は使えない。）', dice: [], chooseOrder: true },
   'TEAM-G04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
   'TEAM-S04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-B04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-C04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-D04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-DB04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-E04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-F04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-H04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-L04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-T04': { text: '【攻撃】自分の出場している選手がZONE状態になった時、カードを1枚引く。', dice: [], zoneDraw: 1 },
+  'TEAM-C03': { text: '（能力なし）', dice: [] },
+  'TEAM-E03': { text: '【守備】自分が【本領発揮】を持つ選手カードをプレイした時、コストがそのカード以上で同じカード名の選手カードが出場しているなら、その【本領発揮】を有効にする。', dice: [], honByName: true },
+  'TEAM-H03': { text: '試合開始時、タイムポイントを1つ多く持つ（上限6）。', dice: [], startTp: 1 },
+  'TEAM-T03': { text: '【攻守】【勝負中①】自分が覚醒した時、1枚引いてもよい。そうしたら手札を1枚捨てる。', dice: [], awakenLoot: true },
 };
 var DP_EXACT = { 'PDO-04': 5, 'PDO-05': 5, 'PDO-12': 4 };
 function dpValue_(c) { if (c.no in DP_EXACT) return DP_EXACT[c.no]; return c.dpSup === '4+' ? 4 : Number(c.dpSup) || 0; }
@@ -1610,7 +1623,7 @@ function simRun_(SA, SB, opt) {
   // チームの状態
   var mk = function (S, key) {
     var deck = shuffleIn(expand(S.X.mainCards));
-    var st = { ev: {}, key: key, S: S, deck: deck, hand: [], rest: [], out: [], inning: [], tp: 3, zoneUsed: false, zoneActive: null, pitcher: S.starter, relieved: false,
+    var st = { ev: {}, key: key, S: S, deck: deck, hand: [], rest: [], out: [], inning: [], tp: 3 + ((S.teamFx && S.teamFx.startTp) || 0), zoneUsed: false, zoneActive: null, pitcher: S.starter, relieved: false,
       lineup: S.bats.slice(), usedPinch: {}, bi: 0, score: 0, obsAtk: { ミート: 0, 強振: 0 }, obsDef: { ミート: 0, 強振: 0 }, refresh: 0, swaps: 0, pcPlaced: false, log: null };
     return st;
   };
@@ -1703,6 +1716,8 @@ function simRun_(SA, SB, opt) {
   var honActive = function (T, no, x) {
     if (onField(T)[no]) return true;
     var n0 = x ? nm(x) : null; if (!n0) return false;
+    // 楽天のチームカード：同じ名前でコストが同じ以上の選手が出場していれば有効（守備）
+    if (T.S.teamFx && T.S.teamFx.honByName && x.kind === '選手' && T.lineup.concat([T.pitcher]).some(function (v) { return nm(v) === n0 && rowCost(T, v) >= (Number(x.cost) || 0); })) return true;
     return T.lineup.concat([T.pitcher]).some(function (v) { var f = T.S.fx(T.S.rowOf[v.no] || v); return f.enableSupHon && f.enableSupHon === n0; });
   };
   // 自分のカードの効果で手札から捨てる（【レスト】【本領発揮】の効果が働く）
@@ -2287,7 +2302,8 @@ function simRun_(SA, SB, opt) {
       return (1 - pKill) * full + pKill * wo - pKill * 0.5; // 勝負師なら覚醒札はレストへ（失う）
     };
     // 宣言：届きやすさ＋相手がこの試合で張ってこなかった属性
-    var size = risp || hA.length >= atk.S.handStart + 2 ? 2 : 1;
+    // 2枚出す：得点圏・手札に余裕があるとき・上位打線（1〜5番。実戦ではほぼ2枚出す。2026-10-14 ユーザー談）
+    var size = risp || hA.length >= atk.S.handStart + 2 || (slot < 5 && hA.length >= 2) ? 2 : 1;
     // 得点圏の外では守備の要の札を攻撃に使わない。ただし打者本人の覚醒札は別（覚醒のために入れている札）
     var keepDef = function (x) { return !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4)); };
     var attr = fixedAttr, ansA = null;
@@ -2395,8 +2411,8 @@ function simRun_(SA, SB, opt) {
     };
     var cxA = function () { return { live: aLive, add: addA, sx: sit, role: 'atk', opp: def, attr: attr, behind: diff < 0, gain: gainA, oppAwk: dLive.some(function (x) { return x.no === pit.no; }), base: base, half: half }; };
     var cxD = function () { return { live: dLive, add: addD, sx: sitD, role: 'def', opp: atk, attr: attr, behind: diff > 0, gain: gainD, oppAwk: aLive.some(function (x) { return x.no === b.no; }), prevOnOpp: !!half.prevOn, base: base, half: half }; };
-    if (aLive.some(function (x) { return x.no === b.no; })) yield* fireG(atk, b, 'awaken', cxA(), true);
-    if (dLive.some(function (x) { return x.no === pit.no; })) yield* fireG(def, pit, 'awaken', cxD(), true);
+    if (aLive.some(function (x) { return x.no === b.no; })) { yield* fireG(atk, b, 'awaken', cxA(), true); if (atk.S.teamFx && atk.S.teamFx.awakenLoot) { var tl = cxA(); tl.label = 'チームカード（覚醒で引いて捨てる）'; yield* runOpsG(atk, [{ op: 'loot', n: 1, d: 1 }], tl); ev(atk, 'チームカード（覚醒で引いて捨てる）'); } }
+    if (dLive.some(function (x) { return x.no === pit.no; })) { yield* fireG(def, pit, 'awaken', cxD(), true); if (def.S.teamFx && def.S.teamFx.awakenLoot) { var tl2 = cxD(); tl2.label = 'チームカード（覚醒で引いて捨てる）'; yield* runOpsG(def, [{ op: 'loot', n: 1, d: 1 }], tl2); ev(def, 'チームカード（覚醒で引いて捨てる）'); } }
     yield* fireG(atk, b, 'play', cxA(), true);
     yield* fireG(def, pit, 'play', cxD(), true);
     // サポートの【手札①】することで（手札を1枚捨てて効果を使う）
