@@ -2303,7 +2303,9 @@ function simRun_(SA, SB, opt) {
     };
     // 宣言：届きやすさ＋相手がこの試合で張ってこなかった属性
     // 2枚出す：得点圏・手札に余裕があるとき・上位打線（1〜5番。実戦ではほぼ2枚出す。2026-10-14 ユーザー談）
+    // リードしていて得点圏の外なら1枚（追加点より守備の手札を残す。2026-10-14 ユーザー談）
     var size = risp || hA.length >= atk.S.handStart + 2 || (slot < 5 && hA.length >= 2) ? 2 : 1;
+    if (diff > 0 && !risp) size = 1;
     // 得点圏の外では守備の要の札を攻撃に使わない。ただし打者本人の覚醒札は別（覚醒のために入れている札）
     var keepDef = function (x) { return !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4)); };
     var attr = fixedAttr, ansA = null;
