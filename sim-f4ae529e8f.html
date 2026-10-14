@@ -1727,7 +1727,7 @@ function simRun_(SA, SB, opt) {
   var costSum = function (T, cards) { return cards.reduce(function (t, x) { return t + costOf(T, x); }, 0); };
   var reveal = function (T, n) {
     var out = [];
-    for (var i = 0; i < n; i++) { var c = topCard(T); if (!c) break; out.push(c); }
+    for (var i = 0; i < n; i++) { var c = T.deck.shift(); if (!c) break; out.push(c); } // 公式Q&A Q285：今の山札の枚数で解決（リフレッシュしない）
     out.forEach(function (c) {
       var f = T.S.fx(c);
       if (f.onReveal && (!f.onReveal.hon || honActive(T, c.no))) {
@@ -1984,7 +1984,7 @@ function simRun_(SA, SB, opt) {
     };
     var pinchCands = function () { return atk.S.pinch.filter(function (pp) { return !atk.usedPinch[pp.no] && !atk.lineup.some(function (v) { return v.no === pp.no; }); }); };
     if (atk.human) {
-      var zoneOk = !opt.noZone && atk.S.zoneFor === b.no && !atk.zoneUsed && atk.tp >= 1, pcs0 = atk.tp >= 1 ? pinchCands() : [];
+      var zoneOk = !opt.noZone && atk.S.zoneFor === b.no && !atk.zoneUsed && atk.tp >= 1, pcs0 = atk.tp >= 1 && half.inn >= 2 ? pinchCands() : []; // 公式Q&A Q163：代打は2イニング目から
       if (zoneOk || pcs0.length) {
         var ansPre = yield { type: 'atkPre', side: atk, batter: b, zoneOk: zoneOk, pinch: pcs0 };
         if (ansPre && ansPre.pinch) { var pp0 = pcs0.find(function (x) { return x.no === ansPre.pinch; }); if (pp0) pinchDo(pp0); }
@@ -2175,6 +2175,11 @@ function simRun_(SA, SB, opt) {
       var kill = hB.findIndex(isKill);
       if (kill >= 0) { var one = bestSet(hB, mn, 1, function (x) { return !isKill(x); }); dSel = { idx: [kill].concat(one.score >= 10 ? one.idx : []) }; }
       else { dSel = bestSet(hB, mn, 2); if (dSel.score < 10) dSel.idx = []; }
+    }
+    if (!dSel.idx.length && hB.length) {
+      // 公式Q&A Q52：手札があるなら必ず1枚以上置く。DP が上がる札が無ければ、一番要らない札を置く
+      var one2 = bestSet(hB, defSc, 1, function (x) { return !isKill(x) && nm(x) !== '強心臓'; });
+      dSel = { idx: one2.idx.length && one2.score >= 10 ? one2.idx : [junkIdx(def).i] };
     }
     var dCards = take(hB, dSel.idx).concat(preD);
     // 攻撃側の起動
@@ -2424,6 +2429,11 @@ function simRun_(SA, SB, opt) {
     else if (risp && aKill >= 0) { var o1 = bestSet(hA, sc, 1, function (x) { return !isKill(x); }); aSel = { idx: [aKill].concat(o1.score > 0 ? o1.idx : []) }; }
     else { aSel = bestSet(hA, sc, size, function (x) { return !isKill(x) && !keepDef(x); }); if (aSel.score <= 0) aSel.idx = []; }
     if (!ansA && extraSlot) { var more = bestSet(hA, function (s2) { return sc(aSel.idx.map(function (i) { return hA[i]; }).concat(s2)); }, 1, function (x) { var i0 = hA.indexOf(x); return aSel.idx.indexOf(i0) < 0 && !isKill(x); }); if (more.idx.length && more.score > sc(aSel.idx.map(function (i) { return hA[i]; }))) aSel.idx = aSel.idx.concat(more.idx); }
+    if (!aSel.idx.length && hA.length) {
+      // 公式Q&A Q52：手札があるなら必ず1枚以上置く。AP が上がる札が無ければ、一番要らない札を置く
+      var one3 = bestSet(hA, sc, 1, function (x) { return !isKill(x) && !keepDef(x); });
+      aSel = { idx: one3.idx.length && one3.score > 0 ? one3.idx : [junkIdx(atk).i] };
+    }
     var aCards = take(hA, aSel.idx).concat(preA);
     // 公開：勝負師・威圧（覚醒＝メインエリアと同じ番号の札を消す。覚醒は発動しない）
     var dSho = dCards.some(function (x) { return !tacOff(x) && def.S.fx(x).shobushi; }), dIatsu = dCards.some(function (x) { return !tacOff(x) && def.S.fx(x).iatsu; });
@@ -2499,6 +2509,9 @@ function simRun_(SA, SB, opt) {
     };
     var cxA = function () { return { live: aLive, oppLive: dLive, add: addA, sx: sit, role: 'atk', opp: def, attr: attr, behind: diff < 0, gain: gainA, oppAwk: dLive.some(function (x) { return x.no === pit.no; }), base: base, half: half }; };
     var cxD = function () { return { live: dLive, oppLive: aLive, add: addD, sx: sitD, role: 'def', opp: atk, attr: attr, behind: diff > 0, gain: gainD, oppAwk: aLive.some(function (x) { return x.no === b.no; }), prevOnOpp: !!half.prevOn, base: base, half: half }; };
+    var awkNA = aLive.filter(function (x) { return x.no === b.no; }).length, awkND = dLive.filter(function (x) { return x.no === pit.no; }).length;
+    for (var aw1 = 1; aw1 < awkNA; aw1++) yield* fireG(atk, b, 'awaken', cxA(), true); // 公式Q&A Q32：2枚なら2回
+    for (var aw2 = 1; aw2 < awkND; aw2++) yield* fireG(def, pit, 'awaken', cxD(), true);
     if (aLive.some(function (x) { return x.no === b.no; })) { yield* fireG(atk, b, 'awaken', cxA(), true); if (atk.S.teamFx && atk.S.teamFx.awakenLoot) { var tl = cxA(); tl.label = 'チームカード（覚醒で引いて捨てる）'; yield* runOpsG(atk, [{ op: 'loot', n: 1, d: 1 }], tl); ev(atk, 'チームカード（覚醒で引いて捨てる）'); } }
     if (dLive.some(function (x) { return x.no === pit.no; })) { yield* fireG(def, pit, 'awaken', cxD(), true); if (def.S.teamFx && def.S.teamFx.awakenLoot) { var tl2 = cxD(); tl2.label = 'チームカード（覚醒で引いて捨てる）'; yield* runOpsG(def, [{ op: 'loot', n: 1, d: 1 }], tl2); ev(def, 'チームカード（覚醒で引いて捨てる）'); } }
     // 「自分がカードをプレイした時」：手札から1枚以上出したときだけ
@@ -2630,12 +2643,15 @@ function simRun_(SA, SB, opt) {
         if (f.outScry && (!f.outScry.hon || honActive(def, x.no))) { scryAuto(def, f.outScry.n); ev(def, nm(x) + '（アウトで山札を見る）'); }
       });
       // エンドラン：ミートでアウトなら三塁以外の走者を1つ進める。相手のアウトエリアが N 枚以下なら1枚引く
-      var er = attr === 'ミート' && aLive.find(function (x) { return !tacOff(x) && atk.S.fx(x).endrun; });
-      if (er && half.outs < 3) {
-        if (base[1] && !base[2]) { base[2] = 1; base[1] = 0; }
-        if (base[0] && !base[1]) { base[1] = 1; base[0] = 0; }
-        var en = atk.S.fx(er).endrun; ev(atk, 'エンドラン'); if (en.drawIfOutsLe != null && def.out.length <= en.drawIfOutsLe) draw(atk, 1);
-      }
+      var ers = attr === 'ミート' ? aLive.filter(function (x) { return !tacOff(x) && atk.S.fx(x).endrun; }) : [];
+      ers.forEach(function (er) {
+        if (half.outs >= 3) return;
+        var moved = false;
+        if (base[1] && !base[2]) { base[2] = 1; base[1] = 0; moved = true; }
+        if (base[0] && !base[1]) { base[1] = 1; base[0] = 0; moved = true; }
+        // 公式Q&A Q161：走者が進塁できないと引けない
+        var en = atk.S.fx(er).endrun; ev(atk, 'エンドラン'); if (moved && en.drawIfOutsLe != null && def.out.length <= en.drawIfOutsLe) draw(atk, 1);
+      });
     } else {
       st.hit = (st.hit || 0) + 1; if (res !== '単打') st.xbh = (st.xbh || 0) + 1;
       if (res === '単打') { runs = base[2]; half.base = [1, base[0], base[1]]; }
@@ -2661,7 +2677,7 @@ function simRun_(SA, SB, opt) {
     return { res: res, runs: runs, attr: attr, batter: b.name, summary: summary };
   };
   var pa = function (atk, def, half, fixedAttr) { var it = paG(atk, def, half, fixedAttr), r = it.next(); if (!r.done) throw new Error('人の判断が要る場面です'); return r.value; };
-  var rowCost = function (T, v) { var r = T.S.rowOf[v.no]; if (!r) return 0; var c0 = r.cost || 0, m0 = T.S.fx(r).orderCostMinus, sr = T.S.starter && T.S.rowOf[T.S.starter.no]; if (m0 && sr && sr !== r && (sr.cost || 0) >= 3 && sr.role === '先発') c0 -= m0; return c0; };
+  var rowCost = function (T, v) { var r = T.S.rowOf[v.no]; return r ? (r.cost || 0) : 0; }; // 公式Q&A Q183：コストは元々の値を参照（松井などのコスト-は構築の話）
   var pitDiceCache = {};
   var pitDiceOf = function (T, pit) {
     var k = T.key + pit.no; if (k in pitDiceCache) return pitDiceCache[k];
@@ -2693,6 +2709,16 @@ function simRun_(SA, SB, opt) {
   };
   // 3アウト：守備側がアウトエリアから1枚をイニングエリアへ（残りはレスト）。黒木：イニングとレストを入れ替え、イニングがちょうど2枚で同じ名前なら引く
   var changeSidesG = function* (def) {
+    // 公式Q&A Q43：チェンジフェイズに手札が9枚以上なら、8枚になるようにレストエリアへ置く
+    var both = [def, def === A ? B : A];
+    for (var hl = 0; hl < both.length; hl++) {
+      var TT = both[hl], over = TT.hand.length - 8; if (over <= 0) continue;
+      var pickL = null;
+      if (TT.human) { var ansL = yield { type: 'discardPick', side: TT, n: over, optional: false, title: '手札の上限：' + over + '枚をレストエリアに置く（手札は8枚まで）' }; if (ansL && ansL.idx && ansL.idx.length === over) pickL = ansL.idx; }
+      if (!pickL) { pickL = []; var tmp = TT.hand.map(function (x, i) { return [worth(TT, x), i]; }).sort(function (a2, b2) { return a2[0] - b2[0]; }); for (var q7 = 0; q7 < over; q7++) pickL.push(tmp[q7][1]); }
+      pickL.slice().sort(function (x, y) { return y - x; }).forEach(function (i) { TT.rest.push(TT.hand.splice(i, 1)[0]); });
+      ev(TT, '手札の上限で' + over + '枚をレストへ');
+    }
     if (!def.out.length) return;
     var pfx = def.S.fx(def.S.rowOf[def.pitcher.no] || def.pitcher);
     var score = function (x) {
@@ -3222,8 +3248,8 @@ function vSolo() {
     case "atkSelect": {
       const pv = a => q.preview(SO.sel, a);
       panel = `<h3>${esc(q.batter.name)} の打席（相手投手 ${esc(q.pitcher.name)}：素の DP ミート ${q.pitDP["ミート"]}・強振 ${q.pitDP["強振"]}）${q.kidouOn ? ' <span class="badge">起動済み</span>' : ""}</h3>
-      <p class="small">伏せる札を${q.max || 2}枚まで選んで、宣言してください。相手はもう伏せています（中身は公開まで分かりません）。</p>${handPick(q.max || 2, { mark: awkMark(q.batter.no) })}
-      <div class="row"><button class="primary" data-act="atk" data-a="ミート">ミートで勝負（AP ${pv("ミート")}）</button><button class="primary" data-act="atk" data-a="強振" style="background:var(--power);border-color:var(--power)">強振で勝負（AP ${pv("強振")}）</button></div>`; break;
+      <p class="small">伏せる札を1〜${q.max || 2}枚選んで、宣言してください（手札があるときは必ず1枚以上。公式Q&A Q52）。相手はもう伏せています（中身は公開まで分かりません）。</p>${handPick(q.max || 2, { mark: awkMark(q.batter.no) })}
+      <div class="row"><button class="primary" data-act="atk" data-a="ミート" ${SO.sel.length || !me.hand.length ? "" : "disabled"}>ミートで勝負（AP ${pv("ミート")}）</button><button class="primary" data-act="atk" data-a="強振" ${SO.sel.length || !me.hand.length ? "" : "disabled"} style="background:var(--power);border-color:var(--power)">強振で勝負（AP ${pv("強振")}）</button></div>`; break;
     }
     case "defPre":
       if (SO.extra.step === "swap") panel = `<h3>投手の起動：捨てる札を選ぶ</h3>${handPick(1)}<button class="primary" data-act="swap" ${SO.sel.length ? "" : "disabled"}>この札を捨てて引く</button> <button data-act="back">戻る</button>`;
@@ -3231,7 +3257,7 @@ function vSolo() {
     case "defPlace": {
       const pv = a => q.preview(SO.sel, a);
       panel = `<h3>守備：${esc(q.batter.name)} に伏せる札</h3><p class="small">2枚まで選んでください。今の DP：<span class="meet">ミート ${pv("ミート")}</span>・<span class="power">強振 ${pv("強振")}</span>（中嶋などの「捨てて DP+」は、捨てられる札があれば含めた値）</p>
-      ${handPick(2, { mark: awkMark(q.pitcher.no) })}<button class="primary" data-act="ok">この札を伏せる</button> <button data-act="none">伏せない</button>`; break;
+      ${handPick(2, { mark: awkMark(q.pitcher.no) })}<button class="primary" data-act="ok" ${SO.sel.length || !me.hand.length ? "" : "disabled"}>この札を伏せる</button>${me.hand.length ? `<p class="small muted">手札があるときは必ず1〜2枚置きます（公式Q&A Q52）。</p>` : ""}`; break;
     }
     case "honSwap":
       if (!SO.extra.step) { panel = `<h3>${esc(q.card.name)} の本領発揮：イニングエリアと手札を1枚ずつ入れ替えられます</h3><p class="small">イニングエリア：${q.inning.map(x => esc(x.name)).join("・")}</p><button class="primary" data-act="step">入れ替える</button> <button data-act="none">入れ替えない</button>`; break; }
