@@ -554,7 +554,7 @@ function sitKindOne_(text) {
   if ((m1 = t.match(/【覚醒】を持つ《野手》が(\d)枚以上/))) return 'awkFielders:' + m1[1];
   if ((m1 = t.match(/自分の出場している《(捕手|一塁手|二塁手|三塁手|遊撃手|外野手|投手|野手)》が(\d)枚(以上)?/))) return 'field:' + m1[1] + ':' + (m1[3] ? 'ge' : 'eq') + ':' + m1[2];
   if ((m1 = t.match(/打順が(\d)番以降/))) return 'slotGe:' + m1[1];
-  if ((m1 = t.match(/このカードの打順が(\d)番なら/))) return 'slotEq:' + m1[1];
+  if ((m1 = t.match(/このカードの打順が(\d)番(?:なら|で)/))) return 'slotEq:' + m1[1];
   if (/このカードの1つ前の打順のカードが【覚醒】を持つ/.test(t)) return 'prevBatAwk';
   if ((m1 = t.match(/相手のサポートエリアにあるカードが(\d)枚以下/))) return 'oppSupLe:' + m1[1];
   if ((m1 = t.match(/アウトエリアにカードが(\d)枚あり/))) return 'outsEq:' + m1[1];
@@ -702,7 +702,16 @@ function valueTable_(c, main, zone, zoneOn) {
       return base + awkEff + awkCondOk;
     }
     var st = supportStat_(x.eff), eff = st[k2];
-    var altN = (st[k2 + 'Alt'] || []).reduce(function (m2, a2) { return sitOk_(a2.cond, cond) ? Math.max(m2, a2.n) : m2; }, 0);
+    // 「投手のコストが3以上で【先発】を持つ」「それが【中継ぎ】か【抑え】を持つ」（強心臓・渾身の一球）は、この投手のカードで決まる
+    var pitAlt = function (t) {
+      if (!pit) return t;
+      if (/【先発】を持つ/.test(t) && c.role !== '先発') return null;
+      if (/【中継ぎ】か【抑え】を持つ/.test(t) && !/中継ぎ|抑え/.test(c.role || '')) return null;
+      var pc = t.match(/投手のコストが(\d)以上/); if (pc && (Number(c.cost) || 0) < +pc[1]) return null;
+      return t.replace(/、?(?:自分の)?投手のコストが\d以上で?|、?(?:それが|投手が)?【先発】を持つ|、?(?:それが|投手が)?【中継ぎ】か【抑え】を持つ/g, '').replace(/[、\s]+$/, '').replace(/におり$/, 'にいる');
+    };
+    var altN = (st[k2 + 'Alt'] || []).reduce(function (m2, a2) { var r2 = pitAlt(a2.cond); return r2 === null ? m2 : r2 === '' || sitOk_(r2, cond) ? Math.max(m2, a2.n) : m2; }, 0);
+    (st[k2 + 'Alt'] || []).forEach(function (a2) { if (pit && pitAlt(a2.cond) === '' && a2.n > eff) eff = a2.n; });
     // ZONE後で計算するときは「ZONE状態の選手がいるなら代わりに」も普通の値として使う
     if (zoneOn) (st[k2 + 'Alt'] || []).forEach(function (a2) { if (/ZONE状態/.test(a2.cond) && a2.n > eff) eff = a2.n; });
     if (cond && altN > eff) { used.push(x.name + '：' + st[k2 + 'Alt'].map(function (a2) { return a2.cond; }).join('／')); eff = altN; }
@@ -1653,7 +1662,7 @@ function simFx_(c) {
         }
         if (k && /自分のレストエリアのコストが『1』と『2』と『3』の《野手》をそれぞれ1枚ずつ山札に戻し、シャッフルする/.test(body)) k.back123 = true;
         if (k && /このカードのAPが(\d)以上上昇するなら、さらにAP\+(\d)/.test(body)) { var rz = body.match(/APが(\d)以上上昇するなら、さらにAP\+(\d)/); k.riseMin = +rz[1]; k.riseAP = +rz[2]; }
-        if (k) { var slm = body.match(/このカードの打順が(\d)番以降なら/); if (slm) k.slotMin = +slm[1]; k.cost = /【手札①】/.test(head) ? 'hand' : null; k.tp = tm; var kdc = body.match(/【?ダイス】?\+(\d)/); if (kdc && k.type !== 'choose') { k.dice = +kdc[1]; var kda = body.match(/(ミート|強振)で打撃判定を行うなら、(?:さらに)?【?ダイス】?\+\d/); if (kda) k.diceAttr = kda[1]; } if (/【勝負中③】/.test(head)) { k.times = 3; k.apEach = +((body.match(/^AP\+(\d)/) || [0, 0])[1]); } fx.kidou = k; ok = true; }
+        if (k) { var slm = body.match(/このカードの打順が(\d)番以降なら/); if (slm) k.slotMin = +slm[1]; var dsl = body.match(/このカードの打順が(\d)番なら、代わりに(\d)枚引き/); if (dsl) k.drawSlot = { slot: +dsl[1], n: +dsl[2] }; k.cost = /【手札①】/.test(head) ? 'hand' : null; k.tp = tm; var kdc = body.match(/【?ダイス】?\+(\d)/); if (kdc && k.type !== 'choose') { k.dice = +kdc[1]; var kda = body.match(/(ミート|強振)で打撃判定を行うなら、(?:さらに)?【?ダイス】?\+\d/); if (kda) k.diceAttr = kda[1]; } if (/【勝負中③】/.test(head)) { k.times = 3; k.apEach = +((body.match(/^AP\+(\d)/) || [0, 0])[1]); } fx.kidou = k; ok = true; }
       }
       if (/【コンボ】/.test(head) || awk || /起動/.test(head)) { if ((/【コンボ】/.test(head) || awk || fx.kidou) && /AP\+\d|ダイス】\+\d/.test(body) && !SIM_ACTION_RE.test(body) && !/【手札\[戦術|レストエリアから.+?サポートエリアに置く/.test(head + body)) ok = true; }
       else if (/AP\+\d|ダイス】\+\d/.test(body) && !(/メインエリアに置かれた時/.test(body) && SIM_ACTION_RE.test(body))) {
@@ -2582,7 +2591,7 @@ function simRun_(SA, SB, opt) {
           } else if (kd.type === 'ap') {
             if (kd.cost === 'hand') { var dx2 = hA[ansK.discardIdx]; if (dx2) { discard(atk, ansK.discardIdx, true); if ((kd.drawIfTactic && dx2.kind === '戦術') || (kd.drawIfName && nm(dx2) === kd.drawIfName)) draw(atk, 1); if (kd.drawIfCost && costOf(atk, dx2) >= kd.drawIfCost.min) draw(atk, kd.drawIfCost.n); usedH = true; sit.kidou = true; } }
             else { usedH = true; sit.kidou = true; }
-            if (usedH && kd.draw) draw(atk, kd.draw);
+            if (usedH && kd.draw) draw(atk, kd.drawSlot && slot + 1 === kd.drawSlot.slot ? kd.drawSlot.n : kd.draw);
             if (usedH && kd.runnerDraw && runner) draw(atk, kd.runnerDraw);
           }
           if (kd.type === 'millCost') { var mlH = topCard(atk); if (mlH) { atk.rest.push(mlH); if (costOf(atk, mlH) >= kd.minCost) sit.kidou = true; LG('自分：' + nm(b) + 'の起動で ' + nm(mlH) + ' をレストへ' + (sit.kidou ? '（AP が上がる）' : '')); } usedH = true; }
@@ -2654,7 +2663,7 @@ function simRun_(SA, SB, opt) {
             if (kd.drawIfCost && costOf(atk, dx) >= kd.drawIfCost.min) draw(atk, kd.drawIfCost.n);
           }
         } else { sit.kidou = true; used = true; }
-        if (used && kd.draw) draw(atk, kd.draw);
+        if (used && kd.draw) draw(atk, kd.drawSlot && slot + 1 === kd.drawSlot.slot ? kd.drawSlot.n : kd.draw);
         if (used && kd.runnerDraw && runner) draw(atk, kd.runnerDraw);
       }
       if (kd.type === 'millCost') { var mlC = topCard(atk); if (mlC) { atk.rest.push(mlC); if (costOf(atk, mlC) >= kd.minCost) sit.kidou = true; } used = true; }
