@@ -2571,6 +2571,8 @@ function simRun_(SA, SB, opt) {
     };
     var predA = leftR(atk, b.no, def) > 0 ? pHasR(atk, b.no, def) * playAtk(diff, risp, slot, final) : 0;
     var probA = Math.min(0.95, predA * calibOf(def.readObs, def.readExp)), evKillN = probA * gainR(atk, b, def);
+    // 威圧：戻した覚醒札の支援DPが低いと、相手は守備で使えない札を手札に抱える（邪魔になる）。そういう相手にはとりあえず打つ（2026-10-15 ユーザー談）
+    var iatsuI = hB.findIndex(function (x) { return nm(x) === '威圧'; }), clogV = readNew(def) && String(opt.clogOff || '').indexOf(def.key) < 0 && iatsuI >= 0 && dpValue_(atk.S.rowOf[b.no] || b) <= 2 ? probA * 0.8 : 0;
     var take = function (hand, idx) { var out = idx.map(function (i) { return hand[i]; }); idx.slice().sort(function (x, y) { return y - x; }).forEach(function (i) { hand.splice(i, 1); }); return out; };
     var prevD = function (idx, a) { return dVal(idx.map(function (i) { return hB[i]; }), a); };
     if (def.human) {
@@ -2579,7 +2581,7 @@ function simRun_(SA, SB, opt) {
     } else if (!risp && !(opt.guardPrevOn && opt.guardPrevOn[def.key] && half.prevOn && atk.S.teamFx && atk.S.teamFx.dice.some(function (q) { return q.prevOnBase; }))) {
       // 相手の打者の覚醒札が、まだ見えていない所（山札・手札）に残っていそうなら、手札に余裕があるときに 35% で勝負師・威圧を混ぜる（読み合い）
       var awkLeftA = atk.S.X.mainCards.filter(function (x) { return x.no === b.no; }).reduce(function (t, x) { return t + x.num; }, 0) - atk.rest.concat(atk.inning, atk.out).filter(function (x) { return x.no === b.no; }).length;
-      var killI = hB.findIndex(isKill);
+      var killI = clogV > 0 ? iatsuI : hB.findIndex(isKill);
       // 打者の覚醒を出してくる見込み × 覚醒で上がる AP が大きいなら勝負師・威圧を張る。勝負師が2枚以上あるなら少し使いやすく
       var killN = hB.filter(isKill).length;
       var evKill = awkLeftA > 0 ? pHasAwk(atk, b.no) * awkRate(atk.awkSeen, atk.awkOpp, 0.6) * awkGainOf(atk, b) : 0;
@@ -2589,7 +2591,7 @@ function simRun_(SA, SB, opt) {
       // 新しい判断：見込み×場面の重さ ≧ 勝負師に1枠使って失う DP（2枚目に置けた札の分）。古い判断は opt.killOld でそのチームだけ残せる（比べる用）
       var oldK = String(opt.killOld || '').indexOf(def.key) >= 0, s1D = bestSet(hB, defSc, 1, function (x) { return !isKill(x) && nm(x) !== '強心臓'; }), s2D = bestSet(hB, defSc, 2, function (x) { return !isKill(x) && nm(x) !== '強心臓'; });
       var costD = Math.max(0.5, (Math.max(0, s2D.score) - Math.max(0, s1D.score)) / 10);
-      var useKillD = oldK ? evKill * lev >= (killN >= 2 ? 0.6 : 0.9) : probA >= pMinOf(def, killN, final) && evKillN * lev >= costD * (killN >= 2 ? KK2 : KK1);
+      var useKillD = oldK ? evKill * lev >= (killN >= 2 ? 0.6 : 0.9) : probA >= pMinOf(def, killN, final) - (clogV ? 0.05 : 0) && (evKillN + clogV) * lev >= costD * (killN >= 2 ? KK2 : KK1);
       if (killI >= 0 && hB.length >= 3 && !saveMode && useKillD) {
         var one1 = bestSet(hB, defSc, 1, function (x) { return !isKill(x) && nm(x) !== '強心臓'; });
         dSel = { idx: [killI].concat(one1.score >= 10 ? one1.idx : []) }; ev(def, danger ? '得点圏の外で勝負師・威圧を張る（出すと逆転される場面）' : '得点圏の外で勝負師・威圧を張る');
@@ -2602,7 +2604,7 @@ function simRun_(SA, SB, opt) {
       def.obsDef[bet]++;
     } else {
       var mn = function (s) { return Math.min(dVal(s, 'ミート') - dpM, dVal(s, '強振') - dpS) * 10 + nPl(s); };
-      var kill = hB.findIndex(isKill);
+      var kill = clogV > 0 ? iatsuI : hB.findIndex(isKill);
       var useKillR = kill >= 0;
       if (kill >= 0 && String(opt.killOld || '').indexOf(def.key) < 0) {
         var awkLeftR = atk.S.X.mainCards.filter(function (x) { return x.no === b.no; }).reduce(function (t, x) { return t + x.num; }, 0) - atk.rest.concat(atk.inning, atk.out).filter(function (x) { return x.no === b.no; }).length;
@@ -2610,7 +2612,7 @@ function simRun_(SA, SB, opt) {
         var leadR = def.score - atk.score, levR = 2 + (leadR >= 0 && leadR <= (base[0] + base[1] + base[2]) + 1 ? 1 : 0) + (final ? 0.5 : 0) + (slot < 5 ? 0.3 : 0);
         var r1 = bestSet(hB, mn, 1, function (x) { return !isKill(x); }), r2 = bestSet(hB, mn, 2, function (x) { return !isKill(x); });
         var costR = Math.max(0.5, (Math.max(0, r2.score) - Math.max(0, r1.score)) / 10);
-        useKillR = probA >= pMinOf(def, hB.filter(isKill).length, final) && evR * levR >= costR * (hB.filter(isKill).length >= 2 ? KK2 : KK1);
+        useKillR = probA >= pMinOf(def, hB.filter(isKill).length, final) - (clogV ? 0.05 : 0) && (evR + clogV) * levR >= costR * (hB.filter(isKill).length >= 2 ? KK2 : KK1);
       }
       if (useKillR) { var one = bestSet(hB, mn, 1, function (x) { return !isKill(x); }); dSel = { idx: [kill].concat(one.score >= 10 ? one.idx : []) }; ev(def, '得点圏で勝負師・威圧'); }
       else { dSel = bestSet(hB, mn, 2); if (dSel.score < 10) dSel.idx = []; }
@@ -3385,7 +3387,7 @@ function simulateGame2(XA, XB, opt) {
     var aFirst = tr % 2 === 0;
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, clogOff: opt.clogOff, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -3438,7 +3440,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, clogOff: opt.clogOff, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
