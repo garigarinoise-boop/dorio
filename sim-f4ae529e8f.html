@@ -1760,6 +1760,7 @@ function simFx_(c) {
     if (supHead && ((fx.supBonus || []).length || (fx.supDice || []).length) && (fx._lastSupLen || 0) < (fx.supBonus || []).length + (fx.supDice || []).length) { ok = true; }
     fx._lastSupLen = (fx.supBonus || []).length + (fx.supDice || []).length;
     // 個別の効果（ほかの書き方に当てはまらないもの）
+    var zrm = /【ZONE[②③④]】/.test(head) && body.match(/^ZONE状態になった時、走者が二塁または三塁にいるなら、AP\+(\d)する/); if (zrm) { fx.zoneRispAP = +zrm[1]; ok = true; } // 藤岡・柳田・細川・村林：ZONE になったその打席が得点圏なら AP+N
     if (/走者の【ベース】の特殊能力を無効にする/.test(body)) { fx.baseNull = true; ok = true; } // 浅尾
     // 【ベース】：このカードが走者のときの効果（試合では塁ごとに走者のカードを覚えている）
     if (/【ベース】/.test(head)) {
@@ -1898,10 +1899,11 @@ function simSide_(X) {
   var zoneScore = function (r) { var f = fxCard(r); return f.zoneReveal ? 10 + f.zoneReveal.take : 1; };
   var zoneRow = (SIM_ZONE_PICK && zoneRows.find(function (r) { return normName_(r.name).indexOf(SIM_ZONE_PICK) >= 0; })) || zoneRows.slice().sort(function (a, b) { return zoneScore(b) - zoneScore(a); })[0] || null;
   var zoneFor = null;
+  var zoneRowsFor = zoneRows.map(function (r) { var zn0 = normName_(r.name).replace(/【ZONE】/, ''); var zb0 = bats.find(function (v) { return normName_(v.name) === zn0; }); return { row: r, forNo: zb0 ? zb0.no : null, reveal: !!fxCard(r).zoneReveal }; });
   if (zoneRow) { var zn = normName_(zoneRow.name).replace(/【ZONE】/, ''); var zb = bats.find(function (v) { return normName_(v.name) === zn; }); zoneFor = zb ? zb.no : null; }
   var teamFx = TEAM_FX[X.team && X.team.no] || null;
   var base = function (no) { var r = rowOf[no]; return r ? parseBase_(r.base) : {}; };
-  return { X: X, starter: starter, closer: closer, middle: middle, bats: bats, pinch: pinch, rowOf: rowOf, fx: fxCard, zoneRow: zoneRow, zoneFor: zoneFor, teamFx: teamFx, base: base,
+  return { X: X, starter: starter, closer: closer, middle: middle, bats: bats, pinch: pinch, rowOf: rowOf, fx: fxCard, zoneRow: zoneRow, zoneFor: zoneFor, zoneRowsFor: zoneRowsFor, teamFx: teamFx, base: base,
     handStart: starter ? (base(starter.no).starter || X.hand || 7) : (X.hand || 7), nm: nm };
 }
 
@@ -2375,10 +2377,10 @@ function simRun_(SA, SB, opt) {
     // TP の残し方：継投（抑えか中継ぎがいて、まだ交代していない）・ZONE（まだ使っていない）のぶん
     var reserve = function (T) { return ((T.S.closer || T.S.middle) && !T.relieved ? 1 : 0) + (T.S.zoneRow && !T.zoneUsed && T.S.zoneFor ? 1 : 0); };
     // ZONE：TP1。チームカードのドロー（ロッテ）。【ZONE③】は山札の上から3枚公開して2枚まで手札へ（人は公開した札から選ぶので、公開した札を返す）
-    var zoneDo = function (manual) {
+    var zoneDo = function (manual, zRow) {
       atk.tp--; atk.zoneUsed = true; atk.zoneActive = b.no; st.zone = (st.zone || 0) + 1; ev(atk, 'ZONE（' + nm(b) + '）');
       if (atk.S.teamFx && atk.S.teamFx.zoneDraw) draw(atk, atk.S.teamFx.zoneDraw);
-      var zf = atk.S.fx(atk.S.zoneRow);
+      var zf = atk.S.fx(zRow || atk.S.zoneRow); if (zf.zoneRispAP && risp) { atk.zonePendAP = zf.zoneRispAP; ev(atk, nm(b) + '（ZONE：得点圏で AP+' + zf.zoneRispAP + '）'); }
       if (zf.zoneReveal) {
         var rev = []; for (var zi = 0; zi < zf.zoneReveal.n; zi++) { var tc = topCard(atk); if (tc) rev.push(tc); }
         if (manual) return { cards: rev, take: zf.zoneReveal.take };
@@ -2410,7 +2412,17 @@ function simRun_(SA, SB, opt) {
       }
     } else {
       // ZONE：ZONE 選手の最初の打席で
-      if (!opt.noZone && atk.S.zoneFor === b.no && !atk.zoneUsed && atk.tp >= 1) zoneDo();
+      if (atk.S.zoneFor === b.no) atk.zoneSeen = (atk.zoneSeen || 0) + 1;
+      var zoneAtN = (opt.zoneAt && opt.zoneAt[atk.key]) || 1; // 比べる用：ZONE を何打席目で使うか
+      var zPlan = opt.zonePlan && opt.zonePlan[atk.key], zr = (atk.S.zoneRowsFor || []).find(function (z) { return z.forNo === b.no; });
+      if (zPlan === 'rispIfSecond' && (atk.S.zoneRowsFor || []).length > 1) {
+        // 先攻：いつもの ZONE（札が増える方）を1打席目で。後攻：得点圏で「得点圏なら AP+2」の ZONE 選手の打席に。最終回まで来なければ ZONE 札のある選手の打席で
+        if (!opt.noZone && zr && !atk.zoneUsed && atk.tp >= 1) {
+          var goZ = atk.batFirst ? zr.row === atk.S.zoneRow : ((!zr.reveal && risp) || half.inn >= finalInn);
+          if (goZ) zoneDo(false, zr.row);
+        }
+      }
+      else if (!opt.noZone && atk.S.zoneFor === b.no && !atk.zoneUsed && atk.tp >= 1 && atk.zoneSeen >= zoneAtN) zoneDo();
       // 代打：最終回、得点圏かビハインドで、代打のほうが値が高いとき
       else if (!opt.noPinch && final && (risp || diff < 0) && atk.tp - reserve(atk) >= 1) {
         var bestP = null, bestV = -99, sitP = { runner: runner, risp: risp, norunner: !runner, behind: diff < 0, lead: diff > 0, pinch: true };
@@ -2644,6 +2656,7 @@ function simRun_(SA, SB, opt) {
       return { i: bi2, score: bs2 };
     };
     var kidouUsedR = false, kd = bfx.kidou, extraAP = 0, extraDice = 0, extraDiceAttr = { ミート: 0, 強振: 0 };
+    if (atk.zonePendAP) { extraAP += atk.zonePendAP; atk.zonePendAP = 0; }
     var pcIn = function () { return atk.inning.some(function (x) { return x.kind === '選手' && (x.pos === 1 || x.pos === 2); }); };
     var pairIn = function () { var c0 = {}; return atk.inning.some(function (x) { var k0 = nm(x); c0[k0] = (c0[k0] || 0) + 1; return c0[k0] >= 2; }); };
     var innOkK = function () { return kd && kd.needPair ? pairIn() : pcIn(); };
@@ -3398,13 +3411,13 @@ function simulateGame2(XA, XB, opt) {
     var aFirst = tr % 2 === 0;
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
-    var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true;
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true; R.A.batFirst = aFirst; R.B.batFirst = !aFirst;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
         var atk = T[order[h]], def = T[order[1 - h]];
         if (inn === 3 && h === 1 && atk.score > def.score) break;
-        var half = { base: [0, 0, 0], outs: 0, inn: inn, prevOn: false };
+        var half = { base: [0, 0, 0], outs: 0, inn: inn, prevOn: false }; if (opt.log) opt.log('―― ' + inn + '回 ' + atk.key);
         var s0 = atk.score;
         for (var p = 0; p < 40 && half.outs < 3; p++) {
           if (!first) { R.draw(atk, 1); R.draw(def, 1); }
@@ -3451,7 +3464,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
