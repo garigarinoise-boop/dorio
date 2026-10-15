@@ -2143,6 +2143,20 @@ function simRun_(SA, SB, opt) {
   };
   // この試合で覚醒を出した割合（はじめは prior を2回ぶん見ていたことにする）
   // 場面の読み：覚醒札を持っているとき、出してくる確率（攻撃側の打者／守備側の投手）。リード＝その側から見た点差
+  // 人の読み（2026-10-15 ユーザー談）：相手のデッキの枚数は知らない。支援DP4+の札や【覚醒】能力を持つ札は3枚入っていそう、それ以外は2枚と見て、見えた枚数で上書き
+  var readNew = function (R) { return String(opt.readOld || '').indexOf(R.key) < 0; };
+  var estCopies = function (T, no) { var c = T.S.rowOf[no] || T.S.X.mainCards.find(function (x) { return x.no === no; }) || {}; var strong = c.dpSup === '4+' || (Number(c.dpSup) || 0) >= 4 || /【覚醒】/.test(c.eff || ''); var seen = T.rest.concat(T.inning, T.out).filter(function (x) { return x.no === no; }).length; return Math.max(strong ? 3 : 2, seen); };
+  var pHasR = function (T, no, R) {
+    if (!readNew(R)) return pHasAwk(T, no);
+    var left = estCopies(T, no) - T.rest.concat(T.inning, T.out).filter(function (x) { return x.no === no; }).length;
+    var U = T.deck.length + T.hand.length, h = T.hand.length; if (left <= 0 || !h || !U) return 0;
+    var pNone = 1; for (var i = 0; i < h; i++) pNone *= Math.max(0, U - left - i) / (U - i); return 1 - pNone;
+  };
+  var leftR = function (T, no, R) { return readNew(R) ? estCopies(T, no) - T.rest.concat(T.inning, T.out).filter(function (x) { return x.no === no; }).length : awkLeftOf(T, no); };
+  // 覚醒で上がる値：AP に、覚醒で付くダイス（打者は＋、投手は相手の－）を1つ 0.6 として足す
+  var gainR = function (T, v, R) { var g = awkGainOf(T, v); if (!readNew(R)) return g; var eff = (T.S.rowOf[v.no] || v).eff || '', d = 0;
+    if (v.pos === 1) pitDiceParse_(eff).forEach(function (e) { if (e.awaken) d = Math.max(d, e.n); }); else batDice_(eff).forEach(function (e) { if (e.awaken) d = Math.max(d, e.n); });
+    return g + d * 0.6; };
   var awkLeftOf = function (T, no) { return T.S.X.mainCards.filter(function (x) { return x.no === no; }).reduce(function (t, x) { return t + x.num; }, 0) - T.rest.concat(T.inning, T.out).filter(function (x) { return x.no === no; }).length; };
   var playAtk = function (lead, risp, slot, final) { var p = 0.5 + (risp ? 0.3 : 0) + (slot < 5 ? 0.1 : 0) + (final && lead <= 0 ? 0.15 : 0) - (lead > 0 && !risp ? 0.25 : 0); return Math.max(0.1, Math.min(0.95, p)); };
   var playDef = function (lead, risp, danger, final) { var p = 0.4 + (risp ? 0.3 : 0) + (danger ? 0.15 : 0) + (final ? 0.1 : 0) - (lead >= 3 ? 0.2 : 0); return Math.max(0.1, Math.min(0.95, p)); };
@@ -2555,8 +2569,8 @@ function simRun_(SA, SB, opt) {
       if (size >= 2) for (var p = 0; p < c.length; p++) for (var q = p + 1; q < c.length; q++) { var s2 = score([hand[c[p]], hand[c[q]]]); if (s2 > bs) { bs = s2; best = [c[p], c[q]]; } }
       return { idx: best, score: bs };
     };
-    var predA = awkLeftOf(atk, b.no) > 0 ? pHasAwk(atk, b.no) * playAtk(diff, risp, slot, final) : 0;
-    var probA = Math.min(0.95, predA * calibOf(def.readObs, def.readExp)), evKillN = probA * awkGainOf(atk, b);
+    var predA = leftR(atk, b.no, def) > 0 ? pHasR(atk, b.no, def) * playAtk(diff, risp, slot, final) : 0;
+    var probA = Math.min(0.95, predA * calibOf(def.readObs, def.readExp)), evKillN = probA * gainR(atk, b, def);
     var take = function (hand, idx) { var out = idx.map(function (i) { return hand[i]; }); idx.slice().sort(function (x, y) { return y - x; }).forEach(function (i) { hand.splice(i, 1); }); return out; };
     var prevD = function (idx, a) { return dVal(idx.map(function (i) { return hB[i]; }), a); };
     if (def.human) {
@@ -2828,6 +2842,7 @@ function simRun_(SA, SB, opt) {
     var unseen = def.deck.length + hB.length + dCards.length, kLeft = Math.max(0, killTotal - killSeen), hN = hB.length + dCards.length;
     var pNone = 1; for (var kq = 0; kq < hN && unseen - kq > 0; kq++) pNone *= Math.max(0, (unseen - kLeft - kq)) / (unseen - kq);
     var pKill = (1 - pNone) * (risp ? 0.85 : 0.3);
+    if (readNew(atk)) pKill = Math.min(0.95, pKill * (1 + 0.12 * Math.min(5, gainR(atk, b, atk)))); // 強い覚醒ほど相手は勝負師を張ってくる（その裏をかく）
     // 偶数・奇数で AP が変わる打者（泉口・吉川・キャベッジ）：伏せる札のコストの合計も見て選ぶ
     var parAP = function (s) { if (!bfx.parity) return 0; var q = bfx.parity[costSum(atk, s) % 2 === 0 ? 'even' : 'odd'] || {}; return (q.ap || 0) + (q.dice || 0) * 0.5; };
     var withRisk = function (s, a, base0) {
@@ -2877,14 +2892,14 @@ function simRun_(SA, SB, opt) {
     var apBase = calc(b, [], attr, sit), aSel;
     var sc = function (s) { return withRisk(s, attr, apBase); };
     var leadP = def.score - atk.score, dangerP = leadP >= 0 && leadP <= (base[0] + base[1] + base[2]) + 1;
-    var predP = awkLeftOf(def, pit.no) > 0 ? pHasAwk(def, pit.no) * playDef(leadP, risp, dangerP, final) : 0;
+    var predP = leftR(def, pit.no, atk) > 0 ? pHasR(def, pit.no, atk) * playDef(leadP, risp, dangerP, final) : 0;
     var aKill = hA.findIndex(function (x) { return nm(x) === '勝負師'; });
     if (ansA) aSel = { idx: (ansA.idx || []).slice(0, maxHandPlace + extraSlot) };
     else if (aKill >= 0 && String(opt.killOld || '').indexOf(atk.key) < 0 && (function () {
       var awkLeftP = def.S.X.mainCards.filter(function (x) { return x.no === pit.no; }).reduce(function (t, x) { return t + x.num; }, 0) - def.rest.concat(def.inning, def.out).filter(function (x) { return x.no === pit.no; }).length;
       if (awkLeftP <= 0 || hA.length < 2) return false;
       var probP = Math.min(0.95, predP * calibOf(atk.readPObs, atk.readPExp)); if (probP < pMinOf(atk, hA.filter(isKill).length, final)) return false;
-      var evP = probP * awkGainOf(def, pit), levP = 1 + (risp ? 1 : 0) + (diff <= 0 && final ? 1 : 0) + (diff < 0 ? 0.5 : 0);
+      var evP = probP * gainR(def, pit, atk), levP = 1 + (risp ? 1 : 0) + (diff <= 0 && final ? 1 : 0) + (diff < 0 ? 0.5 : 0);
       var a1 = bestSet(hA, sc, 1, function (x) { return !isKill(x) && !keepDef(x); }), a2 = bestSet(hA, sc, 2, function (x) { return !isKill(x) && !keepDef(x); });
       var costP = Math.max(0.5, Math.max(0, a2.score) - Math.max(0, a1.score));
       return evP * levP >= costP * (hA.filter(isKill).length >= 2 ? KK2 : KK1);
@@ -3370,7 +3385,7 @@ function simulateGame2(XA, XB, opt) {
     var aFirst = tr % 2 === 0;
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -3423,7 +3438,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
