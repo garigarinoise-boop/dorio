@@ -3623,7 +3623,7 @@ document.querySelectorAll(".loader").forEach(sec => {
   $(".code", sec).addEventListener("keydown", e => { if (e.key === "Enter") $(".load", sec).click(); });
   $(".loadtext", sec).onclick = () => { const d = parseDeckText($(".text", sec).value, DB); st.textContent = `文字から読み込みました：オーダー ${d.p_list.length} 枚・メイン ${d.list.reduce((s, c) => s + c.num, 0)} 枚`; setDeck(slot, d); };
 });
-const TABS = [["solo", "1人対戦"], ["game", "勝率"], ["plan", "作戦検証"], ["env", "環境対戦表"], ["scene", "場面ごとの得点"], ["cover", "効果の対応表"], ["rules", "前提と決まり"]];
+const TABS = [["solo", "1人対戦"], ["game", "勝率"], ["plan", "作戦検証"], ["env", "環境対戦表"], ["swap", "入れ替え探し"], ["scene", "場面ごとの得点"], ["cover", "効果の対応表"], ["rules", "前提と決まり"]];
 function renderTabs() {
   $("#tabs").innerHTML = TABS.map(([k, l]) => `<button data-t="${k}" class="${S.tab === k ? "on" : ""}">${l}</button>`).join("");
   $("#tabs").querySelectorAll("button").forEach(b => b.onclick = () => { S.tab = b.dataset.t; lsSet("dorio_sim_tab", S.tab); render(); });
@@ -3806,6 +3806,125 @@ function wireEnv() {
       } catch (e) { out.push({ code: c, err: e.message }); }
     }
     S.running = false; S.res.env = { key, r: out }; render();
+  };
+}
+
+// ===== 入れ替え探し：メインの1枚入れ替えを総当たりして、仮想敵に勝ちやすくなる入れ替えを探す =====
+// 計算はブラウザの複数のコアで並列に回す（Web Worker。分析の本体と試合エンジンのスクリプトをそのまま使う）
+let SW_POOL = null;
+function swPool() {
+  if (SW_POOL) return SW_POOL;
+  const texts = [...document.querySelectorAll("script")].map(s => s.textContent);
+  const ana = texts.find(t => t.includes("function analyzeDeck")), sim = texts.find(t => t.includes("function simulateGame2"));
+  const src = ana + "\n" + sim + "\nvar __DB = null, __O = null, __OK = null;\nonmessage = function (e) { var m = e.data; if (m.type === 'init') { __DB = m.DB; return; }\n" +
+    "try { var X = analyzeDeck(JSON.parse(m.deck), __DB, {}); if (__OK !== m.oppKey) { __O = analyzeDeck(JSON.parse(m.opp), __DB, {}); __OK = m.oppKey; }\n" +
+    "var g = simulateGame2(X, __O, Object.assign({ trials: m.trials, swapLevel: m.lv }, m.opt)); postMessage({ id: m.id, w: g.win, d: g.draw, l: g.lose, trials: m.trials }); }\n" +
+    "catch (err) { postMessage({ id: m.id, err: String(err && err.message || err) }); } };";
+  const url = URL.createObjectURL(new Blob([src], { type: "text/javascript" }));
+  const n = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1));
+  SW_POOL = Array.from({ length: n }, () => { const w = new Worker(url); w.postMessage({ type: "init", DB }); return w; });
+  return SW_POOL;
+}
+// jobs: [{ key, deck(文字列), trials }] を並列で回し、key ごとに勝ち・引き分け・負けを合算する
+function swRun(jobs, opp, opt, onProgress, stopFlag) {
+  return new Promise(resolve => {
+    const pool = swPool(), agg = {}, oppKey = opp.length + ":" + opp.slice(0, 64);
+    let next = 0, done = 0, inflight = 0, ended = false;
+    const end = () => { if (ended) return; ended = true; pool.forEach(w => { w.onmessage = null; }); resolve(agg); };
+    const give = w => {
+      if (stopFlag.stop || next >= jobs.length) { if (inflight === 0) end(); return; }
+      const id = next++, j = jobs[id]; inflight++;
+      w.postMessage({ id, deck: j.deck, opp, oppKey, trials: j.trials, lv: S.lv, opt });
+    };
+    pool.forEach(w => {
+      w.onmessage = e => {
+        const m = e.data, j = jobs[m.id], a = agg[j.key] = agg[j.key] || { w: 0, d: 0, l: 0, n: 0 };
+        inflight--; done++;
+        if (m.err) a.err = m.err; else { a.w += m.w * m.trials; a.d += m.d * m.trials; a.l += m.l * m.trials; a.n += m.trials; }
+        onProgress(done, jobs.length);
+        give(w);
+      };
+    });
+    if (!jobs.length) return end();
+    pool.forEach(give);
+  });
+}
+const swRate = a => ({ win: a.n ? a.w / a.n : 0, draw: a.n ? a.d / a.n : 0, lose: a.n ? a.l / a.n : 0, trials: a.n });
+// メインの1枚入れ替え（抜く札 r を1枚減らし、入れる札 a を1枚足す）。オーダーはそのまま
+function swDeck(raw, r, a) {
+  const d = JSON.parse(JSON.stringify(raw));
+  if (r) { const i = d.list.findIndex(e => e.card_number === r); d.list[i].num = +d.list[i].num - 1; if (d.list[i].num <= 0) d.list.splice(i, 1); }
+  if (a) { const j = d.list.findIndex(e => e.card_number === a); if (j >= 0) d.list[j].num = +d.list[j].num + 1; else d.list.push({ card_number: a, num: 1 }); }
+  return JSON.stringify(d);
+}
+const SW_LEVELS = [["fast", "速い（全通り30試合→上位10組200試合→上位3組600試合）", [30, 200, 600]], ["normal", "普通（50→300→1000試合）", [50, 300, 1000]], ["fine", "丁寧（100→500→2000試合）", [100, 500, 2000]]];
+S.swLv = lsGet("dorio_sim_swLv", "fast");
+S.swTac = lsGet("dorio_sim_swTac", true); S.swOrd = lsGet("dorio_sim_swOrd", true);
+const swLockKey = () => "dorio_sim_swLock_" + ((S.A && (S.A.X.code || S.A.X.title)) || "");
+function swCands() {
+  const raw = S.A.raw, lock = lsGet(swLockKey(), []), cnt = no => raw.list.filter(e => e.card_number === no).reduce((t, e) => t + +e.num, 0);
+  const rems = [...new Set(raw.list.map(e => e.card_number))].filter(no => !lock.includes(no));
+  const adds = [];
+  if (S.swTac) Object.values(DB).forEach(c => { if (c && c.kind === "戦術" && c.no) adds.push(c.no); });
+  if (S.swOrd) (raw.p_list || []).forEach(e => { const c = DB[e.card_number]; if (c && c.kind === "選手") adds.push(c.no); });
+  const uniq = [...new Set(adds)].filter(no => cnt(no) < ((DB[no] && DB[no].max) || 3));
+  const pairs = []; rems.forEach(r => uniq.forEach(a => { if (a !== r) pairs.push([r, a]); }));
+  return { rems, adds: uniq, pairs, lock };
+}
+const swName = no => (DB[no] && DB[no].name || no).replace(/\s+/g, "");
+function vSwap() {
+  const raw = S.A.raw, lock = lsGet(swLockKey(), []), c = swCands();
+  const key = [S.lv, S.swLv, S.swTac, S.swOrd, JSON.stringify(lock), betKey(), S.B.X.code].join("|"), r = S.res.swap && S.res.swap.key === key ? S.res.swap.r : null;
+  const mains = [...new Set(raw.list.map(e => e.card_number))].map(no => ({ no, n: raw.list.filter(e => e.card_number === no).reduce((t, e) => t + +e.num, 0) }));
+  const lv = SW_LEVELS.find(x => x[0] === S.swLv) || SW_LEVELS[0];
+  const ctrl = betSel() + atkSel() + `<div style="border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;margin-bottom:8px">
+   <div class="small"><b>抜かない札</b>（入れ替えで抜く候補から外します）</div>
+   <div class="row small" style="gap:4px 10px;flex-wrap:wrap;margin:4px 0">${mains.map(m => `<label><input type="checkbox" class="swLock" data-no="${esc(m.no)}" ${lock.includes(m.no) ? "checked" : ""}> ${esc(swName(m.no))}×${m.n}</label>`).join("")}</div>
+   <div class="row small" style="gap:8px 16px;flex-wrap:wrap"><b>入れる候補</b><label><input type="checkbox" id="swTac" ${S.swTac ? "checked" : ""}> 戦術カード</label><label><input type="checkbox" id="swOrd" ${S.swOrd ? "checked" : ""}> オーダーの選手の札（覚醒札）</label></div></div>
+  <div class="row small" style="gap:12px;margin-bottom:8px">${lvSel("lv")}<label>精度 <select id="swLv">${SW_LEVELS.map(x => `<option value="${x[0]}" ${x[0] === S.swLv ? "selected" : ""}>${x[1]}</option>`).join("")}</select></label>
+   <button id="run" class="primary">${r ? "もう一度探す" : "探す"}</button><button id="swStop" style="display:none">止める</button></div>`;
+  const note = `<p class="note">メインデッキの1枚を抜いて1枚を入れる組み合わせ（今の条件で ${c.pairs.length} 通り）を、仮想敵と戦わせて比べます。少ない試合数で全部を回し、上位を試合数を増やして測り直します。最後の表は、今のデッキと同じ試合数で測った値です。ブラウザの ${Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1))} コアで並列に計算し、「速い」で1分前後かかります。</p>`;
+  if (!r) return ctrl + note;
+  const base = swRate(r.base), cb = winCI(base);
+  const fin = r.final.map(x => ({ x, g: swRate(x.agg), c: winCI(swRate(x.agg)) })).sort((a, b) => b.c.s - a.c.s);
+  const verdict = c => { const d = c.s - cb.s, cd = Math.sqrt(c.ci * c.ci + cb.ci * cb.ci); return Math.abs(d) <= cd ? `ぶれの範囲（±${cd.toFixed(1)}）` : d > 0 ? `<b>良くなる</b>（±${cd.toFixed(1)}）` : `悪くなる（±${cd.toFixed(1)}）`; };
+  return ctrl + note + `<h3>結果（各 ${lv[2][2]} 試合）</h3>
+  <div class="scroll"><table style="min-width:520px"><thead><tr><th>入れ替え</th><th class="n">勝率（引分0.5勝）</th><th class="n">勝・分・負 %</th><th class="n">今のデッキとの差</th><th>判定</th></tr></thead><tbody>
+  <tr><td>今のデッキ</td><td class="n num"><b>${cb.s.toFixed(1)}</b> <span class="small muted">±${cb.ci.toFixed(1)}</span></td><td class="n num">${wdl(base)}</td><td class="n num">—</td><td></td></tr>
+  ${fin.map(f => `<tr><td>${esc(swName(f.x.r))} を1枚抜いて<br>${esc(swName(f.x.a))} を1枚入れる</td><td class="n num"><b>${f.c.s.toFixed(1)}</b> <span class="small muted">±${f.c.ci.toFixed(1)}</span></td><td class="n num">${wdl(f.g)}</td><td class="n num">${(f.c.s - cb.s >= 0 ? "+" : "") + (f.c.s - cb.s).toFixed(1)}</td><td class="small">${verdict(f.c)}</td></tr>`).join("")}</tbody></table></div>
+  <h3>2段目の上位（各 ${lv[2][1]} 試合）</h3>
+  <div class="scroll"><table style="min-width:420px"><thead><tr><th>入れ替え</th><th class="n">勝率</th></tr></thead><tbody>${r.stage2.map(x => `<tr><td class="small">−${esc(swName(x.r))} ＋${esc(swName(x.a))}</td><td class="n num">${winCI(swRate(x.agg)).s.toFixed(1)}</td></tr>`).join("")}</tbody></table></div>
+  <p class="small muted">全 ${r.n1} 通りを各 ${lv[2][0]} 試合で回した上位から絞っています。少ない試合数の段階では、たまたま高く出た組も混ざるため、判断は一番上の表（試合数を増やして測り直した値）で行ってください。オーダーの入れ替えは含みません。</p>`;
+}
+function wireSwap() {
+  wireCommon();
+  document.querySelectorAll(".swLock").forEach(el => el.onchange = () => { const l = new Set(lsGet(swLockKey(), [])); if (el.checked) l.add(el.dataset.no); else l.delete(el.dataset.no); lsSet(swLockKey(), [...l]); render(); });
+  const t = $("#swTac"); if (t) t.onchange = () => { S.swTac = t.checked; lsSet("dorio_sim_swTac", S.swTac); render(); };
+  const o = $("#swOrd"); if (o) o.onchange = () => { S.swOrd = o.checked; lsSet("dorio_sim_swOrd", S.swOrd); render(); };
+  const l = $("#swLv"); if (l) l.onchange = () => { S.swLv = l.value; lsSet("dorio_sim_swLv", S.swLv); render(); };
+  const b = $("#run"), st = $("#swStop"); if (!b) return;
+  b.onclick = async () => {
+    if (S.running) return; S.running = true; b.disabled = true; st.style.display = ""; const flag = { stop: false }; st.onclick = () => { flag.stop = true; st.textContent = "止めています…"; };
+    const lock = lsGet(swLockKey(), []), key = [S.lv, S.swLv, S.swTac, S.swOrd, JSON.stringify(lock), betKey(), S.B.X.code].join("|");
+    const lv = (SW_LEVELS.find(x => x[0] === S.swLv) || SW_LEVELS[0])[2], c = swCands(), opp = JSON.stringify(S.B.raw), opt = betOpt(), raw = S.A.raw;
+    const prog = (label) => (d, n) => { b.textContent = `${label}… ${Math.round(d / n * 100)}%`; };
+    try {
+      // 1段目：全通り
+      const a1 = await swRun(c.pairs.map(([r0, a0]) => ({ key: r0 + ">" + a0, deck: swDeck(raw, r0, a0), trials: lv[0] })), opp, opt, prog(`1段目（${c.pairs.length}通り）`), flag);
+      if (flag.stop) throw new Error("stop");
+      const s1 = c.pairs.map(([r0, a0]) => ({ r: r0, a: a0, s: a1[r0 + ">" + a0] ? winCI(swRate(a1[r0 + ">" + a0])).s : -1 })).sort((x, y) => y.s - x.s).slice(0, 10);
+      // 2段目：上位10組
+      const split = (key0, deck, n) => { const out = [], step = Math.max(50, Math.ceil(n / 8)); for (let k = 0; k < n; k += step) out.push({ key: key0, deck, trials: Math.min(step, n - k) }); return out; };
+      const a2 = await swRun([].concat(...s1.map(x => split(x.r + ">" + x.a, swDeck(raw, x.r, x.a), lv[1]))), opp, opt, prog("2段目（上位10組）"), flag);
+      if (flag.stop) throw new Error("stop");
+      const s2 = s1.map(x => ({ r: x.r, a: x.a, agg: a2[x.r + ">" + x.a] })).filter(x => x.agg).sort((x, y) => winCI(swRate(y.agg)).s - winCI(swRate(x.agg)).s);
+      // 3段目：上位3組と今のデッキを同じ試合数で
+      const top3 = s2.slice(0, 3);
+      const a3 = await swRun([].concat(split("base", swDeck(raw, null, null), lv[2]), ...top3.map(x => split(x.r + ">" + x.a, swDeck(raw, x.r, x.a), lv[2]))), opp, opt, prog("3段目（上位3組を測り直し）"), flag);
+      if (flag.stop) throw new Error("stop");
+      S.res.swap = { key, r: { base: a3.base, final: top3.map(x => ({ r: x.r, a: x.a, agg: a3[x.r + ">" + x.a] })), stage2: s2, n1: c.pairs.length } };
+    } catch (e) { if (e.message !== "stop") alert("計算できませんでした：" + e.message); }
+    S.running = false; render();
   };
 }
 
@@ -4082,12 +4201,13 @@ function render() {
   renderTabs();
   const v = $("#view");
   if (!S.A || !S.B) { v.innerHTML = '<div class="empty">自分と仮想敵の両方にデッキを読み込んでください。</div>' + (S.tab === "rules" ? vRules() : ""); return; }
-  const fn = { solo: vSolo, game: vGame, plan: vPlan, env: vEnv, scene: vScene, cover: vCover, rules: vRules }[S.tab] || vGame;
+  const fn = { solo: vSolo, game: vGame, plan: vPlan, env: vEnv, swap: vSwap, scene: vScene, cover: vCover, rules: vRules }[S.tab] || vGame;
   v.innerHTML = head() + fn();
   if (S.tab === "game") wireGame();
   if (S.tab === "scene") wireScene();
   if (S.tab === "plan") wirePlan();
   if (S.tab === "env") wireEnv();
+  if (S.tab === "swap") wireSwap();
   if (S.tab === "solo") wireSolo();
 }
 renderRecent(); render();
