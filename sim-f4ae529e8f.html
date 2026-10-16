@@ -2593,6 +2593,43 @@ function simRun_(SA, SB, opt) {
     var probA = Math.min(0.95, predA * calibOf(def.readObs, def.readExp)), evKillN = probA * gainR(atk, b, def);
     // 威圧：戻した覚醒札の支援DPが低いと、相手は守備で使えない札を手札に抱える（邪魔になる）。そういう相手にはとりあえず打つ（2026-10-15 ユーザー談）
     var iatsuI = hB.findIndex(function (x) { return nm(x) === '威圧'; }), clogV = readNew(def) && String(opt.clogOff || '').indexOf(def.key) < 0 && iatsuI >= 0 && dpValue_(atk.S.rowOf[b.no] || b) <= 2 ? probA * 0.8 : 0;
+    // 上限読みの守備（2026-10-16 ユーザー談）：相手が出してきそうな札で届く AP の「1上」の DP で守る。
+    // 相手の手札は見えないので、まだ見えていない札（山札＋手札）から手札の枚数ぶんを引き直し、上位の札の AP の上がり幅を足す（引き直した結果の7割の値）
+    var readT = null;
+    if (!def.human && String(opt.defReadOld || '').indexOf(def.key) < 0 && hA.length) {
+      var seenA = atk.rest.concat(atk.inning, atk.out), poolA = [];
+      atk.S.X.mainCards.forEach(function (c) { var sn = seenA.filter(function (y) { return y.no === c.no; }).length; for (var q = 0; q < c.num - sn; q++) poolA.push(c); });
+      if (poolA.length) {
+        readT = {};
+        var kA = risp || hA.length >= 3 ? 2 : 1;
+        ['ミート', '強振'].forEach(function (a) {
+          var b0 = calc(b, [], a, sit), gainOf = {};
+          poolA.forEach(function (c) { if (!(c.no in gainOf)) gainOf[c.no] = isKill(c) ? 0 : Math.max(0, calc(b, [c], a, sit) - b0); });
+          var sums = [];
+          for (var t = 0; t < 24; t++) {
+            var left0 = poolA.slice(), g = [];
+            for (var q2 = 0; q2 < Math.min(hA.length, left0.length); q2++) { var r0 = Math.floor(rnd() * left0.length); g.push(gainOf[left0[r0].no]); left0.splice(r0, 1); }
+            g.sort(function (x, y) { return y - x; }); sums.push(g.slice(0, kA).reduce(function (s0, v) { return s0 + v; }, 0));
+          }
+          sums.sort(function (x, y) { return x - y; });
+          readT[a] = b0 + sums[Math.floor(sums.length * 0.7)] + 1;
+        });
+      }
+    }
+    // 目標（読んだ AP＋1）に届く属性ごとに大きく加点。危ない側（読んだ AP が高い側）ほど重く、使う札は少ないほど良い
+    var readSc = function (s) {
+      var sc = 0;
+      // 手札が厚い（7枚以上）ときは温存してもチェンジで捨てるので、札の数は気にせず、目標を超えた分の DP も少し評価する
+      var thick = hB.length >= 7;
+      ['ミート', '強振'].forEach(function (a) { var v = dVal(s, a), T = readT[a], b1 = a === 'ミート' ? dpM : dpS; sc += v >= T ? 1000 + 100 * (T - b1) + (thick ? (v - T) * 5 : 0) : (v - b1) * 10; });
+      return sc - (thick ? 0 : 40) * s.length;
+    };
+    var readPick = function (filter) {
+      if (!readT) return null;
+      if (dpM >= readT['ミート'] && dpS >= readT['強振']) { var jk = junkIdx(def); return jk.i >= 0 ? { idx: [jk.i], score: 2000 } : null; } // 札が無くても届かない：一番要らない札を1枚だけ
+      var bs = bestSet(hB, readSc, defLimit1 ? 1 : 2, filter);
+      return bs.idx.length && bs.score >= 1000 ? bs : null;
+    };
     var take = function (hand, idx) { var out = idx.map(function (i) { return hand[i]; }); idx.slice().sort(function (x, y) { return y - x; }).forEach(function (i) { hand.splice(i, 1); }); return out; };
     var prevD = function (idx, a) { return dVal(idx.map(function (i) { return hB[i]; }), a); };
     if (def.human) {
@@ -2616,7 +2653,7 @@ function simRun_(SA, SB, opt) {
         var one1 = bestSet(hB, defSc, 1, function (x) { return !isKill(x) && nm(x) !== '強心臓'; });
         dSel = { idx: [killI].concat(one1.score >= 10 ? one1.idx : []) }; ev(def, danger ? '得点圏の外で勝負師・威圧を張る（出すと逆転される場面）' : '得点圏の外で勝負師・威圧を張る');
       } else {
-        dSel = bestSet(hB, defSc, closeOut || (engD && hB.length >= 2) || (!saveMode && hB.length >= def.S.handStart - (opt.def2 != null ? opt.def2 : 0)) ? 2 : 1,
+        dSel = readPick(function (x) { return !isKill(x) && nm(x) !== '強心臓'; }) || bestSet(hB, defSc, closeOut || (engD && hB.length >= 2) || (!saveMode && hB.length >= def.S.handStart - (opt.def2 != null ? opt.def2 : 0)) ? 2 : 1,
           function (x) { return !isKill(x) && nm(x) !== '強心臓'; });
         if (dSel.score < 10) dSel.idx = [];
       }
@@ -2635,7 +2672,7 @@ function simRun_(SA, SB, opt) {
         useKillR = probA >= pMinOf(def, hB.filter(isKill).length, final) - (clogV ? 0.05 : 0) && (evR + clogV) * levR >= costR * (hB.filter(isKill).length >= 2 ? KK2 : KK1);
       }
       if (useKillR) { var one = bestSet(hB, mn, 1, function (x) { return !isKill(x); }); dSel = { idx: [kill].concat(one.score >= 10 ? one.idx : []) }; ev(def, '得点圏で勝負師・威圧'); }
-      else { dSel = bestSet(hB, mn, 2); if (dSel.score < 10) dSel.idx = []; }
+      else { dSel = readPick(function (x) { return !isKill(x); }) || bestSet(hB, mn, 2); if (dSel.score < 10) dSel.idx = []; }
     }
     if (!dSel.idx.length && hB.length) {
       // 公式Q&A Q52：手札があるなら必ず1枚以上置く。DP が上がる札が無ければ、一番要らない札を置く
@@ -3427,7 +3464,7 @@ function simulateGame2(XA, XB, opt) {
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
     var readAgg = function (q) { var at = q.aKey, df = at === 'A' ? 'B' : 'A'; if (q.killD) { out.kill[df].use++; if (q.playA) out.kill[df].hit++; } if (q.playA) out.kill[df].faced++; if (q.killA) { out.kill[at].use++; if (q.playP) out.kill[at].hit++; } if (q.playP) out.kill[at].faced++; if (opt.readLog) opt.readLog(q); };
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, defReadOld: opt.defReadOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true; R.A.batFirst = aFirst; R.B.batFirst = !aFirst; if (aFirst) out.nF++; else out.nS++;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -3482,7 +3519,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, defReadOld: opt.defReadOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
