@@ -3459,10 +3459,9 @@ function simulateGame2(XA, XB, opt) {
     out.pinchA += Object.keys(R.A.usedPinch).length; out.pinchB += Object.keys(R.B.usedPinch).length;
     out.refresh += R.A.refresh + R.B.refresh; out.swapsA += R.A.swaps; out.swapsB += R.B.swaps; out.mullA += R.A.mull || 0; out.mullB += R.B.mull || 0; out.tpLeftA += R.A.tp; out.tpLeftB += R.B.tp;
   }
-  var half2 = trials / 2;
-  ['aFirst', 'bFirst'].forEach(function (k) { var o = out[k]; o.win /= half2; o.draw /= half2; o.lose /= half2; o.runsA /= half2; o.runsB /= half2; });
-  out.win = (out.aFirst.win + out.bFirst.win) / 2; out.draw = (out.aFirst.draw + out.bFirst.draw) / 2; out.lose = (out.aFirst.lose + out.bFirst.lose) / 2;
-  out.runsA = (out.aFirst.runsA + out.bFirst.runsA) / 2; out.runsB = (out.aFirst.runsB + out.bFirst.runsB) / 2;
+  // 全体は全試合で、先攻・後攻はそれぞれの試合数で割る（ヤクルトのチームカードで片方に偏ることがある。0試合の側は null）
+  ['win', 'draw', 'lose', 'runsA', 'runsB'].forEach(function (q) { out[q] = (out.aFirst[q] + out.bFirst[q]) / trials; });
+  [['aFirst', out.nF], ['bFirst', out.nS]].forEach(function (kn) { var o = out[kn[0]], n0 = kn[1]; ['win', 'draw', 'lose', 'runsA', 'runsB'].forEach(function (q) { o[q] = n0 ? o[q] / n0 : null; }); });
   var ta = out.attrA.ミート + out.attrA.強振, tb = out.attrB.ミート + out.attrB.強振;
   out.meetRateA = ta ? out.attrA.ミート / ta : 0; out.meetRateB = tb ? out.attrB.ミート / tb : 0;
   ['innA', 'innB'].forEach(function (k) { out[k] = out[k].map(function (x) { return x / trials; }); });
@@ -3574,7 +3573,7 @@ const lsGet = (k, d) => { try { const v = LS && LS.getItem(k); return v ? JSON.p
 const lsSet = (k, v) => { try { LS && LS.setItem(k, JSON.stringify(v)); } catch (e) {} };
 const $ = (s, el = document) => el.querySelector(s);
 const esc = t => String(t == null ? "" : t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const pc = x => (x * 100).toFixed(0) + "%";
+const pc = x => x == null ? "—" : (x * 100).toFixed(0) + "%";
 const S = { A: null, B: null, tab: lsGet("dorio_sim_tab", "game"), lv: 1, trials: 1000, res: {}, sceneIdx: 0, lead: null, running: false, betA: lsGet("dorio_sim_betA", "強振"), betB: lsGet("dorio_sim_betB", "強振"), adA: lsGet("dorio_sim_adA", 2), adB: lsGet("dorio_sim_adB", 2), saveA: lsGet("dorio_sim_saveA", false), saveB: lsGet("dorio_sim_saveB", false) };
 const planOf = k => { const X = S[k] && S[k].X; const key = "dorio_sim_plan_" + (X && (X.code || X.title) || k); return S["plan" + k] && S["plan" + k]._key === key ? S["plan" + k] : (S["plan" + k] = Object.assign({ def: "auto", per: {} }, lsGet(key, {}), { _key: key })); };
 const savePlan = k => { const p = planOf(k); lsSet(p._key, { def: p.def, per: p.per }); };
@@ -3669,7 +3668,7 @@ function mergeGame(acc, g, w) {
   const W = acc.trials + g.trials;
   const mix = (a, b) => (a * acc.trials + b * g.trials) / W;
   ["win", "draw", "lose", "runsA", "runsB", "meetRateA", "meetRateB", "relA", "relB", "zoneA", "zoneB", "pinchA", "pinchB", "refresh", "swapsA", "swapsB", "mullA", "mullB", "tpLeftA", "tpLeftB"].forEach(k => acc[k] = mix(acc[k], g[k]));
-  ["aFirst", "bFirst"].forEach(k => ["win", "draw", "lose", "runsA", "runsB"].forEach(q => acc[k][q] = mix(acc[k][q], g[k][q])));
+  ["aFirst", "bFirst"].forEach(k => { const na = k === "aFirst" ? acc.nF : acc.nS, ng = k === "aFirst" ? g.nF : g.nS; ["win", "draw", "lose", "runsA", "runsB"].forEach(q => { const t = (na || 0) + (ng || 0); acc[k][q] = t ? (((acc[k][q] || 0) * (na || 0)) + ((g[k][q] || 0) * (ng || 0))) / t : null; }); });
   ["innA", "innB"].forEach(k => acc[k] = acc[k].map((v, i) => mix(v, g[k][i])));
   ["evA", "evB"].forEach(k => { const keys = new Set(Object.keys(acc[k]).concat(Object.keys(g[k]))); keys.forEach(q => acc[k][q] = mix(acc[k][q] || 0, g[k][q] || 0)); });
   for (const s in g.scores) acc.scores[s] = (acc.scores[s] || 0) + g.scores[s];
@@ -3704,7 +3703,7 @@ function innTables(r) {
 // 引き分けを0.5勝とした勝率と、ぶれの幅（95%）
 const winCI = r => { const s0 = r.win + r.draw / 2, v0 = r.win + r.draw / 4 - s0 * s0; return { s: s0 * 100, ci: 1.96 * Math.sqrt(Math.max(0, v0) / Math.max(1, r.trials)) * 100 }; };
 const wdl = x => `${(x.win * 100).toFixed(0)}・${(x.draw * 100).toFixed(0)}・${(x.lose * 100).toFixed(0)}`;
-const pt = x => ((x.win + x.draw / 2) * 100).toFixed(1);
+const pt = x => x.win == null ? "—" : ((x.win + x.draw / 2) * 100).toFixed(1);
 
 // ===== 作戦検証：同じデッキ・同じ相手で、自分の作戦を変えたときの差 =====
 S.pv = Object.assign({ zoneAt: 1, zonePick: "", first: "", second: "", keepOne: false, decl: "" }, lsGet("dorio_sim_pv", {}));
@@ -3825,8 +3824,8 @@ function vGame() {
   const top = Object.entries(r.scores).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([s, n]) => `${s}（${pc(n / r.trials)}）`).join("　");
   return ctrl + `<table><thead><tr><th></th><th class="n">勝ち</th><th class="n">引き分け</th><th class="n">負け</th><th class="n">得点</th><th class="n">失点</th></tr></thead><tbody>
   <tr><td><b>全体</b></td><td class="n num"><b>${pc(r.win)}</b></td><td class="n num">${pc(r.draw)}</td><td class="n num">${pc(r.lose)}</td><td class="n num">${r.runsA.toFixed(2)}</td><td class="n num">${r.runsB.toFixed(2)}</td></tr>
-  <tr><td>自分が先攻</td><td class="n num">${pc(r.aFirst.win)}</td><td class="n num">${pc(r.aFirst.draw)}</td><td class="n num">${pc(r.aFirst.lose)}</td><td class="n num">${r.aFirst.runsA.toFixed(2)}</td><td class="n num">${r.aFirst.runsB.toFixed(2)}</td></tr>
-  <tr><td>自分が後攻</td><td class="n num">${pc(r.bFirst.win)}</td><td class="n num">${pc(r.bFirst.draw)}</td><td class="n num">${pc(r.bFirst.lose)}</td><td class="n num">${r.bFirst.runsA.toFixed(2)}</td><td class="n num">${r.bFirst.runsB.toFixed(2)}</td></tr></tbody></table>
+  <tr><td>自分が先攻</td><td class="n num">${pc(r.aFirst.win)}</td><td class="n num">${pc(r.aFirst.draw)}</td><td class="n num">${pc(r.aFirst.lose)}</td><td class="n num">${r.aFirst.runsA == null ? "—" : r.aFirst.runsA.toFixed(2)}</td><td class="n num">${r.aFirst.runsB == null ? "—" : r.aFirst.runsB.toFixed(2)}</td></tr>
+  <tr><td>自分が後攻</td><td class="n num">${pc(r.bFirst.win)}</td><td class="n num">${pc(r.bFirst.draw)}</td><td class="n num">${pc(r.bFirst.lose)}</td><td class="n num">${r.bFirst.runsA == null ? "—" : r.bFirst.runsA.toFixed(2)}</td><td class="n num">${r.bFirst.runsB == null ? "—" : r.bFirst.runsB.toFixed(2)}</td></tr></tbody></table>
   ${(() => { const s0 = r.win + r.draw / 2, v0 = r.win + r.draw / 4 - s0 * s0, ci = 1.96 * Math.sqrt(Math.max(0, v0) / Math.max(1, r.trials)) * 100;
     return `<p class="small">引き分けを0.5勝とした勝率 <b>${(s0 * 100).toFixed(1)}%</b>（±${ci.toFixed(1)}ポイントはぶれの範囲）　引き分けを除いた勝率 ${pc(r.win / Math.max(1e-9, r.win + r.lose))}（${r.trials}試合）</p>`; })()}
   ${(r.nF === 0 || r.nS === 0) && r.innF ? '<p class="note">どちらかのチームカードが先攻・後攻を選べる（ヤクルト）ため、片方だけの試合になっています。</p>' : ""}
