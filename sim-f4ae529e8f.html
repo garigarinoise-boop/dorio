@@ -3883,7 +3883,7 @@ function vSwap() {
    <div class="row small" style="gap:8px 16px;flex-wrap:wrap"><b>入れる候補</b><label><input type="checkbox" id="swTac" ${S.swTac ? "checked" : ""}> 戦術カード</label><label><input type="checkbox" id="swOrd" ${S.swOrd ? "checked" : ""}> オーダーの選手の札（覚醒札）</label></div></div>
   <div class="row small" style="gap:12px;margin-bottom:8px">${lvSel("lv")}<label>精度 <select id="swLv">${SW_LEVELS.map(x => `<option value="${x[0]}" ${x[0] === S.swLv ? "selected" : ""}>${x[1]}</option>`).join("")}</select></label>
    <button id="run" class="primary">${r ? "もう一度探す" : "探す"}</button><button id="swStop" style="display:none">止める</button></div>`;
-  const note = `<p class="note">メインデッキの1枚を抜いて1枚を入れる組み合わせ（今の条件で ${c.pairs.length} 通り）を、仮想敵と戦わせて比べます。少ない試合数で全部を回し、上位を試合数を増やして測り直します。最後の表は、今のデッキと同じ試合数で測った値です。ブラウザの ${Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1))} コアで並列に計算し、「速い」で1分前後かかります。</p>`;
+  const note = `<p class="note">メインデッキの1枚を抜いて1枚を入れる組み合わせ（今の条件で ${c.pairs.length} 通り）を、仮想敵と戦わせて比べます。少ない試合数で全部を回し、上位を試合数を増やして測り直します。最後の表は、今のデッキと同じ試合数で測った値です。ブラウザの ${Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1))} コアで並列に計算し、「速い」で2分前後（8コアのとき）かかります。</p>`;
   if (!r) return ctrl + note;
   const base = swRate(r.base), cb = winCI(base);
   const fin = r.final.map(x => ({ x, g: swRate(x.agg), c: winCI(swRate(x.agg)) })).sort((a, b) => b.c.s - a.c.s);
