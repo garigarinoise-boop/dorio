@@ -2104,6 +2104,9 @@ function simRun_(SA, SB, opt) {
 
   /** 1打席。atk が攻撃、def が守備。half：{ base, outs, inn, prevOn, first } */
   var logf = opt.log || null;
+  // TP の数で伸びる起動（オスナ）の打者の2打席目までは、ほかで TP を使って4未満にしない（opt.tpHoldAll にチーム記号）
+  var holdTP = function (T, curNo) { if (String(opt.tpHoldAll || '').indexOf(T.key) < 0) return false; T.abSeen = T.abSeen || {};
+    return T.lineup.some(function (v) { var kf = T.S.fx(T.S.rowOf[v.no] || v).kidou; return kf && kf.type === 'revealTPN' && v.no !== curNo && (T.abSeen[v.no] || 0) < 2 && T.tp - 1 < kf.bonusAt + 1; }); };
   var KK1 = opt.killK || 1.2, KK2 = KK1 * 0.75, PMIN = opt.killP != null ? opt.killP : 0.3;
   // 勝負師は持っているだけで相手の覚醒を止める（相手は見えた勝負師の枚数から伏せ札を読む）。残りが少ないほど1枚の価値が上がるので、最後の1枚は確実な場面か最終回まで取っておく
   var killRemain = function (T) { var tot = T.S.X.mainCards.filter(isKill).reduce(function (t, x) { return t + x.num; }, 0); return tot - T.rest.concat(T.inning, T.out).filter(isKill).length; };
@@ -2372,6 +2375,7 @@ function simRun_(SA, SB, opt) {
   var paG = function* (atk, def, half, fixedAttr) {
     var hA = atk.hand, hB = def.hand, st = stats ? stats(half) : {}, d1, d2;
     var slot = atk.bi % 9, b = atk.lineup[slot], pinchNow = false;
+    atk.abSeen = atk.abSeen || {}; atk.abSeen[b.no] = (atk.abSeen[b.no] || 0) + 1;
     var final = half.inn >= finalInn, base = half.base, risp = !!(base[1] || base[2]), runner = !!(base[0] || base[1] || base[2]);
     var diff = atk.score - def.score;
     // TP の残し方：継投（抑えか中継ぎがいて、まだ交代していない）・ZONE（まだ使っていない）のぶん
@@ -2422,9 +2426,10 @@ function simRun_(SA, SB, opt) {
           if (goZ) zoneDo(false, zr.row);
         }
       }
-      else if (!opt.noZone && atk.S.zoneFor === b.no && !atk.zoneUsed && atk.tp >= 1 && atk.zoneSeen >= zoneAtN) zoneDo();
+      else if (!opt.noZone && atk.S.zoneFor === b.no && !atk.zoneUsed && atk.tp >= 1 && atk.zoneSeen >= zoneAtN && !holdTP(atk, b.no)) zoneDo();
       // 代打：最終回、得点圏かビハインドで、代打のほうが値が高いとき
-      else if (!opt.noPinch && final && (risp || diff < 0) && atk.tp - reserve(atk) >= 1) {
+      // TP の数で伸びる起動（オスナ：TP の数だけ公開、3枚以上で AP+2）の打者の2打席目までは、代打で TP を4未満にしない（2026-10-16 ユーザー談）
+      else if (!opt.noPinch && final && (risp || diff < 0) && atk.tp - reserve(atk) >= 1 && !(String(opt.tpHoldOld || '').indexOf(atk.key) < 0 && atk.lineup.some(function (v) { var kf = atk.S.fx(atk.S.rowOf[v.no] || v).kidou; return kf && kf.type === 'revealTPN' && v.no !== b.no && (atk.abSeen[v.no] || 0) < 2 && atk.tp - 1 < kf.bonusAt + 1; }))) {
         var bestP = null, bestV = -99, sitP = { runner: runner, risp: risp, norunner: !runner, behind: diff < 0, lead: diff > 0, pinch: true };
         var cur = Math.max(calc(b, [], 'ミート', Object.assign({}, sitP, { pinch: false })), calc(b, [], '強振', Object.assign({}, sitP, { pinch: false })));
         pinchCands().forEach(function (pp) {
@@ -2755,7 +2760,7 @@ function simRun_(SA, SB, opt) {
           else LG('自分：' + nm(b) + 'の起動は使えませんでした（条件に合う札が選ばれていない）');
         }
       }
-    } else if (kd && (!kd.tp || (atk.tp - reserve(atk) >= 1 && (final || risp || atk.tp >= 3)))) {
+    } else if (kd && (!kd.tp || (atk.tp - reserve(atk) >= 1 && (final || risp || atk.tp >= 3))) && !(kd.tp && kd.type !== 'revealTPN' && holdTP(atk, b.no)) && !(kd.type === 'revealTPN' && String(opt.tpHoldAll || '').indexOf(atk.key) >= 0 && (atk.abSeen[b.no] || 0) < 2 && atk.tp - 1 < kd.bonusAt)) {
       var used = false;
       if (kd.type === 'inningPC') {
         // 手札の札を1枚イニングエリアに置く（投手・捕手が無ければそれを）→ 投手か捕手があれば AP+ → イニングエリアの札を1枚手札へ
@@ -2806,7 +2811,7 @@ function simRun_(SA, SB, opt) {
         var rvC = reveal(atk, kd.n), fC = rvC.filter(isFielder).length; rvC.forEach(function (x) { atk.rest.push(x); });
         if (fC >= 1) { atk.tp += kd.gain; ev(atk, nm(b) + 'の起動（TP+' + kd.gain + '）'); } if (fC >= kd.need) sit.kidou = true; used = true;
       } else if (kd.type === 'revealTPN') {
-        if (kd.tp) atk.tp--; var nC = Math.max(0, atk.tp), rvC2 = reveal(atk, nC);
+        if (kd.tp) atk.tp--; var nC = Math.max(0, atk.tp), rvC2 = reveal(atk, nC); ev(atk, nm(b) + '（' + Math.min(nC, 9) + '枚公開' + ((atk.abSeen[b.no] || 0) >= 2 ? '・2打席目以降' : '・1打席目') + '）');
         rvC2.sort(function (x, y) { return worth(atk, y) - worth(atk, x); }); rvC2.forEach(function (x, i) { (i < kd.take ? hA : atk.rest).push(x); });
         if (rvC2.length >= kd.bonusAt) { if (kd.bonusAP) sit.kidou = true; if (kd.bonusDraw) draw(atk, kd.bonusDraw); }
         used = true; kd = Object.assign({}, kd, { tp: false });
@@ -2877,6 +2882,7 @@ function simRun_(SA, SB, opt) {
       var acx = { self: b, label: nm(b) + 'の起動', live: preA, add: { ap: 0, dp: 0, dice: 0 }, sx: sit, role: 'atk', opp: def, base: base, half: half, behind: diff < 0, supX: ka2.cond && ka2.cond.supX,
         gain: function (x) { return Math.max(calc(b, preA.concat([x]), 'ミート', sit) - calc(b, preA, 'ミート', sit), calc(b, preA.concat([x]), '強振', sit) - calc(b, preA, '強振', sit)); } };
       if (!actOk(atk, ka2, acx)) continue;
+      if (kc2.tp && holdTP(atk, b.no)) continue;
       if (!((!kc2.tp || atk.tp >= 1) && (!kc2.hand || hA.filter(function (y) { return !kc2.tactic || y.kind === '戦術'; }).length >= kc2.hand))) continue;
       var statA = ka2.ops.some(function (o) { return o.op === 'stat' || o.op === 'revealCount' || o.op === 'topToSup' || o.op === 'restToSup'; });
       var useA = false, payA = [];
@@ -3423,7 +3429,7 @@ function simRun_(SA, SB, opt) {
     var rcx = { add: { ap: 0, dp: 0, dice: 0 }, sx: { ownUsedP: 1, lead: def.score > (def === A ? B : A).score }, oldPitCost: rowCost(def, oldP) }; fireSync(def, rel, 'relief', rcx, true); def.reliefDP = rcx.add.dp; def.reliefDice = rcx.add.dice || 0; var rsf = def.S.fx(def.S.rowOf[rel.no] || rel).reliefSup; def.relSupNext = rsf || null; def.reliefAttr = (actsOf(def, rel, 'relief', true).find(function (q) { return q.cond && q.cond.attr; }) || { cond: {} }).cond.attr || null; fireSync(def, rel, 'enter', { sx: {} }, true); };
   // 継投：最終回の守備で、先発で使う札（覚醒札・強心臓・不屈）が手札に無くなったら
   var maybeRelieve = function (def, inn) {
-    if (opt.noRelief || def.relieved || inn < finalInn || def.tp < 1) return;
+    if (opt.noRelief || def.relieved || inn < finalInn || def.tp < 1 || holdTP(def, null)) return;
     var rel = def.S.closer || def.S.middle; if (!rel) return;
     var stv = def.S.starter, cost = rowCost(def, stv);
     var left = def.hand.some(function (x) { return x.no === stv.no || nm(x) === '強心臓' || (nm(x) === '不屈' && cost >= 3); });
@@ -3464,7 +3470,7 @@ function simulateGame2(XA, XB, opt) {
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
     var readAgg = function (q) { var at = q.aKey, df = at === 'A' ? 'B' : 'A'; if (q.killD) { out.kill[df].use++; if (q.playA) out.kill[df].hit++; } if (q.playA) out.kill[df].faced++; if (q.killA) { out.kill[at].use++; if (q.playP) out.kill[at].hit++; } if (q.playP) out.kill[at].faced++; if (opt.readLog) opt.readLog(q); };
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, defReadOld: opt.defReadOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true; R.A.batFirst = aFirst; R.B.batFirst = !aFirst; if (aFirst) out.nF++; else out.nS++;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -3519,7 +3525,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, defReadOld: opt.defReadOld, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
