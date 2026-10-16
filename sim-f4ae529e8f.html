@@ -3624,7 +3624,7 @@ document.querySelectorAll(".loader").forEach(sec => {
   $(".code", sec).addEventListener("keydown", e => { if (e.key === "Enter") $(".load", sec).click(); });
   $(".loadtext", sec).onclick = () => { const d = parseDeckText($(".text", sec).value, DB); st.textContent = `文字から読み込みました：オーダー ${d.p_list.length} 枚・メイン ${d.list.reduce((s, c) => s + c.num, 0)} 枚`; setDeck(slot, d); };
 });
-const TABS = [["solo", "1人対戦"], ["game", "勝率"], ["scene", "場面ごとの得点"], ["cover", "効果の対応表"], ["rules", "前提と決まり"]];
+const TABS = [["solo", "1人対戦"], ["game", "勝率"], ["plan", "作戦検証"], ["env", "環境対戦表"], ["scene", "場面ごとの得点"], ["cover", "効果の対応表"], ["rules", "前提と決まり"]];
 function renderTabs() {
   $("#tabs").innerHTML = TABS.map(([k, l]) => `<button data-t="${k}" class="${S.tab === k ? "on" : ""}">${l}</button>`).join("");
   $("#tabs").querySelectorAll("button").forEach(b => b.onclick = () => { S.tab = b.dataset.t; lsSet("dorio_sim_tab", S.tab); render(); });
@@ -3701,6 +3701,115 @@ function innTables(r) {
   <tr><td>自分</td>${kr("A")}</tr><tr><td>仮想敵</td>${kr("B")}</tr></tbody></table>
   <p class="small muted">「相手が覚醒札を出した」は、自分の打席の投手と、自分の守備の打者が覚醒札を伏せた回数（消されたものも含む）。CPU は相手のデッキの枚数を知らず、見た目から推測して読みます。</p>`;
 }
+// 引き分けを0.5勝とした勝率と、ぶれの幅（95%）
+const winCI = r => { const s0 = r.win + r.draw / 2, v0 = r.win + r.draw / 4 - s0 * s0; return { s: s0 * 100, ci: 1.96 * Math.sqrt(Math.max(0, v0) / Math.max(1, r.trials)) * 100 }; };
+const wdl = x => `${(x.win * 100).toFixed(0)}・${(x.draw * 100).toFixed(0)}・${(x.lose * 100).toFixed(0)}`;
+const pt = x => ((x.win + x.draw / 2) * 100).toFixed(1);
+
+// ===== 作戦検証：同じデッキ・同じ相手で、自分の作戦を変えたときの差 =====
+S.pv = Object.assign({ zoneAt: 1, zonePick: "", first: "", second: "", keepOne: false, decl: "" }, lsGet("dorio_sim_pv", {}));
+const pvKey = () => JSON.stringify(S.pv);
+function pvOpt() {
+  const o = Object.assign({}, betOpt()), pv = S.pv;
+  if (+pv.zoneAt > 1) o.zoneAt = { A: +pv.zoneAt };
+  if (pv.first !== "" || pv.second !== "") o.innFloor = { A: { first: pv.first === "" ? null : +pv.first, second: pv.second === "" ? null : +pv.second, keepOne: !!pv.keepOne, anticipate: true } };
+  else if (pv.keepOne) o.innFloor = { A: { keepOne: true } };
+  if (pv.decl) { const po = planOpt(); po.A = { def: pv.decl, per: {} }; o.atkPlan = po; }
+  return o;
+}
+function vPlan() {
+  const pv = S.pv, zones = S.A.X.order.filter(r => r.kind === "ZONE選手");
+  const sel = (id, v, list) => `<select id="${id}">${list.map(([a, l]) => `<option value="${a}" ${String(v) === String(a) ? "selected" : ""}>${l}</option>`).join("")}</select>`;
+  const key = [S.lv, S.trials, betKey(), pvKey()].join("|"), r = S.res.plan && S.res.plan.key === key ? S.res.plan.r : null;
+  const ctrl = betSel() + atkSel() + `<div style="border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;margin-bottom:8px"><b>変えた作戦（自分）</b>
+  <div class="row small" style="gap:8px 16px;margin-top:6px;flex-wrap:wrap">
+   <label>ZONE を使う打席 ${sel("pvZ", pv.zoneAt, [[1, "1打席目"], [2, "2打席目"], [3, "3打席目"]])}</label>
+   ${zones.length > 1 ? `<label>ZONE 札 ${sel("pvZP", pv.zonePick, [["", "自動（札が増える方）"]].concat(zones.map(z => [normName_(z.name).replace(/【ZONE】/, ""), esc(z.name)])))}</label>` : ""}
+   <label>先攻の初回：手札を ${sel("pvF", pv.first, [["", "決めない"], [5, "5枚"], [6, "6枚"], [7, "7枚"], [8, "8枚"]])} 残して終える</label>
+   <label>後攻の初回：手札は ${sel("pvS", pv.second, [["", "決めない"], [3, "3枚"], [4, "4枚"], [5, "5枚"], [6, "6枚"]])} まで使う</label>
+   <label><input type="checkbox" id="pvK" ${pv.keepOne ? "checked" : ""}> 後攻の初回、イニングに置くと引ける札を1枚残す</label>
+   <label>宣言 ${sel("pvD", pv.decl, [["", "上の設定と同じ"], ["ミート", "全打席ミート"], ["強振", "全打席強振"]])}</label>
+  </div></div>
+  <div class="row small" style="gap:12px;margin-bottom:8px">${lvSel("lv")}${trSel("tr")}<button id="run" class="primary">${r ? "もう一度計算する" : "計算する"}</button></div>`;
+  const note = `<p class="note">上の設定どおりの「今の作戦」と「変えた作戦」を同じ回数ずつ戦わせて比べます（どちらも先攻・後攻を半分ずつ）。差が「ぶれの範囲」に収まるときは、回数を増やして測り直してください。</p>`;
+  if (!r) return ctrl + note;
+  const a = r.base, b = r.alt, ca = winCI(a), cb = winCI(b), d = cb.s - ca.s, cd = Math.sqrt(ca.ci * ca.ci + cb.ci * cb.ci);
+  const verdict = Math.abs(d) <= cd ? `ぶれの範囲（±${cd.toFixed(1)}）` : d > 0 ? `<b>変えた作戦のほうが良い</b>（ぶれの幅 ±${cd.toFixed(1)}）` : `<b>今の作戦のほうが良い</b>（ぶれの幅 ±${cd.toFixed(1)}）`;
+  const row = (l, x, c) => `<tr><td>${l}</td><td class="n num"><b>${c.s.toFixed(1)}</b> <span class="small muted">±${c.ci.toFixed(1)}</span></td><td class="n num">${wdl(x)}</td><td class="n num">${pt(x.aFirst)}</td><td class="n num">${pt(x.bFirst)}</td><td class="n num">${x.runsA.toFixed(2)}</td><td class="n num">${x.runsB.toFixed(2)}</td></tr>`;
+  const inn = (l, x, k, n) => n ? `<tr><td>${l}</td>${[0, 1, 2].map(i => `<td class="n num">${(x[k].A[i] / n).toFixed(2)}</td>`).join("")}${[0, 1, 2].map(i => `<td class="n num">${(x[k].B[i] / n).toFixed(2)}</td>`).join("")}</tr>` : "";
+  return ctrl + note + `<div class="scroll"><table style="min-width:520px"><thead><tr><th></th><th class="n">勝率（引分0.5勝）</th><th class="n">勝・分・負 %</th><th class="n">先攻</th><th class="n">後攻</th><th class="n">得点</th><th class="n">失点</th></tr></thead><tbody>
+   ${row("今の作戦", a, ca)}${row("変えた作戦", b, cb)}
+   <tr><td>差</td><td class="n num"><b>${d >= 0 ? "+" : ""}${d.toFixed(1)}</b></td><td colspan="5" class="small">${verdict}</td></tr></tbody></table></div>
+   <h3>回ごとの得点・失点（1試合あたり）</h3>
+   <div class="scroll"><table style="min-width:520px"><thead><tr><th></th><th class="n">得点 1回</th><th class="n">2回</th><th class="n">3回</th><th class="n">失点 1回</th><th class="n">2回</th><th class="n">3回</th></tr></thead><tbody>
+   ${inn("今の作戦・先攻", a, "innF", a.nF)}${inn("変えた作戦・先攻", b, "innF", b.nF)}${inn("今の作戦・後攻", a, "innS", a.nS)}${inn("変えた作戦・後攻", b, "innS", b.nS)}</tbody></table></div>
+   <p class="small muted">ZONE 札の指定・初回の手札の目安は、自分のデッキにだけ効きます。先攻の初回は、このあと ZONE や起動で増える分も見込んで残す枚数を決めます。各 ${a.trials} 試合。</p>`;
+}
+function wirePlan() {
+  wireCommon();
+  const save = () => { lsSet("dorio_sim_pv", S.pv); render(); };
+  [["pvZ", "zoneAt"], ["pvZP", "zonePick"], ["pvF", "first"], ["pvS", "second"], ["pvD", "decl"]].forEach(([id, k]) => { const el = $("#" + id); if (el) el.onchange = () => { S.pv[k] = el.value; save(); }; });
+  const kb = $("#pvK"); if (kb) kb.onchange = () => { S.pv.keepOne = kb.checked; save(); };
+  const b = $("#run"); if (!b) return;
+  b.onclick = () => {
+    if (S.running) return; b.disabled = true; const key = [S.lv, S.trials, betKey(), pvKey()].join("|"); let base = null, alt = null;
+    runChunked(S.trials, 50, k => { SIM_ZONE_PICK = null; base = mergeGame(base, simulateGame2(S.A.X, S.B.X, Object.assign({ trials: k, swapLevel: S.lv }, betOpt()))); }, () => {
+      runChunked(S.trials, 50, k => { SIM_ZONE_PICK = S.pv.zonePick || null; try { alt = mergeGame(alt, simulateGame2(S.A.X, S.B.X, Object.assign({ trials: k, swapLevel: S.lv }, pvOpt()))); } finally { SIM_ZONE_PICK = null; } },
+        () => { S.running = false; S.res.plan = { key, r: { base, alt } }; render(); }, "変えた作戦を計算中");
+    }, "今の作戦を計算中");
+  };
+}
+
+// ===== 環境対戦表：自分のデッキと、環境のデッキ全部を戦わせる =====
+const ENV_DECKS = [["1073XE", "エスピノーザ先発手札コスト軸"], ["14DGPS", "才木先発イニング活用軸"], ["18GDWY", "一生ビハインド生活"], ["192VU4", "0919浜風CS"], ["1AA256", "栗林先発本領発揮軸"], ["1CGYXJ", "カ（ーター）ス（チュワート）ソフトバンク"], ["1D8FSQ", "竹丸先発偶数コスト軸"], ["1H7WS4", "黒木ロッテ店舗予選"], ["1KQZVE", "奥川ヤクルト"], ["1M8UD6", "石田先発戦術軸"], ["1Q9G52", "石田40"], ["1RSTA0", "山野先発タイムポイント＋公開軸"], ["1T25CL", "オリックス　仮"], ["1TAVPE", "毛利先発ビハインド+イニング活用軸"], ["1XSFBE", "上沢先発コスト3軸"], ["1YQR5S", "荘司先発本領発揮2枚プレイ軸"], ["2T0BMS", "巨人"], ["GV0C4", "吉村先発野手軸"], ["HXVTW", "平良先発マシンガン打線軸"], ["KM6W8", "黒木ロッテ、今"], ["PNBPS", "柳先発手札5枚以上軸"], ["X9484", "細野先発覚醒軸"]]; // 2026-10-16 時点、リ・スタイル（BP03）以降のデッキ
+S.envCodes = lsGet("dorio_sim_env", ENV_DECKS.map(x => x[0]).join(" "));
+S.envTrials = lsGet("dorio_sim_envN", 200);
+S.envCache = {};
+const envKey = () => [S.lv, S.envTrials, S.envCodes, betKey(), S.A && S.A.X.code].join("|");
+function vEnv() {
+  const codes = S.envCodes.split(/[\s,、]+/).filter(Boolean), r = S.res.env && S.res.env.key === envKey() ? S.res.env.r : null;
+  const ctrl = `<div class="small" style="margin-bottom:6px">${planRow("自分", "A")}</div>
+  <details style="margin-bottom:8px"><summary class="small">対戦するデッキ（${codes.length} 個）を変える</summary>
+   <textarea id="envList" rows="3" style="width:100%">${esc(S.envCodes)}</textarea>
+   <div class="row small" style="gap:8px"><button id="envSave">この一覧にする</button><button id="envReset">初期の一覧に戻す</button></div>
+   <p class="small muted">DeckLog のデッキコードを空白・改行で区切って並べます。自分と同じコードは飛ばします。初期の一覧は ${ENV_DECKS.length} 個（リ・スタイル以降のデッキ）。</p></details>
+  <div class="row small" style="gap:12px;margin-bottom:8px">${lvSel("lv")}<label>1デッキあたり <select id="envN">${[100, 200, 500].map(n => `<option value="${n}" ${n === S.envTrials ? "selected" : ""}>${n}試合</option>`).join("")}</select></label><button id="run" class="primary">${r ? "もう一度計算する" : "計算する"}</button></div>`;
+  const note = `<p class="note">自分のデッキと、一覧のデッキ全部を戦わせます（先攻・後攻を半分ずつ。相手の守備・攻撃は CPU の自動）。200試合×20デッキで1〜2分かかります。</p>`;
+  if (!r) return ctrl + note;
+  const ok = r.filter(x => x.g), rows = r.slice().sort((a, b) => (b.g ? winCI(b.g).s : -1) - (a.g ? winCI(a.g).s : -1));
+  const avg = ok.reduce((t, x) => t + winCI(x.g).s, 0) / Math.max(1, ok.length);
+  const tr = x => {
+    if (!x.g) return `<tr><td>${esc(x.code)}</td><td colspan="6" class="small muted">${esc(x.err || "読み込めませんでした")}</td></tr>`;
+    const c = winCI(x.g), tag = c.s - c.ci > 50 ? ' style="color:#1a7f37"' : c.s + c.ci < 50 ? ' style="color:#c0392b"' : "";
+    return `<tr><td>${esc(x.code)} <span class="small muted">${esc((x.title || "").slice(0, 16))}</span><br><span class="small muted">${esc(x.team || "")}</span></td><td class="n num"${tag}><b>${c.s.toFixed(1)}</b> <span class="small muted">±${c.ci.toFixed(1)}</span></td><td class="n num">${wdl(x.g)}</td><td class="n num">${pt(x.g.aFirst)}</td><td class="n num">${pt(x.g.bFirst)}</td><td class="n num">${x.g.runsA.toFixed(2)}</td><td class="n num">${x.g.runsB.toFixed(2)}</td></tr>`;
+  };
+  return ctrl + note + `<p>平均 <b>${avg.toFixed(1)}%</b>（引き分けを0.5勝。<span style="color:#1a7f37">緑</span>＝ぶれを除いても勝ち越し、<span style="color:#c0392b">赤</span>＝ぶれを除いても負け越し）</p>
+  <div class="scroll"><table style="min-width:560px"><thead><tr><th>相手</th><th class="n">勝率（引分0.5勝）</th><th class="n">勝・分・負 %</th><th class="n">先攻</th><th class="n">後攻</th><th class="n">得点</th><th class="n">失点</th></tr></thead><tbody>${rows.map(tr).join("")}</tbody></table></div>`;
+}
+function wireEnv() {
+  wireCommon();
+  const sv = $("#envSave"); if (sv) sv.onclick = () => { S.envCodes = $("#envList").value.trim(); lsSet("dorio_sim_env", S.envCodes); render(); };
+  const rs = $("#envReset"); if (rs) rs.onclick = () => { S.envCodes = ENV_DECKS.map(x => x[0]).join(" "); lsSet("dorio_sim_env", S.envCodes); render(); };
+  const en = $("#envN"); if (en) en.onchange = () => { S.envTrials = +en.value; lsSet("dorio_sim_envN", S.envTrials); render(); };
+  const b = $("#run"); if (!b) return;
+  b.onclick = async () => {
+    if (S.running) return; S.running = true; b.disabled = true;
+    const key = envKey(), me = (S.A.X.code || "").toUpperCase();
+    const codes = [...new Set(S.envCodes.split(/[\s,、]+/).filter(Boolean).map(c => c.toUpperCase()))].filter(c => c !== me), out = [];
+    const opt = Object.assign({}, betOpt(), { atkPlan: { A: planOpt().A }, bet: { A: S.betA, B: "auto" }, adapt: { A: S.adA, B: 2 }, save: { A: !!S.saveA, B: false } });
+    for (let i = 0; i < codes.length; i++) {
+      const c = codes[i]; b.textContent = `計算中… ${i + 1}/${codes.length}（${c}）`;
+      try {
+        if (!S.envCache[c]) { const d = await fetchDeck(c); normalizeDeck(d); withTeam(d); S.envCache[c] = { X: analyzeDeck(d, DB, {}), title: d.title || "" }; }
+        const E = S.envCache[c]; let acc = null;
+        for (let n = 0; n < S.envTrials; n += 50) { acc = mergeGame(acc, simulateGame2(S.A.X, E.X, Object.assign({ trials: Math.min(50, S.envTrials - n), swapLevel: S.lv }, opt))); await new Promise(r => setTimeout(r, 0)); }
+        out.push({ code: c, title: E.title, team: E.X.team && E.X.team.name, g: acc });
+      } catch (e) { out.push({ code: c, err: e.message }); }
+    }
+    S.running = false; S.res.env = { key, r: out }; render();
+  };
+}
+
 function vGame() {
   const key = [S.lv, S.trials, betKey()].join("|"), r = S.res.game && S.res.game.key === key ? S.res.game.r : null;
   const ctrl = betSel() + atkSel() + `<div class="row small" style="gap:12px;margin-bottom:8px">${lvSel("lv")}${trSel("tr")}<button id="run" class="primary">${r ? "もう一度計算する" : "計算する"}</button></div>`;
@@ -3974,10 +4083,12 @@ function render() {
   renderTabs();
   const v = $("#view");
   if (!S.A || !S.B) { v.innerHTML = '<div class="empty">自分と仮想敵の両方にデッキを読み込んでください。</div>' + (S.tab === "rules" ? vRules() : ""); return; }
-  const fn = { solo: vSolo, game: vGame, scene: vScene, cover: vCover, rules: vRules }[S.tab] || vGame;
+  const fn = { solo: vSolo, game: vGame, plan: vPlan, env: vEnv, scene: vScene, cover: vCover, rules: vRules }[S.tab] || vGame;
   v.innerHTML = head() + fn();
   if (S.tab === "game") wireGame();
   if (S.tab === "scene") wireScene();
+  if (S.tab === "plan") wirePlan();
+  if (S.tab === "env") wireEnv();
   if (S.tab === "solo") wireSolo();
 }
 renderRecent(); render();
