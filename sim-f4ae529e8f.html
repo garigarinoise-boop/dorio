@@ -2489,8 +2489,9 @@ function simRun_(SA, SB, opt) {
     fireSync(atk, b, 'enter', { sx: sit }, true);
     if (bfx.onEnter) {
       ev(atk, nm(b) + '（打席に入った時）');
-      var bi0 = -1, bv0 = -1;
-      atk.rest.forEach(function (x, i) { if (x.kind !== '戦術' || String(x.eff || '').trim()) return; var v = Math.max(calc(b, [x], 'ミート', sit), calc(b, [x], '強振', sit)); if (v > bv0) { bv0 = v; bi0 = i; } });
+      var bi0 = -1, bv0 = -1, candE = [];
+      atk.rest.forEach(function (x, i) { if (x.kind !== '戦術' || String(x.eff || '').trim()) return; candE.push(i); var v = Math.max(calc(b, [x], 'ミート', sit), calc(b, [x], '強振', sit)); if (v > bv0) { bv0 = v; bi0 = i; } });
+      if (atk.human && candE.length) { var anE = yield { type: 'pick', side: atk, title: nm(b) + '：レストエリアから特殊能力を持たない戦術カードを1枚まで手札に加える', cards: candE.map(function (j) { return atk.rest[j]; }), take: 1, suggest: [candE.indexOf(bi0)] }; bi0 = anE && anE.idx && anE.idx.length ? candE[anE.idx[0]] : -1; }
       if (bi0 >= 0) hA.push(atk.rest.splice(bi0, 1)[0]);
     }
     atk.discBattle = []; def.discBattle = [];
@@ -2925,6 +2926,8 @@ function simRun_(SA, SB, opt) {
     var bigHand = hA.length >= (engA && opt.atkEng ? (opt.atk2N || 5) : atk.S.handStart + 2); // スチュワート型で攻撃も厚くする案は勝率が割れたので、opt.atkEng のときだけ // 手札が厚い（チェンジで8枚に切られる前に使う）
     var size = risp || bigHand || (slot < 5 && hA.length >= 2) ? 2 : 1;
     if (maxHandPlace < size) size = maxHandPlace;
+    var lastStand = final && atk.batFirst === false; // この攻撃で試合が終わる：守備のために残す意味が無い
+    if (lastStand || (final && diff < 0)) size = Math.min(maxHandPlace, 2);
     var fl = opt.innFloor && opt.innFloor[atk.key];
     if (fl && half.inn === 1) {
       var floorN = atk.batFirst ? fl.first : fl.second;
@@ -2947,7 +2950,7 @@ function simRun_(SA, SB, opt) {
     var keepInn = function (x) { if (keepOneX) return x === keepOneX; return !!(fl2 && fl2.keep && half.inn === 1 && !atk.batFirst && x.no !== b.no && fl2.keep.some(function (k) { return nm(x).indexOf(k) >= 0; })); };
     // 比べる用：指定した打者（opt.noAwk[チーム] = ['岩田', ...]）は自分の覚醒札を伏せない
     var noAwkSelf = function (x) { var na = opt.noAwk && opt.noAwk[atk.key]; return !!(na && x.no === b.no && na.some(function (k) { return nm(b).indexOf(k) >= 0; })); };
-    var keepDef = function (x) { return noAwkSelf(x) || keepInn(x) || holdPinch(x) || !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4) || (leadSave && defUse(x) >= 2)); };
+    var keepDef = function (x) { if (lastStand) return false; return noAwkSelf(x) || keepInn(x) || holdPinch(x) || !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4) || (leadSave && defUse(x) >= 2)); };
     var attr = fixedAttr, ansA = null;
     if (atk.human) {
       var prevA = function (idx, a) { var cs = idx.map(function (i) { return hA[i]; }).concat(preA); var q = bfx.parity ? (bfx.parity[costSum(atk, cs) % 2 === 0 ? 'even' : 'odd'] || {}) : {}; return calc(b, cs, a, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + (q.ap || 0) + supBonusOf(atk, cs, 'AP', a, sit, b, pit) + tierVal(atk, b, 'ap', sit); };
@@ -3045,8 +3048,10 @@ function simRun_(SA, SB, opt) {
     if (aSho) { if (dCards.some(function (x) { return x.no === pit.no; })) ev(atk, '勝負師で覚醒札を消す'); dLive = dCards.filter(function (x) { return x.no !== pit.no; }); }
     var killedA = aCards.filter(function (x) { return aLive.indexOf(x) < 0; }); aCards = aLive.concat(killedA);
     if (bfx.awkPlace && aLive.some(function (x) { return x.no === b.no; })) {
-      var pi = -1, pv = -1;
-      hA.forEach(function (x, i) { if (x.kind !== '戦術' || String(x.eff || '').trim()) return; var v = calc(b, aLive.concat([x]), attr, sit); if (v > pv) { pv = v; pi = i; } });
+      var pi = -1, pv = -1e9, candP = [], ap0P = calc(b, aLive, attr, sit);
+      hA.forEach(function (x, i) { if (x.kind !== '戦術' || String(x.eff || '').trim()) return; candP.push(i); var v = (calc(b, aLive.concat([x]), attr, sit) - ap0P) * 10 - defUse(x); if (v > pv) { pv = v; pi = i; } });
+      if (pi >= 0 && pv < 0 && defUse(hA[pi]) >= 2) pi = -1; // AP が上がらず、守備で使える札（内野警戒など）なら置かない（2026-10-17 ユーザー指摘）
+      if (atk.human && candP.length) { var anP = yield { type: 'pick', side: atk, title: nm(b) + 'の覚醒：手札から特殊能力を持たない戦術カードを1枚までサポートエリアに置く（置いたら1枚引く）', cards: candP.map(function (j) { return hA[j]; }), take: 1, suggest: pi >= 0 ? [candP.indexOf(pi)] : [] }; pi = anP && anP.idx && anP.idx.length ? candP[anP.idx[0]] : -1; }
       if (pi >= 0) { var px = hA.splice(pi, 1)[0]; aLive = aLive.concat([px]); aCards = aCards.concat([px]); draw(atk, 1); ev(atk, nm(b) + 'の覚醒（無能力戦術を置く）'); }
     }
     // サポートを置いた時の効果
@@ -3576,7 +3581,7 @@ function* soloGame(XA, XB, opt) {
   opt = opt || {};
   var SA = simSide_(XA), SB = simSide_(XB);
   var R = simRun_(SA, SB, { rnd: opt.rnd, swapLevel: opt.swapLevel, memo: {}, worthMemo: {}, human: 'A', mulligan: false, log: opt.log, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save });
-  R.A.human = true;
+  R.A.human = true; R.A.batFirst = !!opt.aFirst; R.B.batFirst = !opt.aFirst;
   var ctx = { R: R, inn: 1, top: true, half: null, atkKey: null, line: { A: [], B: [] }, aFirst: !!opt.aFirst, over: false };
   if (SB.teamFx && SB.teamFx.chooseOrder && !(SA.teamFx && SA.teamFx.chooseOrder)) { ctx.aFirst = true; }
   var relay = function* (it) { var r = it.next(); while (!r.done) { r.value.ctx = ctx; var a = yield r.value; r = it.next(a); } return r.value; };
