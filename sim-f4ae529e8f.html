@@ -4170,7 +4170,7 @@ function vSolo() {
     case "mulligan":
       panel = `<h3>開始時の手札の入れ替え</h3><p class="small">レストに戻す札を選んでください（何枚でも。戻した札はリフレッシュまで戻りません）。</p>${handPick(99)}<button class="primary" data-act="ok">この札を戻して引き直す</button> <button data-act="none">入れ替えない</button>`; break;
     case "atkPre":
-      panel = `<h3>${esc(q.batter.name)} の打席：${q.defN != null ? "代打を出すか" : "打席の前の操作"}</h3>${q.defN != null ? `<p class="small">相手はもう<b>${q.defN}枚</b>伏せています（中身は公開まで分かりません）。</p>` : ""}<div class="row">${q.zoneOk ? `<button class="primary" data-act="zone">ZONE（TP1）</button>` : ""}${q.pinch.map(p => `<button data-act="pinch" data-no="${esc(p.no)}">代打 ${esc(p.name)}（TP1）</button>`).join("")}<button data-act="none">何もしない</button></div>`; break;
+      panel = `<h3>${esc(q.batter.name)} の打席：${q.defN != null ? "代打を出すか" : "打席の前の操作"}</h3>${q.defN != null ? `<p class="small">相手はもう<b>${q.defN}枚</b>伏せています（中身は公開まで分かりません）。</p>` : ""}<div class="small muted">あなたの手札（${q.side.hand.length}枚）</div><div class="hand">${q.side.hand.map((x, i) => chip(x, i).replace(/ data-i="\d+"/, "").replace('<button class="chip', '<button tabindex="-1" style="cursor:default" class="chip')).join("")}</div><div class="row">${q.zoneOk ? `<button class="primary" data-act="zone">ZONE（TP1）</button>` : ""}${q.pinch.map(p => `<button data-act="pinch" data-no="${esc(p.no)}">代打 ${esc(p.name)}（TP1）</button>`).join("")}<button data-act="none">何もしない</button></div>`; break;
     case "kidou": {
       const kd = q.kd;
       let how = "";
