@@ -360,6 +360,8 @@ a{color:var(--navy)}
   .sb-runs{font-size:34px}
 }
 /* ===== スマホ・タブレット向け（PC表示には影響しない範囲だけ上書き） ===== */
+/* スマホ専用の部品は既定で非表示（PCでは出ない） */
+.tb-more,.mnav,.mscore{display:none}
 /* タブレット縦（iPad等）：盤面のレイアウトはPCと同じまま、横スクロールなしで収める */
 @media (max-width:900px){
   .field{min-width:0;grid-template-columns:64px repeat(9,minmax(0,1fr))}
@@ -405,6 +407,31 @@ a{color:var(--navy)}
   .quickbar .qb-cancel{margin-left:auto}
   .quickbar .qb-row{flex-basis:100%;order:1}
   html body.selmode{padding-bottom:calc(130px + env(safe-area-inset-bottom))}
+  /* 上部ボタン：よく使う「一手戻る」以外は「メニュー」で開く */
+  .tb-more{display:inline-flex;margin-left:auto}
+  .topbar:not(.open) .tb-btn:not(.tb-keep):not(.tb-more){display:none}
+  /* 下の移動ナビ */
+  body{padding-bottom:calc(58px + env(safe-area-inset-bottom))}
+  .mnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:800;background:var(--panel);
+    border-top:1px solid var(--line-strong);box-shadow:0 -4px 14px rgba(0,0,0,.12);padding:6px 6px calc(6px + env(safe-area-inset-bottom));gap:6px}
+  .mnav button{flex:1;padding:9px 2px;border-radius:8px;border:1px solid var(--line);background:var(--panel-2);font-size:12px;font-weight:700;color:var(--ink)}
+  body.selmode .mnav{display:none}
+  #panelTop,#panelBot,#scoreboard,#logwrap{scroll-margin-top:46px}
+  /* 上の小さなスコア表示（スコアボードが画面外のときだけ） */
+  .mscore{position:fixed;left:0;right:0;top:0;z-index:790;align-items:center;justify-content:space-between;gap:8px;
+    padding:6px max(10px,env(safe-area-inset-right)) 6px max(10px,env(safe-area-inset-left));background:var(--panel);border-bottom:1px solid var(--line-strong);
+    box-shadow:0 4px 14px rgba(0,0,0,.12);font-size:12px;transform:translateY(-110%);transition:transform .18s}
+  .mscore.show{display:flex;transform:none}
+  .mscore .ms-t{display:flex;align-items:center;gap:5px;min-width:0;flex:1}
+  .mscore .ms-t.r{justify-content:flex-end}
+  .mscore .ms-n{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mscore .ms-t b{font-family:"Oswald",sans-serif;font-size:19px;line-height:1}
+  .mscore .tag{font-size:10px;color:#fff;background:var(--navy);padding:1px 5px;border-radius:4px;flex:0 0 auto}
+  .mscore .tag.acc{background:var(--accent)}
+  .mscore .ms-mid{display:flex;flex-direction:column;align-items:center;gap:2px;flex:0 0 auto}
+  .mscore .ms-outs{display:flex;gap:3px}
+  .mscore .ms-outs i{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--line-strong)}
+  .mscore .ms-outs i.on{background:var(--accent);border-color:var(--accent)}
   .modal{padding:8px}
   .modal .box{padding:12px;max-height:94vh}
 }
@@ -471,6 +498,14 @@ window.FIREBASE_CONFIG = {
 };
 </script>
 
+<!-- スマホ用：上に出る小さなスコア表示と、下の移動ナビ（PCでは表示しない） -->
+<div class="mscore" id="mscore" role="button" aria-label="スコアボードへ"></div>
+<nav class="mnav" id="mnav" aria-label="画面内の移動">
+  <button data-go="panelTop">先攻</button>
+  <button data-go="scoreboard">スコア</button>
+  <button data-go="panelBot">後攻</button>
+  <button data-go="logwrap">🎲 ダイス</button>
+</nav>
 <div class="wrap">
   <div class="topbar">
     <div class="brand"><b>ドリオ対戦卓</b><span>ドリームオーダー / 身内オンライン卓</span></div>
@@ -479,16 +514,17 @@ window.FIREBASE_CONFIG = {
     <button class="tb-btn" id="btnImg">画像一括</button>
     <button class="tb-btn" id="btnSync">手動同期</button>
     <button class="tb-btn" id="btnSolo">🃏 一人回し</button>
-    <button class="tb-btn" id="btnUndo">↩️ 一手戻る</button>
+    <button class="tb-btn tb-keep" id="btnUndo">↩️ 一手戻る</button>
     <button class="tb-btn" id="btnSwap">先攻⇄後攻</button>
     <button class="tb-btn" id="btnReset">新規対戦</button>
     <button class="tb-btn" id="btnHardReset">完全リセット</button>
     <button class="tb-btn" id="btnTheme">◐</button>
+    <button class="tb-btn tb-more" id="btnMore" aria-expanded="false">☰ メニュー</button>
   </div>
   <div class="scoreboard" id="scoreboard"></div>
   <div id="panelTop"></div>
   <div id="panelBot"></div>
-  <div class="logwrap">
+  <div class="logwrap" id="logwrap">
     <div class="roll-row">
       <span>打撃判定</span>
       <select id="rollWho"></select>
@@ -4954,7 +4990,28 @@ function render(){
   const me=mySeat();
   $("#panelTop").innerHTML="";$("#panelTop").append(renderPanel("p1",me==="p1",true));
   $("#panelBot").innerHTML="";$("#panelBot").append(renderPanel("p2",me==="p2",false));
-  renderLog();renderRollWho();renderQuickBar();
+  renderLog();renderRollWho();renderQuickBar();renderMobileBar();
+}
+// スマホ用の小さなスコア表示（スコアボードが画面外に出たときだけ上に出す）
+function renderMobileBar(){
+  const el=document.getElementById("mscore");if(!el||!G)return;
+  const b=G.board,nm=p=>G.seats[p]?G.seats[p].name:G.names[p];
+  el.innerHTML="";
+  el.append(
+    h("span",{class:"ms-t"},h("span",{class:"tag acc"},"先"),h("span",{class:"ms-n"},nm("p1")),h("b",{class:"mono"},String(b.score.p1))),
+    h("span",{class:"ms-mid"},h("b",{class:"mono"},b.inning+"回"+(b.half==="top"?"表":"裏")),
+      h("span",{class:"ms-outs"},[0,1,2].map(i=>h("i",{class:b.outs>i?"on":""})))),
+    h("span",{class:"ms-t r"},h("b",{class:"mono"},String(b.score.p2)),h("span",{class:"ms-n"},nm("p2")),h("span",{class:"tag"},"後")));
+}
+function initMobileUI(){
+  const more=$("#btnMore"),tb=document.querySelector(".topbar");
+  if(more)more.onclick=()=>{const o=tb.classList.toggle("open");more.setAttribute("aria-expanded",String(o));more.textContent=o?"✕ 閉じる":"☰ メニュー";};
+  document.querySelectorAll("#mnav [data-go]").forEach(btn=>btn.onclick=()=>{
+    const t=document.getElementById(btn.dataset.go);if(t)t.scrollIntoView({behavior:"smooth",block:"start"});});
+  const ms=$("#mscore");if(ms)ms.onclick=()=>$("#scoreboard").scrollIntoView({behavior:"smooth",block:"start"});
+  const sb=$("#scoreboard");
+  if(sb&&ms&&"IntersectionObserver" in window)
+    new IntersectionObserver(es=>es.forEach(e=>ms.classList.toggle("show",!e.isIntersecting&&e.boundingClientRect.top<0))).observe(sb);
 }
 function renderQuickBar(){
   let bar=document.getElementById("quickbarEl");
@@ -6346,6 +6403,7 @@ function boot(){
   }
   lastSnapshot=JSON.parse(JSON.stringify(snapshotG()));  // 起動直後の状態を「一手戻る」の初期基点にする
   try{const th=LS.getItem("dorio_theme");if(th)document.documentElement.setAttribute("data-theme",th);}catch(e){}
+  initMobileUI();
   $("#btnShare").onclick=openShare;
   $("#btnImg").onclick=openImgImport;
   $("#btnSync").onclick=openSync;
