@@ -2706,7 +2706,7 @@ function simRun_(SA, SB, opt) {
     var junk = function (filter) {
       var bi2 = -1, bs2 = 1e9;
       hA.forEach(function (x, i) {
-        if ((filter && !filter(x)) || isKill(x) || /^(強心臓|不屈)$/.test(nm(x)) || x.no === b.no || x.no === ownPit) return;
+        if ((filter && !filter(x)) || isKill(x) || /^(強心臓|不屈)$/.test(nm(x)) || x.no === b.no || x.no === ownPit || (x.kind === '選手' && x.pos === 1)) return; // 投手の覚醒札は起動の費用（交換）に使わない（2026-10-17 ユーザー談）
         var a1 = Math.max(calc(b, [x], 'ミート', sit) - calc(b, [], 'ミート', sit), calc(b, [x], '強振', sit) - calc(b, [], '強振', sit));
         var sc2 = a1 * 2 + (x.dpAttr ? dpValue_(x) : 0) - discardGain(atk, x) * 6;
         if (sc2 < bs2) { bs2 = sc2; bi2 = i; }
@@ -2804,9 +2804,9 @@ function simRun_(SA, SB, opt) {
         if (ri >= 0 && !hA.some(function (x) { return nm(x) === kd.name; })) {
           if (kd.cost === 'hand') {
             var j1 = junk(function (x) { return nm(x) !== kd.name && (!kd.needAttr || x.apAttr === kd.needAttr); });
-            // 打者がこの札とのコンボを持つ（宮﨑とフルスイングなど）なら取りに行く価値が高い。手札に同じ札が2枚以上あれば、自分の投手の札でも1枚は捨ててよい（2026-10-17 ユーザー指摘）
+            // 打者がこの札とのコンボを持つ（宮﨑とフルスイングなど）なら取りに行く価値が高い。手札に同じ札が2枚以上あればそのうち1枚を捨ててよい。投手の覚醒札は交換に使わない（2026-10-17 ユーザー談）
             var comboK = String(opt.fetchOld || '').indexOf(atk.key) < 0 && new RegExp('【コンボ】' + kd.name).test((atk.S.rowOf[b.no] || b).eff || '');
-            if (comboK && !kd.needAttr && (j1.i < 0 || j1.score > 6)) { var dupI = -1, dupW = 1e9; hA.forEach(function (x, i) { if (isKill(x) || nm(x) === kd.name || x.no === b.no) return; if (hA.filter(function (y) { return y.no === x.no; }).length < 2) return; var w0 = worth(atk, x); if (w0 < dupW) { dupW = w0; dupI = i; } }); if (dupI >= 0) j1 = { i: dupI, score: 0 }; }
+            if (comboK && !kd.needAttr && (j1.i < 0 || j1.score > 6)) { var dupI = -1, dupW = 1e9; hA.forEach(function (x, i) { if (isKill(x) || nm(x) === kd.name || x.no === b.no || x.no === ownPit || (x.kind === '選手' && x.pos === 1)) return; if (hA.filter(function (y) { return y.no === x.no; }).length < 2) return; var w0 = worth(atk, x); if (w0 < dupW) { dupW = w0; dupI = i; } }); if (dupI >= 0) j1 = { i: dupI, score: 0 }; }
             if (j1.i >= 0 && j1.score <= (comboK ? 9 : 6)) { discard(atk, j1.i, true); used = true; }
           } else used = true;
           if (used) for (var fn = 0; fn < (kd.n || 1); fn++) { var rj = atk.rest.findIndex(function (x) { return nm(x) === kd.name; }); if (rj >= 0) hA.push(atk.rest.splice(rj, 1)[0]); }
