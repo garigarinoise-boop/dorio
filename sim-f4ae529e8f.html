@@ -253,7 +253,7 @@ function supportStat_(eff, tagRe) {
     var head = (ab.match(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/) || [''])[0];
     if (!tagRe.test(head)) return;
     var body = ab.replace(/^(?:【[^】]+】|＜[^＞]+＞|\s)+/, '');
-    var seen = { AP: false, DP: false };
+    var seen = { AP: false, DP: false }, dep = { AP: false, DP: false };
     if (/【タイム[①-⑩]】/.test(head)) return;
     if (/【手札①】/.test(head) && /【覚醒】/.test(head)) { var hm = body.match(/^(?:打者の|投手の)?(AP|DP)\+(\d+)する。?$/); if (hm) r[hm[1].toLowerCase() + 'Alt'].push({ n: +hm[2], cond: '手札①を払ったなら' }); return; }
     if (/【ZONE[②③④]】/.test(head)) {
@@ -265,7 +265,8 @@ function supportStat_(eff, tagRe) {
       if (!m) return;
       // 「〜なら、代わりに、AP+3する」：条件を満たすと値が上がる
       var alt = sent.match(/^(.*?)(?:なら|時)、?代わりに、?(?:打者の|投手の)?(AP|DP)\+(\d+)/);
-      if (alt && seen[alt[2]]) { r[alt[2].toLowerCase() + 'Alt'].push({ n: +alt[3], cond: alt[1].replace(/^[、\s]+/, '').trim() }); return; }
+      // 前の文が「捨てたカードが〜なら」など手順の結果で決まる値なら、代わりの値もその手順しだい（dep）。シミュレーターは起動の処理で足すので、固定の値には入れない
+      if (alt && seen[alt[2]]) { r[alt[2].toLowerCase() + 'Alt'].push({ n: +alt[3], cond: alt[1].replace(/^[、\s]+/, '').trim(), dep: dep[alt[2]] }); return; }
       // 同じ文の中の「〜なら、さらに、DP+1する」（渾身の一球など）：足した値を条件つきで
       var more = sent.match(/(?:打者の|投手の)?(AP|DP)\+(\d+)し、(.*?)なら、?さらに、?(AP|DP)\+(\d+)/);
       if (more && !seen[more[1]] && more[1] === more[4] && !/なら|時、|場合/.test(sent.slice(0, more.index))) {
@@ -276,7 +277,7 @@ function supportStat_(eff, tagRe) {
       if (seen[m[1]]) { if (/^(.*?)なら、?さらに、?$/.test(sent.slice(0, m.index).trim())) r[m[1].toLowerCase() + 'Cond'].push(sent.trim().slice(0, 90)); return; } // 「〜なら、さらに、AP+1」（西川 BP03）
       seen[m[1]] = true;
       var pre = sent.slice(0, m.index), key = m[1].toLowerCase();
-      if (/なら|時、|場合|サポートに/.test(pre)) r[key + 'Cond'].push(sent.trim().slice(0, 90));
+      if (/なら|時、|場合|サポートに/.test(pre)) { r[key + 'Cond'].push(sent.trim().slice(0, 90)); if (/捨てた|公開した|加えた|引いた/.test(pre)) dep[m[1]] = true; }
       else r[key] += +m[2];
     });
   });
@@ -696,7 +697,7 @@ function valueTable_(c, main, zone, zoneOn) {
   var dpAsAp = /特殊能力を持たない戦術カードのサポートのDPは、サポートのAPとしても扱う/.test(c.eff || ''), apAsDp = /戦術カードのサポートのAPは、サポートのDPとしても扱う/.test(c.eff || '');
   var cardVal = function (x, attr, cond, used) {
     if (x.no === c.no || (awkAlias && x.kind === '選手' && normName_(x.name) === normName_(c.name))) {
-      var awkAltOk = (awk[k2 + 'Alt'] || []).reduce(function (m2, x2) { return sitOk_(x2.cond, cond) ? Math.max(m2, x2.n) : m2; }, 0);
+      var awkAltOk = (awk[k2 + 'Alt'] || []).reduce(function (m2, x2) { return !x2.dep && sitOk_(x2.cond, cond) ? Math.max(m2, x2.n) : m2; }, 0);
       var awkCondOk = !cond ? 0 : (awk[k2 + 'Cond'] || []).reduce(function (s2, tx) { var mm = tx.match(/^(.*?)なら、(?:さらに、?)?(?:打者の|投手の)?[AD]P\+(\d+)/); return mm && !/サポートに|捨てた|公開|加えた/.test(mm[1]) && sitOk_(mm[1] + 'なら', cond) ? s2 + +mm[2] : s2; }, 0);
       if (cond && awkAltOk > awkEff) { used.push('覚醒の効果：' + awk[k2 + 'Alt'].map(function (a2) { return a2.cond; }).join('／')); return base + awkAltOk + awkCondOk; }
       return base + awkEff + awkCondOk;
@@ -710,7 +711,7 @@ function valueTable_(c, main, zone, zoneOn) {
       var pc = t.match(/投手のコストが(\d)以上/); if (pc && (Number(c.cost) || 0) < +pc[1]) return null;
       return t.replace(/、?(?:自分の)?投手のコストが\d以上で?|、?(?:それが|投手が)?【先発】を持つ|、?(?:それが|投手が)?【中継ぎ】か【抑え】を持つ/g, '').replace(/[、\s]+$/, '').replace(/におり$/, 'にいる');
     };
-    var altN = (st[k2 + 'Alt'] || []).reduce(function (m2, a2) { var r2 = pitAlt(a2.cond); return r2 === null ? m2 : r2 === '' || sitOk_(r2, cond) ? Math.max(m2, a2.n) : m2; }, 0);
+    var altN = (st[k2 + 'Alt'] || []).reduce(function (m2, a2) { var r2 = a2.dep ? null : pitAlt(a2.cond); return r2 === null ? m2 : r2 === '' || sitOk_(r2, cond) ? Math.max(m2, a2.n) : m2; }, 0);
     (st[k2 + 'Alt'] || []).forEach(function (a2) { if (pit && pitAlt(a2.cond) === '' && a2.n > eff) eff = a2.n; });
     // ZONE後で計算するときは「ZONE状態の選手がいるなら代わりに」も普通の値として使う
     if (zoneOn) (st[k2 + 'Alt'] || []).forEach(function (a2) { if (/ZONE状態/.test(a2.cond) && a2.n > eff) eff = a2.n; });
