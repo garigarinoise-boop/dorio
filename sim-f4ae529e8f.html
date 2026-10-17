@@ -2399,7 +2399,7 @@ function simRun_(SA, SB, opt) {
     };
     var pinchCands = function () { return atk.S.pinch.filter(function (pp) { return !atk.usedPinch[pp.no] && !atk.lineup.some(function (v) { return v.no === pp.no; }); }); };
     if (atk.human) {
-      var zoneOk = !opt.noZone && atk.S.zoneFor === b.no && !atk.zoneUsed && atk.tp >= 1, pcs0 = atk.tp >= 1 && half.inn >= 2 ? pinchCands() : []; // 公式Q&A Q163：代打は2イニング目から
+      var zoneOk = !opt.noZone && atk.S.zoneFor === b.no && !atk.zoneUsed && atk.tp >= 1, pcs0 = []; // 代打は相手が伏せたあとに聞く（2026-10-17 ユーザー指摘）
       if (zoneOk || pcs0.length) {
         var ansPre = yield { type: 'atkPre', side: atk, batter: b, zoneOk: zoneOk, pinch: pcs0 };
         if (ansPre && ansPre.pinch) { var pp0 = pcs0.find(function (x) { return x.no === ansPre.pinch; }); if (pp0) pinchDo(pp0); }
@@ -2427,9 +2427,13 @@ function simRun_(SA, SB, opt) {
         }
       }
       else if (!opt.noZone && atk.S.zoneFor === b.no && !atk.zoneUsed && atk.tp >= 1 && atk.zoneSeen >= zoneAtN && !holdTP(atk, b.no)) zoneDo();
-      // 代打：最終回、得点圏かビハインドで、代打のほうが値が高いとき
-      // TP の数で伸びる起動（オスナ：TP の数だけ公開、3枚以上で AP+2）の打者の2打席目までは、代打で TP を4未満にしない（2026-10-16 ユーザー談）
-      else if (!opt.noPinch && final && (risp || diff < 0) && atk.tp - reserve(atk) >= 1 && !(String(opt.tpHoldOld || '').indexOf(atk.key) < 0 && atk.lineup.some(function (v) { var kf = atk.S.fx(atk.S.rowOf[v.no] || v).kidou; return kf && kf.type === 'revealTPN' && v.no !== b.no && (atk.abSeen[v.no] || 0) < 2 && atk.tp - 1 < kf.bonusAt + 1; }))) {
+      // 代打の判断は、相手が守備の札を伏せたあと（下の cpuPinch）
+    }
+    atk.bi++;
+    // 代打：最終回、得点圏かビハインドで、代打のほうが値が高いとき。相手が守備の札を伏せたあとに決める（公式の流れ。2026-10-17 ユーザー指摘）
+    // TP の数で伸びる起動（オスナ）の打者の2打席目までは、代打で TP を4未満にしない
+    var cpuPinch = function () {
+      if (!(!opt.noPinch && final && (risp || diff < 0) && atk.tp - reserve(atk) >= 1 && !(String(opt.tpHoldOld || '').indexOf(atk.key) < 0 && atk.lineup.some(function (v) { var kf = atk.S.fx(atk.S.rowOf[v.no] || v).kidou; return kf && kf.type === 'revealTPN' && v.no !== b.no && (atk.abSeen[v.no] || 0) < 2 && atk.tp - 1 < kf.bonusAt + 1; })))) return;
         var bestP = null, bestV = -99, sitP = { runner: runner, risp: risp, norunner: !runner, behind: diff < 0, lead: diff > 0, pinch: true };
         var cur = Math.max(calc(b, [], 'ミート', Object.assign({}, sitP, { pinch: false })), calc(b, [], '強振', Object.assign({}, sitP, { pinch: false })));
         pinchCands().forEach(function (pp) {
@@ -2439,9 +2443,7 @@ function simRun_(SA, SB, opt) {
           if (v > bestV) { bestV = v; bestP = pp; }
         });
         if (bestP && bestV > cur + 0.5) pinchDo(bestP);
-      }
-    }
-    atk.bi++;
+    };
     var bfx = atk.S.fx(atk.S.rowOf[b.no] || b);
     if (bfx.onEnterTP) { atk.tp += bfx.onEnterTP; ev(atk, nm(b) + '（打席でTP+' + bfx.onEnterTP + '）'); }
     var zoneSelf = atk.zoneActive === b.no, zoneAny = !!atk.zoneActive;
@@ -2693,6 +2695,12 @@ function simRun_(SA, SB, opt) {
       dSel = { idx: one2.idx.length && one2.score >= 10 ? one2.idx : [junkIdx(def).i] };
     }
     var dCards = take(hB, dSel.idx).concat(preD);
+    var bBeforePinch = b;
+    if (atk.human) {
+      var pcs1 = atk.tp >= 1 && half.inn >= 2 ? pinchCands() : []; // 公式Q&A Q163：代打は2イニング目から
+      if (pcs1.length) { var ansP2 = yield { type: 'atkPre', side: atk, batter: b, zoneOk: false, pinch: pcs1, defN: dCards.length }; if (ansP2 && ansP2.pinch) { var pp2 = pcs1.find(function (x) { return x.no === ansP2.pinch; }); if (pp2) pinchDo(pp2); } }
+    } else cpuPinch();
+    if (b !== bBeforePinch) { bfx = atk.S.fx(atk.S.rowOf[b.no] || b); sit.pinch = true; sit.zoneSelf = atk.zoneActive === b.no; sitD.oppBatCost = rowCost(atk, b); fireSync(atk, b, 'enter', { sx: sit }, true); if (bfx.onEnterTP) { atk.tp += bfx.onEnterTP; ev(atk, nm(b) + '（打席でTP+' + bfx.onEnterTP + '）'); } }
     // 攻撃側の起動
     var ownPit = atk.S.starter ? atk.S.starter.no : null;
     var junk = function (filter) {
@@ -4162,7 +4170,7 @@ function vSolo() {
     case "mulligan":
       panel = `<h3>開始時の手札の入れ替え</h3><p class="small">レストに戻す札を選んでください（何枚でも。戻した札はリフレッシュまで戻りません）。</p>${handPick(99)}<button class="primary" data-act="ok">この札を戻して引き直す</button> <button data-act="none">入れ替えない</button>`; break;
     case "atkPre":
-      panel = `<h3>${esc(q.batter.name)} の打席：打席の前の操作</h3><div class="row">${q.zoneOk ? `<button class="primary" data-act="zone">ZONE（TP1）</button>` : ""}${q.pinch.map(p => `<button data-act="pinch" data-no="${esc(p.no)}">代打 ${esc(p.name)}（TP1）</button>`).join("")}<button data-act="none">何もしない</button></div>`; break;
+      panel = `<h3>${esc(q.batter.name)} の打席：${q.defN != null ? "代打を出すか" : "打席の前の操作"}</h3>${q.defN != null ? `<p class="small">相手はもう<b>${q.defN}枚</b>伏せています（中身は公開まで分かりません）。</p>` : ""}<div class="row">${q.zoneOk ? `<button class="primary" data-act="zone">ZONE（TP1）</button>` : ""}${q.pinch.map(p => `<button data-act="pinch" data-no="${esc(p.no)}">代打 ${esc(p.name)}（TP1）</button>`).join("")}<button data-act="none">何もしない</button></div>`; break;
     case "kidou": {
       const kd = q.kd;
       let how = "";
