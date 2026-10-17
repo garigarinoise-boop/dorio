@@ -2372,6 +2372,15 @@ function simRun_(SA, SB, opt) {
       runOps(T, a.ops, cx); ev(T, nm(x) + '（' + ACT_WHEN_[when] + '）');
     });
   };
+  // 守備側の投手をこの勝負のメインエリアに置く（半イニングで投手ごとに1回）。山野の「メインエリアに置かれた時、
+  // イニングエリアにカードがないかビハインドなら TP+1」はここで処理する。継投の判断より前に呼ぶので、増えた TP で継投できる。
+  // 継投したら新しい投手でもう一度呼ばれ、その投手の「置かれた時」が働く。
+  var placePit = function (def, atk, half) {
+    var pit = def.pitcher; if (!pit || half.pitPlaced === pit.no) return; half.pitPlaced = pit.no;
+    var pfx = def.S.fx(def.S.rowOf[pit.no] || pit);
+    if (pfx.onEnterTPDef && opt.dbgEnterTP) opt.dbgEnterTP({ inn: half.inn, innLen: def.inning.length, diff: def.score - atk.score, fire: !def.inning.length || def.score < atk.score, key: def.key });
+    if (pfx.onEnterTPDef && (!def.inning.length || def.score < atk.score)) { def.tp += pfx.onEnterTPDef.n; ev(def, nm(pit) + '（登板でTP+' + pfx.onEnterTPDef.n + '）'); }
+  };
   var paG = function* (atk, def, half, fixedAttr) {
     var hA = atk.hand, hB = def.hand, st = stats ? stats(half) : {}, d1, d2;
     var slot = atk.bi % 9, b = atk.lineup[slot], pinchNow = false;
@@ -2452,6 +2461,7 @@ function simRun_(SA, SB, opt) {
     var sit = { __sim: true, runner1only: r1only, runner: runner, risp: risp, norunner: !runner, prevOn: !!half.prevOn, behind: diff < 0, lead: diff > 0, tie: diff === 0, kidou: false, pinch: pinchNow, zoneSelf: zoneSelf, zoneAny: zoneAny,
       inningPC: atk.inning.some(function (x) { return x.kind === '選手' && (x.pos === 1 || x.pos === 2); }) };
     if (def.human) {
+      placePit(def, atk, half);
       var rel = def.S.closer && final ? def.S.closer : def.S.middle;
       var relOk = !def.relieved && def.tp >= 1 && rel;
       var swOk = def.S.fx(def.S.rowOf[def.pitcher.no] || def.pitcher).swap;
@@ -2464,10 +2474,8 @@ function simRun_(SA, SB, opt) {
         }
       }
     }
+    placePit(def, atk, half);
     var pit = def.pitcher, pfx = def.S.fx(def.S.rowOf[pit.no] || pit);
-    var placedNow = half.pitPlaced !== pit.no; half.pitPlaced = pit.no;
-    if (placedNow && pfx.onEnterTPDef && opt.dbgEnterTP) opt.dbgEnterTP({ inn: half.inn, innLen: def.inning.length, diff: def.score - atk.score, fire: !def.inning.length || def.score < atk.score, key: def.key });
-    if (placedNow && pfx.onEnterTPDef && (!def.inning.length || def.score < atk.score)) { def.tp += pfx.onEnterTPDef.n; ev(def, nm(pit) + '（登板でTP+' + pfx.onEnterTPDef.n + '）'); }
     var inPC = def.inning.some(function (x) { return x.kind === '選手' && (x.pos === 1 || x.pos === 2); });
     var sitD = { __sim: true, runner1only: r1only, runner: runner, risp: risp, norunner: !runner, behind: diff > 0, lead: diff < 0, inning: def.inning.length > 0, inningPC: inPC, zoneAny: !!def.zoneActive };
     sit.oppPitCost = rowCost(def, pit); sit.oppTp = def.tp; sitD.oppTp = atk.tp; sitD.oppBatCost = rowCost(atk, b); sit.oppPitDP = (def.S.rowOf[pit.no] || {}).dp || 0; var plg = (String(pit.no).match(/-([A-Z]+)\d/) || [])[1]; sit.oppPitLeague = /^(T|DB|G|D|C|S)$/.test(plg) ? 'C' : plg ? 'P' : null;
@@ -2646,7 +2654,9 @@ function simRun_(SA, SB, opt) {
       return bs.idx.length && bs.score >= 1000 ? bs : null;
     };
     var take = function (hand, idx) { var out = idx.map(function (i) { return hand[i]; }); idx.slice().sort(function (x, y) { return y - x; }).forEach(function (i) { hand.splice(i, 1); }); return out; };
-    var prevD = function (idx, a) { return dVal(idx.map(function (i) { return hB[i]; }), a); };
+    // 人に見せる「今の DP」：打撃判定で足される投手の起動（星などの DP+）と登板時の DP+ も含める（判定の値と揃える）
+    var addDP = function (a) { return kidouDP + (relDP && (!relAttr || relAttr === a) ? relDP : 0); };
+    var prevD = function (idx, a) { return dVal(idx.map(function (i) { return hB[i]; }), a) + addDP(a); };
     if (def.human) {
       var ansP = yield { type: 'defPlace', side: def, batter: b, pitcher: pit, preview: prevD, risp: risp, max: defLimit1 ? 1 : 2 };
       dSel = { idx: (ansP && ansP.idx || []).slice(0, defLimit1 ? 1 : 2) };
@@ -2880,7 +2890,7 @@ function simRun_(SA, SB, opt) {
       else useE = (risp || final) && hA.length >= 3 && hA.length > hB.length;
       if (useE) {
         var ei = -1;
-        if (def.human) { var ansEP = yield { type: 'defPlace', side: def, batter: b, pitcher: pit, preview: function (idx, a) { return dVal(dCards.concat(idx.map(function (i) { return hB[i]; })), a); }, risp: risp, forced: 1 }; if (ansEP && ansEP.idx && ansEP.idx.length) ei = ansEP.idx[0]; }
+        if (def.human) { var ansEP = yield { type: 'defPlace', side: def, batter: b, pitcher: pit, preview: function (idx, a) { return dVal(dCards.concat(idx.map(function (i) { return hB[i]; })), a) + addDP(a); }, risp: risp, forced: 1 }; if (ansEP && ansEP.idx && ansEP.idx.length) ei = ansEP.idx[0]; }
         if (ei < 0) { var ev0 = -1e9; hB.forEach(function (y, i) { if (isKill(y)) return; var v0 = Math.min(dVal(dCards.concat([y]), 'ミート'), dVal(dCards.concat([y]), '強振')); if (v0 > ev0) { ev0 = v0; ei = i; } }); if (ei < 0) ei = 0; }
         var addC = hB.splice(ei, 1)[0]; dCards.push(addC); extraSlot = 1;
         ev(atk, nm(b) + 'の起動（お互いにもう1枚）'); LG(who(def) + '：' + nm(b) + 'の起動で、守備は手札から1枚多くサポートエリアへ');
@@ -3473,7 +3483,8 @@ function simRun_(SA, SB, opt) {
     var rlf = def.S.fx(def.S.rowOf[rel.no] || rel).reliefLookSup; if (rlf) { var lk2 = []; for (var lq2 = 0; lq2 < rlf && def.deck.length; lq2++) lk2.push(def.deck.shift()); if (lk2.length) { lk2.sort(function (x, y) { return worth(def, y) - worth(def, x); }); def.pendingSup = (def.pendingSup || []).concat([lk2.shift()]); lk2.forEach(function (x) { def.rest.push(x); }); ev(def, nm(rel) + '（登板で山札からサポートへ）'); } }
     var rcx = { add: { ap: 0, dp: 0, dice: 0 }, sx: { ownUsedP: 1, lead: def.score > (def === A ? B : A).score }, oldPitCost: rowCost(def, oldP) }; fireSync(def, rel, 'relief', rcx, true); def.reliefDP = rcx.add.dp; def.reliefDice = rcx.add.dice || 0; var rsf = def.S.fx(def.S.rowOf[rel.no] || rel).reliefSup; def.relSupNext = rsf || null; def.reliefAttr = (actsOf(def, rel, 'relief', true).find(function (q) { return q.cond && q.cond.attr; }) || { cond: {} }).cond.attr || null; fireSync(def, rel, 'enter', { sx: {} }, true); };
   // 継投：最終回の守備で、先発で使う札（覚醒札・強心臓・不屈）が手札に無くなったら
-  var maybeRelieve = function (def, inn) {
+  var maybeRelieve = function (def, inn, atk, half) {
+    if (atk && half) placePit(def, atk, half);
     if (opt.noRelief || def.relieved || inn < finalInn || def.tp < 1 || holdTP(def, null)) return;
     var rel = def.S.closer || def.S.middle; if (!rel) return;
     var stv = def.S.starter, cost = rowCost(def, stv);
@@ -3526,7 +3537,7 @@ function simulateGame2(XA, XB, opt) {
         for (var p = 0; p < 40 && half.outs < 3; p++) {
           if (!first) { R.draw(atk, 1); R.draw(def, 1); }
           first = false;
-          R.maybeRelieve(def, inn);
+          R.maybeRelieve(def, inn, atk, half);
           var r = R.pa(atk, def, half, null);
           (atk.key === 'A' ? out.attrA : out.attrB)[r.attr]++;
           if (inn === 3 && h === 1 && atk.score > def.score) break;
@@ -3577,7 +3588,7 @@ function simulateScene2(XA, XB, attr, opt) {
     while (pa < maxPA && inn < innings) {
       if (pa > 0) { R.draw(R.A, 1); R.draw(R.B, 1); }
       cur = stat[pa]; cur.n++; cur.defHand += R.B.hand.length; cur.atkHand += R.A.hand.length;
-      R.maybeRelieve(R.B, half.inn);
+      R.maybeRelieve(R.B, half.inn, R.A, half);
       var a0 = R.A.score; R.pa(R.A, R.B, half, attr); runsInn[inn] += R.A.score - a0; pa++;
       if (half.outs >= 3) { R.changeSides(R.B); inn++; half = { base: [0, 0, 0], outs: 0, inn: startInn + inn, prevOn: false }; }
     }
@@ -3623,7 +3634,7 @@ function* soloGame(XA, XB, opt) {
       for (var p = 0; p < 40 && half.outs < 3; p++) {
         if (!first) { R.draw(atk, 1); R.draw(def, 1); }
         first = false;
-        if (!def.human) R.maybeRelieve(def, inn);
+        if (!def.human) R.maybeRelieve(def, inn, atk, half);
         yield* relay(R.paG(atk, def, half, null));
         if (inn === 3 && h === 1 && atk.score > def.score) break;
       }
