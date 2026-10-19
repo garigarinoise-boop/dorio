@@ -2073,7 +2073,15 @@ function simRun_(SA, SB, opt) {
   };
   // 攻撃・守備の両方で見た札の値打ち（手札の入れ替え・捨てる札を選ぶとき）
   var worthMemo = opt.worthMemo || {};
+  var comboKeepNames = function (T) {
+    if (T._ckL === T.lineup) return T._ck; T._ckL = T.lineup; var out = {};
+    T.lineup.forEach(function (v) { var r = T.S.rowOf[v.no] || v, m = String(r.eff || '').match(/【攻撃】【メイン】(?:【[^】]+】)*【コンボ】([^:：]+)[:：]/); if (m) { var k = normName_(m[1]); (out[k] = out[k] || []).push(v.no); } });
+    return (T._ck = out);
+  };
+  // 手札にあるコンボ相手の札の1枚目は残す（その打者 bNo の打席なら使ってよい）
+  var comboHeld = function (T, x, bNo) { if (String(opt.comboOff || '').indexOf(T.key) >= 0) return false; var ow = comboKeepNames(T)[nm(x)]; if (!ow || ow.indexOf(bNo) >= 0) return false; return T.hand.find(function (y) { return nm(y) === nm(x); }) === x; };
   var worth = function (T, x) {
+    if (comboHeld(T, x, null) && T.hand.filter(function (y) { return nm(y) === nm(x); }).length <= 1) return 50;
     var wk = T.key + x.no + '|' + T.lineup.map(function (v) { return v.no; }).join(','); if (wk in worthMemo) return worthMemo[wk];
     return (worthMemo[wk] = worth0(T, x));
   };
@@ -2982,7 +2990,7 @@ function simRun_(SA, SB, opt) {
     var keepInn = function (x) { if (keepOneX) return x === keepOneX; return !!(fl2 && fl2.keep && half.inn === 1 && !atk.batFirst && x.no !== b.no && fl2.keep.some(function (k) { return nm(x).indexOf(k) >= 0; })); };
     // 比べる用：指定した打者（opt.noAwk[チーム] = ['岩田', ...]）は自分の覚醒札を伏せない
     var noAwkSelf = function (x) { var na = opt.noAwk && opt.noAwk[atk.key]; return !!(na && x.no === b.no && na.some(function (k) { return nm(b).indexOf(k) >= 0; })); };
-    var keepDef = function (x) { if (lastStand) return false; return noAwkSelf(x) || keepInn(x) || holdPinch(x) || !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4) || (leadSave && defUse(x) >= 2)); };
+    var keepDef = function (x) { if (lastStand) return false; return noAwkSelf(x) || keepInn(x) || holdPinch(x) || comboHeld(atk, x, b.no) || !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4) || (leadSave && defUse(x) >= 2)); };
     var attr = fixedAttr, ansA = null;
     if (atk.human) {
       var prevA = function (idx, a) { var cs = idx.map(function (i) { return hA[i]; }).concat(preA); var q = bfx.parity ? (bfx.parity[costSum(atk, cs) % 2 === 0 ? 'even' : 'odd'] || {}) : {}; return calc(b, cs, a, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + (q.ap || 0) + supBonusOf(atk, cs, 'AP', a, sit, b, pit) + tierVal(atk, b, 'ap', sit); };
@@ -3531,7 +3539,7 @@ function simulateGame2(XA, XB, opt) {
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
     var readAgg = function (q) { var at = q.aKey, df = at === 'A' ? 'B' : 'A'; if (q.killD) { out.kill[df].use++; if (q.playA) out.kill[df].hit++; } if (q.playA) out.kill[df].faced++; if (q.killA) { out.kill[at].use++; if (q.playP) out.kill[at].hit++; } if (q.playP) out.kill[at].faced++; if (opt.readLog) opt.readLog(q); };
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true; R.A.batFirst = aFirst; R.B.batFirst = !aFirst; if (aFirst) out.nF++; else out.nS++;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -3586,7 +3594,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
