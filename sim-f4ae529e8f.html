@@ -2075,7 +2075,7 @@ function simRun_(SA, SB, opt) {
   var worthMemo = opt.worthMemo || {};
   var comboKeepNames = function (T) {
     if (T._ckL === T.lineup) return T._ck; T._ckL = T.lineup; var out = {};
-    T.lineup.forEach(function (v) { var r = T.S.rowOf[v.no] || v, m = String(r.eff || '').match(/【攻撃】【メイン】(?:【[^】]+】)*【コンボ】([^:：]+)[:：]/); if (m) { var k = normName_(m[1]); (out[k] = out[k] || []).push(v.no); } });
+    T.lineup.forEach(function (v) { var r = T.S.rowOf[v.no] || v, m = String(r.eff || '').match(/【攻撃】【メイン】(?:【[^】]+】)*【コンボ】([^:：]+)[:：]/); if (m) { var k = normName_(m[1]); (out[k] = out[k] || []).push(v.no); var kb = nm(v); (out[kb] = out[kb] || []).push(v.no); } });
     return (T._ck = out);
   };
   // 手札にあるコンボ相手の札の1枚目は残す（その打者 bNo の打席なら使ってよい）
@@ -2981,6 +2981,7 @@ function simRun_(SA, SB, opt) {
     // リードしていて得点圏の外：守備で使い道のある札は残す。守備に効かない札（自分の投手の DP を2以上上げない札・攻撃戦術）だけなら2枚まで出す（2026-10-14 ユーザー談）
     var leadSave = diff > 0 && !risp;
     var defUse = function (x) { var p0 = atk.pitcher; if (!p0) return 0; return Math.max(calc(p0, [x], 'ミート', {}) - calc(p0, [], 'ミート', {}), calc(p0, [x], '強振', {}) - calc(p0, [], '強振', {})); };
+    if (half.inn === 1 && String(opt.inn1Two || '').indexOf(atk.key) >= 0) size = Math.min(maxHandPlace, 2); // 比べる用：初回は全打席2枚
     if (leadSave) size = hA.filter(function (x) { return !isKill(x) && (x.no === b.no || defUse(x) < 2); }).length >= 2 ? 2 : 1;
     // 得点圏の外では守備の要の札を攻撃に使わない。ただし打者本人の覚醒札は別（覚醒のために入れている札）
     var holdPinch = function (x) { return !risp && !final && String(opt.pinchOld || '').indexOf(atk.key) < 0 && x.no !== b.no && atk.tp >= 1 && atk.S.pinch.some(function (pp) { return pp.no === x.no && !atk.usedPinch[pp.no] && !atk.lineup.some(function (v) { return v.no === pp.no; }); }); };
@@ -3539,7 +3540,7 @@ function simulateGame2(XA, XB, opt) {
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
     var readAgg = function (q) { var at = q.aKey, df = at === 'A' ? 'B' : 'A'; if (q.killD) { out.kill[df].use++; if (q.playA) out.kill[df].hit++; } if (q.playA) out.kill[df].faced++; if (q.killA) { out.kill[at].use++; if (q.playP) out.kill[at].hit++; } if (q.playP) out.kill[at].faced++; if (opt.readLog) opt.readLog(q); };
-    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, inn1Two: opt.inn1Two, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true; R.A.batFirst = aFirst; R.B.batFirst = !aFirst; if (aFirst) out.nF++; else out.nS++;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -3594,7 +3595,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, inn1Two: opt.inn1Two, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
