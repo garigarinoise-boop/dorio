@@ -2107,6 +2107,13 @@ function simRun_(SA, SB, opt) {
   // TP の数で伸びる起動（オスナ）の打者の2打席目までは、ほかで TP を使って4未満にしない（opt.tpHoldAll にチーム記号）
   var holdTP = function (T, curNo) { if (String(opt.tpHoldAll || '').indexOf(T.key) < 0) return false; T.abSeen = T.abSeen || {};
     return T.lineup.some(function (v) { var kf = T.S.fx(T.S.rowOf[v.no] || v).kidou; return kf && kf.type === 'revealTPN' && v.no !== curNo && (T.abSeen[v.no] || 0) < 2 && T.tp - 1 < kf.bonusAt + 1; }); };
+  // イニングエリアに置くと引ける札か（寺地の【イニング】・松川の「イニングエリアに置かれた時…引く」。本領発揮・投手のコストの条件も見る）
+  var drawOnPlace = function (T, x) {
+    var f = T.S.fx(x); if (f.inningDraw && (!f.inningDraw.hon || inningHon(T, x))) return true;
+    return (f.acts || []).some(function (a) { return a.when === 'inningPlaced' && a.ops.some(function (o) { return o.op === 'draw'; }) && (!a.hon || honActive(T, x.no)) && (!a.cond || !a.cond.pitCost || (T.pitcher && rowCost(T, T.pitcher) >= a.cond.pitCost)); });
+  };
+  // イニングに札を置く起動（友杉・ポランコ・福浦）の打者がいるデッキ：イニングに置くと引ける札（松川など）は支援に使わず残す（2026-10-19 ユーザー指摘）
+  var innKidouTeam = function (T) { return String(opt.innKeepOld || '').indexOf(T.key) < 0 && T.lineup.some(function (v) { var kf = T.S.fx(T.S.rowOf[v.no] || v).kidou; return kf && kf.type === 'inningPC'; }); };
   var KK1 = opt.killK || 1.2, KK2 = KK1 * 0.75, PMIN = opt.killP != null ? opt.killP : 0.3;
   // 勝負師は持っているだけで相手の覚醒を止める（相手は見えた勝負師の枚数から伏せ札を読む）。残りが少ないほど1枚の価値が上がるので、最後の1枚は確実な場面か最終回まで取っておく
   var killRemain = function (T) { var tot = T.S.X.mainCards.filter(isKill).reduce(function (t, x) { return t + x.num; }, 0); return tot - T.rest.concat(T.inning, T.out).filter(isKill).length; };
@@ -2600,7 +2607,8 @@ function simRun_(SA, SB, opt) {
     var engD = String(opt.engOld || '').indexOf(def.key) < 0 && (pfx.acts || []).some(function (a) { return a.when === 'play' && a.cond && a.cond.supCostGeOpp && a.ops.some(function (o) { return o.op === 'draw'; }); });
     var oppCostAvg = def.oppSupCostN ? def.oppSupCostSum / def.oppSupCostN : 2.5;
     var engBonus = function (s) { if (!engD || !s.length) return 0; var cs = costSum(def, s); return cs >= oppCostAvg ? 70 : 35 * cs / Math.max(1, oppCostAvg); };
-    var defSc = function (s) { return defSc0(s) + backBonus(s) + engBonus(s); };
+    var innKeepPen = function (s) { return !risp && !final && innKidouTeam(def) ? s.filter(function (x) { return drawOnPlace(def, x); }).length * 250 : 0; };
+    var defSc = function (s) { return defSc0(s) + backBonus(s) + engBonus(s) - innKeepPen(s); };
     var bestSet = function (hand, score, size, filter) {
       if (defLimit1 && score === defSc) size = 1;
       var c = []; hand.forEach(function (x, i) { if (!filter || filter(x)) c.push(i); });
@@ -2645,7 +2653,7 @@ function simRun_(SA, SB, opt) {
       // 手札が厚い（7枚以上）ときは温存してもチェンジで捨てるので、札の数は気にせず、目標を超えた分の DP も少し評価する
       var thick = hB.length >= 7;
       ['ミート', '強振'].forEach(function (a) { var v = dVal(s, a), T = readT[a], b1 = a === 'ミート' ? dpM : dpS; sc += v >= T ? 1000 + 100 * (T - b1) + (thick ? (v - T) * 5 : 0) : (v - b1) * 10; });
-      return sc - (thick ? 0 : 40) * s.length;
+      return sc - (thick ? 0 : 40) * s.length - innKeepPen(s);
     };
     var readPick = function (filter) {
       if (!readT) return null;
@@ -2792,9 +2800,9 @@ function simRun_(SA, SB, opt) {
         // 手札の札を1枚イニングエリアに置く（投手・捕手が無ければそれを）→ 投手か捕手があれば AP+ → イニングエリアの札を1枚手札へ
         var hasPC = kd.needPair ? pairIn() : pcIn();
         var pi0 = -1;
-        if (kd.needPair && !hasPC) { var innNames = atk.inning.map(nm), pv1 = 1e9; hA.forEach(function (x, i) { if (innNames.indexOf(nm(x)) < 0) return; var w = worth(atk, x); if (w < pv1) { pv1 = w; pi0 = i; } }); }
-        else if (!hasPC) { var cands = []; hA.forEach(function (x, i) { if (x.kind === '選手' && (x.pos === 1 || x.pos === 2)) cands.push(i); }); cands.sort(function (p, q) { return worth(atk, hA[p]) - worth(atk, hA[q]); }); pi0 = cands.length ? cands[0] : -1; }
-        else { var jx = junk(); pi0 = jx.i; var tf = hA.findIndex(function (x) { var f2 = atk.S.fx(x); return f2.inningDraw && (!f2.inningDraw.hon || inningHon(atk, x)); }); if (tf >= 0) pi0 = tf; }
+        if (kd.needPair && !hasPC) { var innNames = atk.inning.map(nm), pv1 = 1e9; hA.forEach(function (x, i) { if (innNames.indexOf(nm(x)) < 0) return; var w = worth(atk, x) - (drawOnPlace(atk, x) ? 50 : 0); if (w < pv1) { pv1 = w; pi0 = i; } }); }
+        else if (!hasPC) { var cands = []; hA.forEach(function (x, i) { if (x.kind === '選手' && (x.pos === 1 || x.pos === 2)) cands.push(i); }); cands.sort(function (p, q) { return (worth(atk, hA[p]) - (drawOnPlace(atk, hA[p]) ? 50 : 0)) - (worth(atk, hA[q]) - (drawOnPlace(atk, hA[q]) ? 50 : 0)); }); pi0 = cands.length ? cands[0] : -1; }
+        else { var jx = junk(); pi0 = jx.i; var tf = hA.findIndex(function (x) { return drawOnPlace(atk, x); }); if (tf >= 0) pi0 = tf; }
         if (pi0 >= 0) {
           var placed = hA.splice(pi0, 1)[0]; atk.inning.push(placed); onInningPlaced(atk, placed);
           if (innOkK()) { sit.kidou = true; if (kd.drawOnOk) draw(atk, kd.drawOnOk); }
@@ -2977,7 +2985,7 @@ function simRun_(SA, SB, opt) {
     var keepInn = function (x) { if (keepOneX) return x === keepOneX; return !!(fl2 && fl2.keep && half.inn === 1 && !atk.batFirst && x.no !== b.no && fl2.keep.some(function (k) { return nm(x).indexOf(k) >= 0; })); };
     // 比べる用：指定した打者（opt.noAwk[チーム] = ['岩田', ...]）は自分の覚醒札を伏せない
     var noAwkSelf = function (x) { var na = opt.noAwk && opt.noAwk[atk.key]; return !!(na && x.no === b.no && na.some(function (k) { return nm(b).indexOf(k) >= 0; })); };
-    var keepDef = function (x) { if (lastStand) return false; return noAwkSelf(x) || keepInn(x) || holdPinch(x) || !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4) || (leadSave && defUse(x) >= 2)); };
+    var keepDef = function (x) { if (lastStand) return false; if (!risp && !final && x.no !== b.no && innKidouTeam(atk) && drawOnPlace(atk, x)) return true; return noAwkSelf(x) || keepInn(x) || holdPinch(x) || !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4) || (leadSave && defUse(x) >= 2)); };
     var attr = fixedAttr, ansA = null;
     if (atk.human) {
       var prevA = function (idx, a) { var cs = idx.map(function (i) { return hA[i]; }).concat(preA); var q = bfx.parity ? (bfx.parity[costSum(atk, cs) % 2 === 0 ? 'even' : 'odd'] || {}) : {}; return calc(b, cs, a, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + (q.ap || 0) + supBonusOf(atk, cs, 'AP', a, sit, b, pit) + tierVal(atk, b, 'ap', sit); };
@@ -3421,7 +3429,7 @@ function simRun_(SA, SB, opt) {
     var pfx = def.S.fx(def.S.rowOf[def.pitcher.no] || def.pitcher);
     var score = function (x) {
       var f = def.S.fx(x), s = 0;
-      if (f.inningDraw && (!f.inningDraw.hon || inningHon(def, x))) s += 5;
+      if (drawOnPlace(def, x)) s += 5;
       if (pfx.inningPair && def.inning.length === 1 && nm(def.inning[0]) === nm(x)) s += 8;
       if (x.kind === '選手' && (x.pos === 1 || x.pos === 2)) s += 2;
       return s - worth(def, x) * 0.1;
@@ -3526,7 +3534,7 @@ function simulateGame2(XA, XB, opt) {
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
     var readAgg = function (q) { var at = q.aKey, df = at === 'A' ? 'B' : 'A'; if (q.killD) { out.kill[df].use++; if (q.playA) out.kill[df].hit++; } if (q.playA) out.kill[df].faced++; if (q.killA) { out.kill[at].use++; if (q.playP) out.kill[at].hit++; } if (q.playP) out.kill[at].faced++; if (opt.readLog) opt.readLog(q); };
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, innKeepOld: opt.innKeepOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true; R.A.batFirst = aFirst; R.B.batFirst = !aFirst; if (aFirst) out.nF++; else out.nS++;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -3581,7 +3589,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, innKeepOld: opt.innKeepOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
