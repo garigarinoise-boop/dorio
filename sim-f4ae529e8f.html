@@ -2425,17 +2425,20 @@ function simRun_(SA, SB, opt) {
     // TP の残し方：継投（抑えか中継ぎがいて、まだ交代していない）・ZONE（まだ使っていない）のぶん
     var reserve = function (T) { return ((T.S.closer || T.S.middle) && !T.relieved ? 1 : 0) + (T.S.zoneRow && !T.zoneUsed && T.S.zoneFor ? 1 : 0); };
     // ZONE：TP1。チームカードのドロー（ロッテ）。【ZONE③】は山札の上から3枚公開して2枚まで手札へ（人は公開した札から選ぶので、公開した札を返す）
-    var zoneDo = function (manual, zRow) {
+    var zoneDrawFirst = function (zRow) { var zf0 = atk.S.fx(zRow || atk.S.zoneRow), D = atk.deck.length; return !(zf0.zoneReveal && D >= 2 && D <= zf0.zoneReveal.n); };
+    var zoneDo = function (manual, zRow, drawFirst) {
       atk.tp--; atk.zoneUsed = true; atk.zoneActive = b.no; st.zone = (st.zone || 0) + 1; ev(atk, 'ZONE（' + nm(b) + '）');
-      if (atk.S.teamFx && atk.S.teamFx.zoneDraw) draw(atk, atk.S.teamFx.zoneDraw);
+      var zDraw = atk.S.teamFx && atk.S.teamFx.zoneDraw; if (drawFirst == null) drawFirst = zoneDrawFirst(zRow);
+      if (zDraw && drawFirst) draw(atk, zDraw);
       var zf = atk.S.fx(zRow || atk.S.zoneRow); if (zf.zoneRispAP && risp) { atk.zonePendAP = zf.zoneRispAP; ev(atk, nm(b) + '（ZONE：得点圏で AP+' + zf.zoneRispAP + '）'); }
       if (zf.zoneReveal) {
         var rev = []; for (var zi = 0; zi < zf.zoneReveal.n; zi++) { var tc = topCard(atk); if (tc) rev.push(tc); }
-        if (manual) return { cards: rev, take: zf.zoneReveal.take };
+        if (manual) return { cards: rev, take: zf.zoneReveal.take, drawAfter: zDraw && !drawFirst ? zDraw : 0 };
         rev.sort(function (x, y) { return worth(atk, y) - worth(atk, x); });
         rev.forEach(function (x, i) { (i < zf.zoneReveal.take ? hA : atk.rest).push(x); }); refreshNow(atk);
         if (rev.length) LG(who(atk) + '：ZONE で ' + rev.length + ' 枚公開し、' + rev.slice(0, zf.zoneReveal.take).map(nm).join('・') + ' を手札に');
       }
+      if (zDraw && !drawFirst) draw(atk, zDraw);
     };
     var pinchDo = function (pp) {
       ev(atk, '代打（' + nm(pp) + '）'); atk.tp--; atk.usedPinch[pp.no] = true; atk.lineup[slot] = pp; LG(who(atk) + '：代打 ' + nm(pp) + '（' + nm(b) + ' に代わって）'); b = pp; pinchNow = true; st.pinch = (st.pinch || 0) + 1;
@@ -2448,13 +2451,16 @@ function simRun_(SA, SB, opt) {
         refreshNow(atk); refreshNow(def); var ansPre = yield { type: 'atkPre', side: atk, batter: b, zoneOk: zoneOk, pinch: pcs0 };
         if (ansPre && ansPre.pinch) { var pp0 = pcs0.find(function (x) { return x.no === ansPre.pinch; }); if (pp0) pinchDo(pp0); }
         else if (ansPre && ansPre.zone && zoneOk) {
-          var zr = zoneDo(true);
+          var zfH = atk.S.fx(atk.S.zoneRow), dfH = null;
+          if (atk.S.teamFx && atk.S.teamFx.zoneDraw && zfH.zoneReveal && atk.deck.length <= zfH.zoneReveal.n) { /* 順番で結果が変わるとき（山札が公開枚数以下）だけ聞く */ var ansO = yield { type: 'choice', side: atk, title: 'ZONE：先に処理する効果（山札 ' + atk.deck.length + ' 枚）', opts: ['チームカードで1枚引いてから、' + zfH.zoneReveal.n + '枚公開', zfH.zoneReveal.n + '枚公開してから、チームカードで1枚引く'] }; dfH = !(ansO && ansO.i === 1); }
+          var zr = zoneDo(true, null, dfH);
           if (zr && zr.cards.length) {
             var sug = zr.cards.map(function (x, i) { return i; }).sort(function (p, q2) { return worth(atk, zr.cards[q2]) - worth(atk, zr.cards[p]); }).slice(0, zr.take);
             var ansZ = yield { type: 'zoneReveal', side: atk, cards: zr.cards.slice(), take: zr.take, batter: b, suggest: sug };
             var pickZ = (ansZ && ansZ.idx || []).slice(0, zr.take);
             zr.cards.forEach(function (x, i) { (pickZ.indexOf(i) >= 0 ? hA : atk.rest).push(x); });
             LG('自分：ZONE で ' + zr.cards.map(nm).join('・') + ' を公開し、' + (pickZ.map(function (i) { return nm(zr.cards[i]); }).join('・') || 'どれも取らず') + ' を手札に（残りはレスト）');
+            if (zr.drawAfter) draw(atk, zr.drawAfter);
           }
         }
       }
