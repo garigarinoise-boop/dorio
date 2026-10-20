@@ -2774,7 +2774,7 @@ function simRun_(SA, SB, opt) {
           var usedH = false;
           if (kd.type === 'inningPC' && ansK.placeIdx != null && hA[ansK.placeIdx]) {
             var plc = hA.splice(ansK.placeIdx, 1)[0]; atk.inning.push(plc); onInningPlaced(atk, plc); LG('自分：' + nm(b) + 'の起動で ' + nm(plc) + ' をイニングエリアへ');
-            if (innOkK()) { sit.kidou = true; if (kd.drawOnOk) draw(atk, kd.drawOnOk); } else LG(kd.needPair ? '自分：イニングエリアに同じ名前の札が2枚無いので、AP は上がりません' : '自分：イニングエリアに投手・捕手が無いので、AP は上がりません');
+            if (innOkK()) { sit.kidou = true; if (!kd.needPair) sit.inningPC = true; if (kd.drawOnOk) draw(atk, kd.drawOnOk); } else LG(kd.needPair ? '自分：イニングエリアに同じ名前の札が2枚無いので、AP は上がりません' : '自分：イニングエリアに投手・捕手が無いので、AP は上がりません');
             if (kd.takeBack && atk.inning.length) { var ansT = yield { type: 'takeBack', side: atk, inning: atk.inning.slice() }; var ti = ansT && ansT.idx != null ? ansT.idx : 0; if (atk.inning[ti]) { var tb = atk.inning.splice(ti, 1)[0]; hA.push(tb); LG('自分：イニングエリアから ' + nm(tb) + ' を手札へ'); } }
             usedH = true;
           } else if (kd.type === 'cycle') {
@@ -2827,7 +2827,7 @@ function simRun_(SA, SB, opt) {
         else { var jx = junk(); pi0 = jx.i; var tf = hA.findIndex(function (x) { return drawOnPlace(atk, x); }); if (tf >= 0) pi0 = tf; }
         if (pi0 >= 0) {
           var placed = hA.splice(pi0, 1)[0]; atk.inning.push(placed); onInningPlaced(atk, placed);
-          if (innOkK()) { sit.kidou = true; if (kd.drawOnOk) draw(atk, kd.drawOnOk); }
+          if (innOkK()) { sit.kidou = true; if (!kd.needPair) sit.inningPC = true; if (kd.drawOnOk) draw(atk, kd.drawOnOk); }
           if (kd.takeBack && atk.inning.length) {
             // 一番値打ちの高い札を手札へ。投手・捕手が1枚しかないなら、それは残す
             var pcs = atk.inning.filter(function (x) { return x.kind === '選手' && (x.pos === 1 || x.pos === 2); }).length;
@@ -3336,7 +3336,7 @@ function simRun_(SA, SB, opt) {
       if (fi >= 0 || true) ev(atk, nm(b) + 'の覚醒（AP戦術を回収）');
       if (fi >= 0) keepHand.push(aCards[fi]); else { var fr = atk.rest.findIndex(apT); if (fr >= 0) hA.push(atk.rest.splice(fr, 1)[0]); }
     }
-    if (bfx.ground) { var gp = null; aLive.forEach(function (x) { if (x.kind === '選手' && keepHand.indexOf(x) < 0 && (!gp || x.no === b.no)) gp = x; }); if (gp) { keepHand.push(gp); ev(atk, nm(b) + '（選手を回収）'); } }
+    if (bfx.ground) { var gC = aLive.filter(function (x) { return x.kind === '選手' && keepHand.indexOf(x) < 0; }), gp = null; gC.forEach(function (x) { if (!gp || worth(atk, x) > worth(atk, gp)) gp = x; }); if (atk.human && gC.length) { var anG = yield { type: 'pick', side: atk, title: nm(b) + '：サポートエリアの選手カードを1枚まで手札に加える', cards: gC, take: 1, suggest: [gC.indexOf(gp)] }; if (anG && anG.idx) gp = anG.idx.length ? gC[anG.idx[0]] : null; } if (gp) { keepHand.push(gp); ev(atk, nm(b) + '（' + nm(gp) + ' を回収）'); } }
     aCards.forEach(function (x) { var o0 = x._orig || x; if (keepHand.indexOf(x) >= 0) hA.push(o0); else atk.rest.push(o0); });
     dCards.forEach(function (x) { var f = def.S.fx(x); if (keepD.indexOf(x) >= 0) hB.push(x); else if (f.fukutsu && !tacOff(x) && rowCost(def, def.pitcher) >= f.fukutsu && res !== 'アウト') { hB.push(x); ev(def, '不屈が手札に戻る'); } else def.rest.push(x); });
     half.prevOn = res !== 'アウト'; half.prevBat = b.no;
