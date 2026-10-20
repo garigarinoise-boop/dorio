@@ -1894,6 +1894,17 @@ function simSide_(X) {
   var rowOf = {}; X.order.forEach(function (r) { rowOf[r.no] = r; });
   var fxOf = {}; var fxCard = function (c) { if (!(c.no in fxOf)) fxOf[c.no] = simFx_(c); return fxOf[c.no]; };
   X.order.forEach(fxCard); X.mainCards.forEach(fxCard);
+  // レストから手札に戻せる札：自分のカードの効果（覚醒・起動・プレイ時など）の「レストエリアから〜を手札に加える」を集める（2026-10-20 ユーザー談：回収できるならレストに落とすように立ち回る）
+  var recov = [];
+  var addOps = function (ops) { (ops || []).forEach(function (o) { if (!o) return; if ((o.op === 'fetch' || o.op === 'restToSup') && o.filter) recov.push(o.filter); if (o.then) addOps([].concat(o.then)); }); };
+  X.order.concat(X.mainCards).forEach(function (c) {
+    var f = fxCard(c); (f.acts || []).forEach(function (a) { addOps(a.ops); });
+    if (f.kidou && f.kidou.type === 'fetch' && f.kidou.name) { var kn = f.kidou.name; recov.push(function (x) { return normName_(x.name) === kn; }); }
+    if (f.onDiscard && f.onDiscard.fetch) { var dn = f.onDiscard.fetch.name; recov.push(function (x) { return normName_(x.name) === dn; }); }
+    if (f.awkFetchAP) recov.push(function (x) { return x.kind === '戦術' && +x.apSup > 0; });
+    if (f.relievedFetch) recov.push(function (x) { return x.kind === '選手' && x.pos === 1; });
+  });
+  var recoverable = function (x) { return recov.some(function (fn) { try { return !!fn(x); } catch (e) { return false; } }); };
   // ZONE札が複数あるときは中身で選ぶ：山札から公開して手札に加える（札が増える）ものを優先（ソフトバンクは近藤。2026-10-15 ユーザー談）
   var zoneRows = X.order.filter(function (r) { return r.kind === 'ZONE選手'; });
   var zoneScore = function (r) { var f = fxCard(r); return f.zoneReveal ? 10 + f.zoneReveal.take : 1; };
@@ -1903,7 +1914,7 @@ function simSide_(X) {
   if (zoneRow) { var zn = normName_(zoneRow.name).replace(/【ZONE】/, ''); var zb = bats.find(function (v) { return normName_(v.name) === zn; }); zoneFor = zb ? zb.no : null; }
   var teamFx = TEAM_FX[X.team && X.team.no] || null;
   var base = function (no) { var r = rowOf[no]; return r ? parseBase_(r.base) : {}; };
-  return { X: X, starter: starter, closer: closer, middle: middle, bats: bats, pinch: pinch, rowOf: rowOf, fx: fxCard, zoneRow: zoneRow, zoneFor: zoneFor, zoneRowsFor: zoneRowsFor, teamFx: teamFx, base: base,
+  return { X: X, starter: starter, closer: closer, middle: middle, bats: bats, pinch: pinch, rowOf: rowOf, fx: fxCard, zoneRow: zoneRow, zoneFor: zoneFor, zoneRowsFor: zoneRowsFor, teamFx: teamFx, base: base, recoverable: recoverable,
     handStart: starter ? (base(starter.no).starter || X.hand || 7) : (X.hand || 7), nm: nm };
 }
 
@@ -2080,10 +2091,13 @@ function simRun_(SA, SB, opt) {
   };
   // 手札にあるコンボ相手の札の1枚目は残す（その打者 bNo の打席なら使ってよい）
   var comboHeld = function (T, x, bNo) { if (String(opt.comboOff || '').indexOf(T.key) >= 0) return false; var ow = comboKeepNames(T)[nm(x)]; if (!ow || ow.indexOf(bNo) >= 0) return false; return T.hand.find(function (y) { return nm(y) === nm(x); }) === x; };
+  // 出場中の打者本人の覚醒札（同じ番号）を1枚、その打者の打席まで残す（2026-10-20 ユーザー指定で標準。opt.awkHoldOff で旧に戻せる）
+  var awkHeld = function (T, x, bNo) { if (String(opt.awkHoldOff || '').indexOf(T.key) >= 0 || x.kind !== '選手' || x.no === bNo) return false; var li = T.lineup.findIndex(function (v) { return v.no === x.no; }); if (li < 0) return false; if (bNo == null) return false; var ahead = (li - T.bi % 9 + 9) % 9; if (ahead > 3) return false; return T.hand.find(function (y) { return y.no === x.no; }) === x; };
   var worth = function (T, x) {
     if (comboHeld(T, x, null) && T.hand.filter(function (y) { return nm(y) === nm(x); }).length <= 1) return 50;
+    var rv = String(opt.recovOff || '').indexOf(T.key) < 0 && T.S.recoverable && T.S.recoverable(x) ? 2 : 0;
     var wk = T.key + x.no + '|' + T.lineup.map(function (v) { return v.no; }).join(','); if (wk in worthMemo) return worthMemo[wk];
-    return (worthMemo[wk] = worth0(T, x));
+    return (worthMemo[wk] = worth0(T, x)) - rv;
   };
   var worth0 = function (T, x) {
     if (isKill(x) || /^(強心臓|不屈)$/.test(nm(x))) return 50;
@@ -2981,7 +2995,8 @@ function simRun_(SA, SB, opt) {
     // リードしていて得点圏の外：守備で使い道のある札は残す。守備に効かない札（自分の投手の DP を2以上上げない札・攻撃戦術）だけなら2枚まで出す（2026-10-14 ユーザー談）
     var leadSave = diff > 0 && !risp;
     var defUse = function (x) { var p0 = atk.pitcher; if (!p0) return 0; return Math.max(calc(p0, [x], 'ミート', {}) - calc(p0, [], 'ミート', {}), calc(p0, [x], '強振', {}) - calc(p0, [], '強振', {})); };
-    if (half.inn === 1 && String(opt.inn1Two || '').indexOf(atk.key) >= 0) size = Math.min(maxHandPlace, 2); // 比べる用：初回は全打席2枚
+    if (half.inn === 1 && String(opt.inn1Two || '').indexOf(atk.key) >= 0) size = Math.min(maxHandPlace, 2);
+    if (opt.fullFor && (opt.fullFor[atk.key] || []).indexOf(b.no) >= 0) size = Math.min(maxHandPlace, 2); // 比べる用：指定の打者は毎回2枚 // 比べる用：初回は全打席2枚
     if (leadSave) size = hA.filter(function (x) { return !isKill(x) && (x.no === b.no || defUse(x) < 2); }).length >= 2 ? 2 : 1;
     // 得点圏の外では守備の要の札を攻撃に使わない。ただし打者本人の覚醒札は別（覚醒のために入れている札）
     var holdPinch = function (x) { return !risp && !final && String(opt.pinchOld || '').indexOf(atk.key) < 0 && x.no !== b.no && atk.tp >= 1 && atk.S.pinch.some(function (pp) { return pp.no === x.no && !atk.usedPinch[pp.no] && !atk.lineup.some(function (v) { return v.no === pp.no; }); }); };
@@ -2991,7 +3006,7 @@ function simRun_(SA, SB, opt) {
     var keepInn = function (x) { if (keepOneX) return x === keepOneX; return !!(fl2 && fl2.keep && half.inn === 1 && !atk.batFirst && x.no !== b.no && fl2.keep.some(function (k) { return nm(x).indexOf(k) >= 0; })); };
     // 比べる用：指定した打者（opt.noAwk[チーム] = ['岩田', ...]）は自分の覚醒札を伏せない
     var noAwkSelf = function (x) { var na = opt.noAwk && opt.noAwk[atk.key]; return !!(na && x.no === b.no && na.some(function (k) { return nm(b).indexOf(k) >= 0; })); };
-    var keepDef = function (x) { if (lastStand) return false; return noAwkSelf(x) || keepInn(x) || holdPinch(x) || comboHeld(atk, x, b.no) || !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4) || (leadSave && defUse(x) >= 2)); };
+    var keepDef = function (x) { if (lastStand) return false; if (opt.fullFor && (opt.fullFor[atk.key] || []).indexOf(b.no) >= 0) return comboHeld(atk, x, b.no) || awkHeld(atk, x, b.no) || /^(強心臓|不屈)$/.test(nm(x)); return noAwkSelf(x) || keepInn(x) || holdPinch(x) || comboHeld(atk, x, b.no) || awkHeld(atk, x, b.no) || !risp && x.no !== b.no && (x.no === ownPit || /^(強心臓|不屈)$/.test(nm(x)) || (x.dpAttr && dpValue_(x) >= 4) || (leadSave && defUse(x) >= 2)); };
     var attr = fixedAttr, ansA = null;
     if (atk.human) {
       var prevA = function (idx, a) { var cs = idx.map(function (i) { return hA[i]; }).concat(preA); var q = bfx.parity ? (bfx.parity[costSum(atk, cs) % 2 === 0 ? 'even' : 'odd'] || {}) : {}; return calc(b, cs, a, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + (q.ap || 0) + supBonusOf(atk, cs, 'AP', a, sit, b, pit) + tierVal(atk, b, 'ap', sit); };
@@ -3503,7 +3518,7 @@ function simRun_(SA, SB, opt) {
     var rel = def.S.closer || def.S.middle; if (!rel) return;
     var stv = def.S.starter, cost = rowCost(def, stv);
     var left = def.hand.some(function (x) { return x.no === stv.no || nm(x) === '強心臓' || (nm(x) === '不屈' && cost >= 3); });
-    if (left) return;
+    if (left && String(opt.earlyCloser || '').indexOf(def.key) < 0) return; // 比べる用：opt.earlyCloser のチームは最終回の頭から抑えを出す
     reliefDo(def, rel);
   };
   // 試合開始時の手札の入れ替え。戻した札はレストに置かれ、リフレッシュまで戻らない。
@@ -3540,7 +3555,7 @@ function simulateGame2(XA, XB, opt) {
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
     var readAgg = function (q) { var at = q.aKey, df = at === 'A' ? 'B' : 'A'; if (q.killD) { out.kill[df].use++; if (q.playA) out.kill[df].hit++; } if (q.playA) out.kill[df].faced++; if (q.killA) { out.kill[at].use++; if (q.playP) out.kill[at].hit++; } if (q.playP) out.kill[at].faced++; if (opt.readLog) opt.readLog(q); };
-    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, inn1Two: opt.inn1Two, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, awkHoldOff: opt.awkHoldOff, recovOff: opt.recovOff, earlyCloser: opt.earlyCloser, fullFor: opt.fullFor, inn1Two: opt.inn1Two, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true; R.A.batFirst = aFirst; R.B.batFirst = !aFirst; if (aFirst) out.nF++; else out.nS++;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
@@ -3595,7 +3610,7 @@ function simulateScene2(XA, XB, attr, opt) {
   var tot = 0, dist = [], tie = 0, ahead = 0, swaps = 0;
   for (var tr = 0; tr < trials; tr++) {
     var cur = null;
-    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, inn1Two: opt.inn1Two, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, awkHoldOff: opt.awkHoldOff, recovOff: opt.recovOff, earlyCloser: opt.earlyCloser, fullFor: opt.fullFor, inn1Two: opt.inn1Two, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: opt.readLog, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, bet: opt.bet, adapt: opt.adapt, atkPlan: opt.atkPlan, save: opt.save, handA: opt.handA, handB: opt.handB, stats: function () { return cur; }, noRelief: innings > 1 || startInn < 3, mulligan: startInn === 1 });
     R.A.bi = opt.leadoff || 0; R.B.score = Math.max(0, -(opt.diff || 0)); R.A.score = Math.max(0, opt.diff || 0);
     var s0 = R.A.score, inn = 0, pa = 0;
     var half = { base: [0, 0, 0], outs: 0, inn: startInn, prevOn: false };
