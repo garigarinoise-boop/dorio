@@ -1931,11 +1931,14 @@ function simRun_(SA, SB, opt) {
   var allTxt = [SA, SB].map(function (S0) { return S0.X.mainCards.concat(S0.X.order || []).map(function (x) { return x.eff || ''; }).join('\n'); }).join('\n');
   var KEYF = { tp: /タイムポイント/, hand: /手札が\d枚/, outs: /アウトエリアにカードが/, innN: /イニングエリアのカード(が\d枚なら|の枚数)/, slot: /打順が\d番/, prevBatAwk: /1つ前の打順/, restTacKinds: /レストエリアの戦術カードが/, restTac: /レストエリアの戦術カードの枚数/, runners: /走者の数/, oppSup: /相手のサポートエリアにあるカードが/, fsig: /出場している/, costs123: /『1』と『2』と『3』/, awkFielders: /【覚醒】を持つ《野手》が/, runner3: /走者が三塁にいる/, supPitcher: /サポートエリアに《投手》/, supOrInnPC: /サポートエリアかイニングエリア/ };
   var skipF = {}; for (var kf in KEYF) if (!KEYF[kf].test(allTxt)) skipF[kf] = 1;
+  var costSumRe = /コストの合計だけAPをプラス/;
+  var costSumSide = function (v) { if (!v || !v.no || typeof A === 'undefined' || !A) return null; var T0 = A.lineup && A.lineup.some(function (y) { return y.no === v.no; }) ? A : (B && B.lineup && B.lineup.some(function (y) { return y.no === v.no; }) ? B : null); return T0 && costSumRe.test((T0.S.rowOf[v.no] || {}).eff || '') ? T0 : null; };
   var calc = function (v, set, a, sit) {
     var live = set.filter(function (x) { return !isKill(x); });
     var sk = ''; for (var f in sit) { var sv = sit[f]; if (sv && typeof sv !== 'object' && !skipF[f]) sk += f + (sv === true ? '' : sv) + ';'; }
     var k = v.no + '|' + (live.length === 1 ? live[0].no : live.map(function (x) { return x.no; }).sort().join(',')) + '|' + a + '|' + sk;
     if (!(k in memo)) memo[k] = v.t.calc(live, a, sit);
+    var cT = costSumSide(v); if (cT) return memo[k] + live.reduce(function (t, x) { return t + (x.kind === '選手' ? costOf(cT, x) - (Number(x.cost) || 0) : 0); }, 0);
     return memo[k];
   };
   var okSit = function (kind, s) {
@@ -3226,7 +3229,7 @@ function simRun_(SA, SB, opt) {
     if (bfx.awkHand && aLive.some(function (x) { return x.no === b.no; }) && hA.length) { var jH = junkIdx(atk), payH = jH.i >= 0 && jH.w <= 6; if (atk.human) { var anAH = yield { type: 'choice', side: atk, title: nm(b) + 'の覚醒：手札を1枚捨てて AP+', opts: ['使わない', '使う'] }; payH = !!(anAH && anAH.i === 1); } if (payH && jH.i >= 0) { discard(atk, jH.i, true); sit.awkHandPaid = true; ev(atk, nm(b) + 'の覚醒（手札を1枚捨てる）'); } }
     if (bfx.awkAttrPick && attr === '強振' && aLive.some(function (x) { return x.no === b.no; })) { extraAP += bfx.awkAttrPick.ap; extraDice += bfx.awkAttrPick.dice; }
     if (kd && kd.riseMin && sit.kidou) sit.kidou = false; // 渡邊：AP の上昇で決めるので、起動の条件の +1 は下で数える
-    var costAdj = /コストの合計だけAPをプラス/.test((atk.S.rowOf[b.no] || {}).eff || '') ? aLive.reduce(function (t, x) { return t + (x.kind === '選手' ? costOf(atk, x) - (Number(x.cost) || 0) : 0); }, 0) : 0;
+    var costAdj = 0; // 柳町のコストの調整は calc の中で入れる
     var AP = costAdj + calc(b, aLive, attr, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + oppAwk + supBonusOf(atk, aLive, 'AP', attr, sit, b, pit, oppA) + tierVal(atk, b, 'ap', sit), DP = calc(pit, dLive, attr, sitD) + extraDP + supBonusOf(def, dLive, 'DP', attr, sitD, b, pit, oppD) + tierVal(def, pit, 'dp', sitD);
     var sacDice = 0;
     if (pfx.sameNameDump) {
