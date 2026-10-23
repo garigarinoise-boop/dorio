@@ -4254,12 +4254,14 @@ function vSolo() {
       const kd = q.kd;
       let how = "";
       const innPC = me.inning.some(x => x.kind === "選手" && (x.pos === 1 || x.pos === 2));
-      if (kd.type === "inningPC") how = "イニングエリアに置く札を1枚選んでください。" + (innPC ? "イニングエリアにはもう投手か捕手があるので、どの札を置いても AP が上がります。" : "<b>今イニングエリアに投手・捕手が無いので、投手か捕手（印の付いた札）を置かないと AP は上がりません。</b>") + "置いた後、イニングエリアから1枚手札に戻せます（置いた札を戻してもかまいません）。";
+      const nmz = x => String(x.name || "").replace(/[\s　]/g, ""), innNames = me.inning.map(nmz);
+      if (kd.type === "inningPC" && kd.needPair) how = "イニングエリアに置く札を1枚選んでください。" + (innNames.length ? "<b>イニングエリアにある札（" + esc(me.inning.map(x => x.name).join("・")) + "）と同じ名前の札（印の付いた札）を置くと、同じ名前が2枚になって AP+2 です。</b>それ以外を置いても AP は上がりません。" : "<b>今イニングエリアに札が無いので、どれを置いても同じ名前が2枚にならず、AP は上がりません。</b>") + "置いた後、イニングエリアから1枚手札に戻せます（置いた札を戻してもかまいません）。";
+      else if (kd.type === "inningPC") how = "イニングエリアに置く札を1枚選んでください。" + (innPC ? "イニングエリアにはもう投手か捕手があるので、どの札を置いても AP が上がります。" : "<b>今イニングエリアに投手・捕手が無いので、投手か捕手（印の付いた札）を置かないと AP は上がりません。</b>") + "置いた後、イニングエリアから1枚手札に戻せます（置いた札を戻してもかまいません）。";
       else if (kd.type === "cycle") how = `捨てる札を ${kd.n} 枚まで選んでください（同じ枚数引きます）。`;
       else if (kd.cost === "hand") how = "手札から捨てる札を1枚選んでください。" + (kd.needAttr ? `（サポートに${kd.needAttr}APを持つ札）` : "");
       const needPick = kd.type === "inningPC" || kd.type === "cycle" || kd.cost === "hand";
       if (kd.type === "choose") { panel = `<h3>${esc(q.batter.name)} の起動（1つ選ぶ）</h3><p class="small">${esc(q.text)}</p><div class="row">${kd.opts.map((o, i) => `<button class="primary" data-act="opt" data-i2="${i}">${esc(o.text)}</button>`).join("")}<button data-act="skip">使わない</button></div>`; break; }
-      const pcMark = x => x.kind === "選手" && x.pos === 1 ? "投手" : x.kind === "選手" && x.pos === 2 ? "捕手" : "";
+      const pcMark = kd.needPair ? (x => innNames.indexOf(nmz(x)) >= 0 ? "同名" : "") : (x => x.kind === "選手" && x.pos === 1 ? "投手" : x.kind === "選手" && x.pos === 2 ? "捕手" : "");
       if (!SO.extra.step || !needPick) panel = `<h3>${esc(q.batter.name)} の起動</h3><p class="small">${esc(q.text)}</p><button class="primary" data-act="${needPick ? "step" : "use"}">起動を使う${kd.tp ? "（TP1）" : ""}</button> <button data-act="skip">使わない</button>`;
       else panel = `<h3>${esc(q.batter.name)} の起動</h3><p class="small">${how}</p>${handPick(kd.type === "cycle" ? kd.n : 1, kd.type === "inningPC" ? { mark: pcMark } : null)}<button class="primary" data-act="use" ${SO.sel.length ? "" : "disabled"}>この札で決定</button> <button data-act="back">戻る</button>`; break;
     }
