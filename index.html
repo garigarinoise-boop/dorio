@@ -4802,15 +4802,25 @@ function decklogJsonToText(j){
   main.forEach(c=>{const n=c.num||1;s+=(n>1?n+"x ":"")+c.card_number+"\n";});
   return s;
 }
+/* 読み込んだデッキ文字をブラウザに保存（最大30）。DeckLog に繋がらない時（メンテナンス等）は保存した中身を使う */
+const DECK_CACHE_KEY="dorio_table_deck_cache";let deckCacheNote="";
+function deckCacheGet(){try{return JSON.parse(localStorage.getItem(DECK_CACHE_KEY)||"{}")||{};}catch(e){return {};}}
+function deckCachePut(code,text){try{const c=deckCacheGet();c[code]={at:Date.now(),text};Object.keys(c).sort((a,b)=>c[b].at-c[a].at).slice(30).forEach(k=>delete c[k]);localStorage.setItem(DECK_CACHE_KEY,JSON.stringify(c));}catch(e){}}
 async function fetchDecklogDeck(code){
-  code=(code||"").trim().toUpperCase();
+  code=(code||"").trim().toUpperCase();deckCacheNote="";
   if(!/^[A-Z0-9]{3,12}$/.test(code))throw new Error("デッキコードの形式が変です（例: GC672）");
   if(!DECKLOG_PROXY||DECKLOG_PROXY.includes("REPLACE_ME"))throw new Error("DeckLog取り込み用プロキシが未設定です");
-  const r=await fetch(DECKLOG_PROXY.replace(/\/$/,"")+"/"+encodeURIComponent(code));
-  if(!r.ok)throw new Error("取得失敗（"+r.status+"）");
-  const j=await r.json();
-  if(!j||!j.list)throw new Error("このコードのデッキが見つかりません");
-  return decklogJsonToText(j);
+  let err=null;
+  try{
+    let r;try{r=await fetch(DECKLOG_PROXY.replace(/\/$/,"")+"/"+encodeURIComponent(code));}catch(e){throw new Error("DeckLogに繋がりません（メンテナンス中かもしれません）");}
+    if(!r.ok)throw new Error("取得失敗（"+r.status+"）");
+    let j=null;try{j=await r.json();}catch(e){throw new Error("DeckLogから読めませんでした（メンテナンス中かもしれません）");}
+    if(!j||!j.list)throw new Error("このコードのデッキが見つかりません");
+    const text=decklogJsonToText(j);deckCachePut(code,text);return text;
+  }catch(e){err=e;}
+  const hit=deckCacheGet()[code];
+  if(hit&&hit.text){const t=new Date(hit.at);deckCacheNote="DeckLogに繋がらないため、"+(t.getMonth()+1)+"/"+t.getDate()+" "+t.getHours()+":"+String(t.getMinutes()).padStart(2,"0")+" に保存した中身を入れました";return hit.text;}
+  throw new Error(err.message+"。このデッキは保存した中身もないので、デッキ文字を貼ってください");
 }
 function shuffle(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
 function mkCard(c,down){const L=G.library[c.name]||{};
@@ -6101,7 +6111,7 @@ function openDeck(p){
       const dlBtn=h("button",{class:"pri",onclick:async()=>{
         const code=dlCode.value.trim();if(!code)return;
         const orig=dlBtn.textContent;dlBtn.disabled=true;dlBtn.textContent="取込中…";
-        try{ta.value=await fetchDecklogDeck(code);toast("DeckLog "+code.toUpperCase()+" を読み込みました（内容を確認して保存）");}
+        try{ta.value=await fetchDecklogDeck(code);toast(deckCacheNote?deckCacheNote+"（"+code.toUpperCase()+"、内容を確認して保存）":"DeckLog "+code.toUpperCase()+" を読み込みました（内容を確認して保存）");}
         catch(e){toast("DeckLog取り込み失敗: "+((e&&e.message)||e));}
         finally{dlBtn.disabled=false;dlBtn.textContent=orig;}
       }},"DeckLog読込");
