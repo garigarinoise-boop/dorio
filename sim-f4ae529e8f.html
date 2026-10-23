@@ -3121,7 +3121,7 @@ function simRun_(SA, SB, opt) {
     if (bfx.awkPlace && aLive.some(function (x) { return x.no === b.no; })) {
       var pi = -1, pv = -1e9, candP = [], ap0P = calc(b, aLive, attr, sit);
       hA.forEach(function (x, i) { if (x.kind !== '戦術' || String(x.eff || '').trim()) return; candP.push(i); var v = (calc(b, aLive.concat([x]), attr, sit) - ap0P) * 10 - defUse(x); if (v > pv) { pv = v; pi = i; } });
-      if (pi >= 0 && pv < 0 && defUse(hA[pi]) >= 2) pi = -1; // AP が上がらず、守備で使える札（内野警戒など）なら置かない（2026-10-17 ユーザー指摘）
+      if (pi >= 0 && pv < 0 && defUse(hA[pi]) >= 2) pi = -1; if (pi >= 0 && calc(b, aLive.concat([hA[pi]]), attr, sit) - ap0P <= 0 && worth(atk, hA[pi]) >= 2) pi = -1; /* AP が上がらず、ほかの打者で使える札（ミートバッティングを強振の打席でなど）も置かない（2026-10-23 ユーザー指摘） */ // AP が上がらず、守備で使える札（内野警戒など）なら置かない（2026-10-17 ユーザー指摘）
       if (atk.human && candP.length) { var anP = yield { type: 'pick', side: atk, title: nm(b) + 'の覚醒：手札から特殊能力を持たない戦術カードを1枚までサポートエリアに置く（置いたら1枚引く）', cards: candP.map(function (j) { return hA[j]; }), take: 1, suggest: pi >= 0 ? [candP.indexOf(pi)] : [] }; pi = anP && anP.idx && anP.idx.length ? candP[anP.idx[0]] : -1; }
       if (pi >= 0) { var px = hA.splice(pi, 1)[0]; aLive = aLive.concat([px]); aCards = aCards.concat([px]); draw(atk, 1); ev(atk, nm(b) + 'の覚醒（無能力戦術を置く）'); }
     }
