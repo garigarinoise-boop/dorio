@@ -3752,9 +3752,9 @@ async function fetchDeck(code) {
   if (!/^[A-Z0-9]{3,12}$/.test(code)) throw new Error("デッキコードの形式が違います（例 1KQZVE）");
   let err = null;
   try {
-    const r = await fetch(PROXY + "/" + encodeURIComponent(code));
+    let r; try { r = await fetch(PROXY + "/" + encodeURIComponent(code)); } catch (e) { throw new Error("DeckLog に繋がりません（メンテナンス中かもしれません）。このデッキは保存した中身もないので、「文字で入力する」から読み込んでください"); }
     if (!r.ok) throw new Error("取得に失敗しました（" + r.status + "）");
-    let j = null; try { j = await r.json(); } catch (e) { throw new Error("DeckLog から読めませんでした（メンテナンス中かもしれません）"); }
+    let j = null; try { j = await r.json(); } catch (e) { throw new Error("DeckLog から読めませんでした（メンテナンス中かもしれません）。このデッキは保存した中身もないので、「文字で入力する」から読み込んでください"); }
     if (!j || !j.list) throw new Error("このコードのデッキが見つかりません");
     deckCachePut(code, j);
     return j;
