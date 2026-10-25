@@ -3265,8 +3265,9 @@ function simRun_(SA, SB, opt) {
     var noMinus0 = function () { return /【メイン】相手のカードの効果で打撃判定をマイナスされない/.test((atk.S.rowOf[b.no] || {}).eff || '') || aLive.some(function (x) { return /打撃判定をマイナスされない/.test(x.eff || ''); }); };
     if (AP >= DP) {
       st.through = (st.through || 0) + 1;
-      var dice = (atk.S.base(b.no).dice || {})[attr] || 0;
+      var dice = (atk.S.base(b.no).dice || {})[attr] || 0, dParts = [], dLast = 0, dSeg = function (lb) { if (dice !== dLast) dParts.push([lb, dice - dLast]); dLast = dice; }; dSeg('打者の基礎能力');
       dice += supDiceOf(atk, aLive, attr, sit, b, pit, 'atk', oppA);
+      dSeg('攻撃のサポート');
       var bdl = batDice_((atk.S.rowOf[b.no] || {}).eff), bdOk = bdl.map(function (e) {
         if (e.attr !== '両方' && e.attr !== attr) return false;
         if (e.awaken && !aLive.some(function (x) { return x.no === b.no; })) return false;
@@ -3282,8 +3283,10 @@ function simRun_(SA, SB, opt) {
         if (e.supCond && !supCountOk_(e.supCond, aLive)) return;
         if (okSitK(e.kind, sit)) dice += e.perSup ? e.n * aLive.filter(function (x) { return supCountOk_(e.perSup, [x]); }).length : e.perTP ? e.n * atk.tp : e.perInnP ? e.n * atk.inning.filter(function (x) { return x.kind === '選手' && x.pos === 1; }).length : e.n;
       });
+      dSeg('打者の効果');
       dice += extraDice - (noMinus0() ? 0 : sacDice + supDiscDice + (def.relSup ? def.relSup.dice : 0) - relDice);
       dice += tierDice(atk, b, attr, sit) + extraDiceAttr[attr];
+      dSeg('起動・覚醒など');
       var batNoMinus = /【メイン】相手のカードの効果で打撃判定をマイナスされない/.test((atk.S.rowOf[b.no] || {}).eff || '');
       var noMinus = batNoMinus || aLive.some(function (x) { return /打撃判定をマイナスされない/.test(x.eff || ''); });
       if (!noMinus) {
@@ -3291,13 +3294,18 @@ function simRun_(SA, SB, opt) {
         var innSeen = {};
         def.inning.forEach(function (x) { var f = def.S.fx(x).innDice; if (!f || innSeen[nm(x)] || (f.attr && f.attr !== attr) || (f.hon && !inningHon(def, x)) || !okSitK(f.kind, sitD)) return; innSeen[nm(x)] = 1; dice -= f.n; });
       }
+      dSeg('相手の投手・イニング');
       if (par && par.dice) dice += par.dice;
+      dSeg('偶数・奇数');
       if (!noMinus) { dice += supDiceOf(def, dLive, attr, sitD, b, pit, 'def', oppD); if (pfx.supCostDice && dLive.some(function (y) { return y.kind === '選手' && costOf(def, y) >= pfx.supCostDice.min; })) dice -= pfx.supCostDice.n; }
+      dSeg('守備のサポート');
       var apit = atk.pitcher && atk.S.fx(atk.S.rowOf[atk.pitcher.no] || atk.pitcher);
       if (apit && apit.benchDice) dice += apit.benchDice;
+      dSeg('自分の投手');
       if (bfx.revealDice) {
         var rvD = reveal(atk, bfx.revealDice.n), fD = rvD.filter(isFielder).length; rvD.forEach(function (x) { atk.rest.push(x); });
         var addD = fD >= bfx.revealDice.allN ? bfx.revealDice.all : fD * bfx.revealDice.per; dice += addD;
+        dSeg(nm(b) + 'の山札公開');
         ev(atk, nm(b) + '（山札公開でダイス+' + addD + '）'); LG(who(atk) + '：' + nm(b) + 'で山札の上から ' + rvD.length + ' 枚公開（' + (rvD.map(nm).join('・') || 'なし') + '、うち野手 ' + fD + ' 枚）→ ダイス+' + addD + '。公開した札はレストへ'); refreshNow(atk);
       }
       var tfx = atk.S.teamFx;
@@ -3305,10 +3313,12 @@ function simRun_(SA, SB, opt) {
         if (d.restName && atk.rest.filter(function (x) { return nm(x) === d.restName; }).length >= d.restMin) dice += d.n;
         if (d.prevOnBase && half.prevOn) dice += d.n;
       });
+      dSeg('チームカード');
       if (!noMinus) {
         var pdl = pitDiceOf(def, pit), pdOk = pdl.map(function (d) { if (d.attr && d.attr !== attr) return false; if (d.awaken && !dLive.some(function (x) { return x.no === pit.no; })) return false; if (d.supCond && !(d.supCond === '出場しているカードと同じカード' ? dLive.some(function (x) { var n0 = nm(x); return def.lineup.concat([def.pitcher]).some(function (v) { return nm(def.S.rowOf[v.no] || v) === n0; }); }) : supCountOk_(d.supCond, dLive))) return false; return okSitK(d.kind, sitD); });
         pdl.forEach(function (d, i) { if (d.replace != null && pdOk[i]) pdOk[d.replace] = false; });
         pdl.forEach(function (d, i) { if (pdOk[i]) dice -= d.perSup ? d.n * dLive.filter(function (x) { return supCountOk_(d.perSup, [x]); }).length : d.n; });
+        dSeg('相手の投手の効果');
       }
       d1 = 1 + Math.floor(rnd() * 6); d2 = 1 + Math.floor(rnd() * 6); var roll = d1 + d2 + dice;
       res = JUDGE[attr](roll);
@@ -3412,10 +3422,10 @@ function simRun_(SA, SB, opt) {
     if (runs) { atk.score += runs; draw(def, runs); if (pfx.onRunDraw && def.usedRunDraw !== half.inn + ':' + atk.key) { def.usedRunDraw = half.inn + ':' + atk.key; draw(def, pfx.onRunDraw); ev(def, nm(pit) + '（相手の得点で引く）'); } }
     if (bfx.ground && bfx.ground.behindDraw && atk.score < def.score) draw(atk, 1);
     st.runs = (st.runs || 0) + runs;
-    var summary = { batter: b.name, pitcher: pit.name, attr: attr, aCards: aLive.map(nm), dCards: dLive.map(nm), killedA: killedA.map(nm), killedD: dCards.filter(function (x) { return dLive.indexOf(x) < 0; }).map(nm),
+    var summary = { diceParts: (typeof dParts !== 'undefined' ? dParts : []), batter: b.name, pitcher: pit.name, attr: attr, aCards: aLive.map(nm), dCards: dLive.map(nm), killedA: killedA.map(nm), killedD: dCards.filter(function (x) { return dLive.indexOf(x) < 0; }).map(nm),
       AP: AP, DP: DP, judged: AP >= DP, d1: typeof d1 === 'number' && AP >= DP ? d1 : null, d2: typeof d2 === 'number' && AP >= DP ? d2 : null, dice: AP >= DP ? dice : null, res: res, runs: runs, atkHuman: !!atk.human };
     if (logf) LG((atk.human ? '自分' : 'CPU') + '｜' + b.name + '（' + attr + '）［' + (summary.aCards.join('・') || 'なし') + '］AP ' + AP + ' vs DP ' + DP + ' ［' + (summary.dCards.join('・') || 'なし') + '］' +
-      (summary.killedA.length || summary.killedD.length ? '（消えた札：' + summary.killedA.concat(summary.killedD).join('・') + '）' : '') + (AP >= DP ? ' → 打撃判定 ' + d1 + '+' + d2 + (dice ? (dice > 0 ? '+' : '') + dice : '') + '=' + (d1 + d2 + dice) : '') + ' → ' + res + (runs ? '（' + runs + '点）' : ''));
+      (summary.killedA.length || summary.killedD.length ? '（消えた札：' + summary.killedA.concat(summary.killedD).join('・') + '）' : '') + (AP >= DP ? ' → 打撃判定 ' + d1 + '+' + d2 + (dice ? (dice > 0 ? '+' : '') + dice : '') + '=' + (d1 + d2 + dice) + (summary.diceParts && summary.diceParts.length ? '（ダイス：' + summary.diceParts.map(function (p) { return p[0] + (p[1] > 0 ? '+' : '') + p[1]; }).join('、') + '）' : '') : '') + ' → ' + res + (runs ? '（' + runs + '点）' : ''));
     refreshNow(atk); refreshNow(def);
     if (opt.human) yield { type: 'result', summary: summary, side: atk };
     return { res: res, runs: runs, attr: attr, batter: b.name, summary: summary };
@@ -4312,7 +4322,7 @@ function vSolo() {
       <table style="width:auto"><tbody><tr><td>攻撃の札</td><td>${esc(s.aCards.join("・") || "なし")}</td><td class="n num"><b>AP ${s.AP}</b></td></tr>
       <tr><td>守備の札</td><td>${esc(s.dCards.join("・") || "なし")}</td><td class="n num"><b>DP ${s.DP}</b></td></tr></tbody></table>
       ${s.killedA.length || s.killedD.length ? `<p class="small">勝負師・威圧で消えた札：${esc(s.killedA.concat(s.killedD).join("・"))}</p>` : ""}
-      <p style="font-size:16px">${s.judged ? `打撃判定 ${s.d1}+${s.d2}${s.dice ? (s.dice > 0 ? "+" : "") + s.dice : ""}＝${s.d1 + s.d2 + s.dice} → ` : "DP が上 → "}<b>${esc(s.res)}</b>${s.runs ? `（${s.runs}点）` : ""}</p>
+      <p style="font-size:16px">${s.judged ? `打撃判定 ${s.d1}+${s.d2}${s.dice ? (s.dice > 0 ? "+" : "") + s.dice : ""}＝${s.d1 + s.d2 + s.dice} → ` : "DP が上 → "}<b>${esc(s.res)}</b>${s.runs ? `（${s.runs}点）` : ""}</p>${s.judged && s.diceParts && s.diceParts.length ? `<p class="small muted">ダイスの内訳：${s.diceParts.map(p => esc(p[0]) + (p[1] > 0 ? "+" : "") + p[1]).join("、")}</p>` : ""}
       <button class="primary" data-act="next">次へ</button>`; break;
     }
     case "end":
