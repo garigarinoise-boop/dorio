@@ -3417,10 +3417,16 @@ function simRun_(SA, SB, opt) {
       if (bfx.onBaseDraw) { draw(atk, bfx.onBaseDraw); ev(atk, nm(b) + '（出塁で引く）'); }
       var obx = cxA(); obx.keep = onBaseKeep; yield* fireG(atk, b, 'onBase', obx, true);
       if (pfx.onBaseDrawDef && (def.deck.length || def.rest.length)) {
-        draw(def, pfx.onBaseDrawDef.draw);
+        var obD = pfx.onBaseDrawDef, useOB = true; /* 宮城：引いてもよい。人は使うかと捨てる札を選ぶ（2026-10-26 ユーザー指摘） */
+        if (def.human) { var anOB = yield { type: 'choice', side: def, title: nm(pit) + '：打者が出塁したので、カードを' + obD.draw + '枚引いてもよい（引いたら手札を' + obD.discard + '枚捨てる）', opts: ['引かない', '引く'] }; useOB = !!(anOB && anOB.i === 1); }
+        if (useOB) {
+        draw(def, obD.draw);
         var dw = function (x) { return worth(def, x) - discardGain(def, x) * 6; };
-        for (var q4 = 0; q4 < pfx.onBaseDrawDef.discard && hB.length; q4++) { var wi = 0; hB.forEach(function (x, i3) { if (dw(x) < dw(hB[wi])) wi = i3; }); discard(def, wi, true); }
+        var pickOB = null; if (def.human && hB.length) { var anOD = yield { type: 'discardPick', side: def, n: Math.min(obD.discard, hB.length), optional: false, title: nm(pit) + '：手札を' + obD.discard + '枚捨てる' }; if (anOD && anOD.idx && anOD.idx.length) pickOB = anOD.idx.slice(0, obD.discard); }
+        if (pickOB) pickOB.slice().sort(function (x, y) { return y - x; }).forEach(function (j) { discard(def, j, true); });
+        else for (var q4 = 0; q4 < obD.discard && hB.length; q4++) { var wi = 0; hB.forEach(function (x, i3) { if (dw(x) < dw(hB[wi])) wi = i3; }); discard(def, wi, true); }
         def.swaps++; ev(def, nm(pit) + '（出塁で引いて捨てる）');
+        }
       }
     }
     if (res !== 'アウト' && AP >= DP) { var thit = (addA.tpOnHit || 0); if (thit) { atk.tp += thit; ev(atk, '安打で TP+' + thit); } }
