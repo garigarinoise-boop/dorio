@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive">
-<title>ドリオのツール</title>
+<title>つくったもの</title>
 <style>
   :root {
     --bg: #f4f5f7; --card: #ffffff; --ink: #1d2433; --muted: #5f6b7d; --line: #e2e6ec;
@@ -38,6 +38,10 @@
   .tool ul { margin: 8px 0 0; padding-left: 1.2em; font-size: 13px; color: var(--muted); }
   .go { margin-top: 10px; font-size: 13px; font-weight: 700; color: var(--accent); }
   h3 { font-size: 15px; margin: 26px 0 8px; }
+  h2.sec { font-size: 16px; margin: 28px 0 0; padding-bottom: 4px; border-bottom: 2px solid var(--line); letter-spacing: .05em; }
+  .tool.g { border-left-color: #2f7d4f; } .tool.g .go { color: #2f7d4f; }
+  .tool.p { border-left-color: #c58a12; } .tool.p .go { color: #c58a12; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tool.g .go { color: #5cc287; } :root:not([data-theme="light"]) .tool.p .go { color: #e2b04a; } }
   ol.flow { margin: 0; padding-left: 1.3em; font-size: 14px; }
   ol.flow li { margin: 4px 0; }
   footer { margin-top: 28px; font-size: 12px; color: var(--muted); }
@@ -45,12 +49,13 @@
 </head>
 <body>
 <header><div class="in">
-  <h1>ドリオのツール</h1>
-  <p>ドリームオーダーの対戦・分析ツールの入口</p>
+  <h1>つくったもの</h1>
+  <p>自作のツール・ゲームの入口</p>
 </div></header>
 <main>
   <div class="note">限られた人だけで使っているツールです。<b>このページや各ツールの URL を、ほかの人に渡したり SNS に載せたりしないでください。</b>非公式のファンツールで、カードの権利は各権利者に帰属します。</div>
 
+  <h2 class="sec">ドリームオーダー</h2>
   <div class="tools">
     <a class="tool" href="./">
       <h2>ドリオ対戦卓 <span class="tag">オンライン対戦</span></h2>
@@ -72,14 +77,33 @@
     </a>
   </div>
 
-  <h3>使い方の流れ（おすすめ）</h3>
+  <h3>ドリオの使い方の流れ（おすすめ）</h3>
   <ol class="flow">
     <li>アナライザーでデッキのルールチェックと中身の確認</li>
     <li>シミュレーターで、当たりそうな相手との勝率を確かめる・1人対戦で練習</li>
     <li>対戦卓で友だちと対戦</li>
   </ol>
 
-  <footer>DeckLog がメンテナンス中でも、一度読み込んだデッキはその端末で読み込めます。</footer>
+  <h2 class="sec">ゲーム</h2>
+  <div class="tools">
+    <a class="tool g" href="https://claude.ai/code/artifact/3c958512-bbb7-4c81-9895-056347b932f0" target="_blank" rel="noopener">
+      <h2>通算ドラフト <span class="tag">ブラウザゲーム</span></h2>
+      <p>NPB の選手をドラフトしてチームを組むゲーム（友人の「神ゲーシート」が元）。リンクを知っていれば誰でも遊べます。</p>
+      <div class="go">通算ドラフトを開く →</div>
+    </a>
+  </div>
+
+  <h2 class="sec">ポケモン</h2>
+  <div class="tools">
+    <a class="tool p" href="https://claude.ai/code/artifact/52b109bb-6cfb-40e3-8d59-d126408b00fa" target="_blank" rel="noopener">
+      <h2>Champions 構築アナライザー <span class="tag">構築の評価</span></h2>
+      <p>ポケモンチャンピオンズの6匹の構築を1000点満点で評価します。</p>
+      <ul><li>非公開：自分の Claude アカウントでログインしているときだけ開けます</li></ul>
+      <div class="go">アナライザーを開く →</div>
+    </a>
+  </div>
+
+  <footer>ドリオのツールは、DeckLog がメンテナンス中でも、一度読み込んだデッキはその端末で読み込めます。</footer>
 </main>
 </body>
 </html>
