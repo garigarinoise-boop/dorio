@@ -3193,6 +3193,9 @@ function simRun_(SA, SB, opt) {
     var oppA = { awk: dLive.some(function (x) { return x.no === pit.no; }) }, oppD = { awk: aLive.some(function (x) { return x.no === b.no; }) };
     sit.paid = []; sitD.paid = [];
     var payFor = [[def, dLive, hB, sitD, 'DP'], [atk, aLive, hA, sit, 'AP']];
+    var apNowF = function () { return calc(b, aLive, attr, sit) + supBonusOf(atk, aLive, 'AP', attr, sit, b, pit, oppA) + tierVal(atk, b, 'ap', sit) + extraAP; };
+    var dpNowF = function () { return calc(pit, dLive, attr, sitD) + supBonusOf(def, dLive, 'DP', attr, sitD, b, pit, oppD) + tierVal(def, pit, 'dp', sitD); };
+    var payGain = function (needs, key) { return needs.reduce(function (t, e) { return t + (e.kind === key && (!e.attr || e.attr === attr) ? e.n : 0); }, 0); };
     for (var pf = 0; pf < payFor.length; pf++) {
       var PT = payFor[pf][0], PL = payFor[pf][1], PH = payFor[pf][2], PS = payFor[pf][3];
       for (var pl = 0; pl < PL.length; pl++) {
@@ -3203,11 +3206,14 @@ function simRun_(SA, SB, opt) {
         if (!needs.length || !PH.length) continue;
         var pIdx = -1;
         if (PT.human) {
-          var ansP = yield { type: 'payHand', side: PT, card: px0, text: needs.map(function (e) { return e.kind ? 'サポートに' + (e.attr || '') + e.kind + '+' + e.n : '【ダイス】' + e.n; }).join('・') };
+          var apN = apNowF(), dpN = dpNowF(), gN = payGain(needs, PT === def ? 'DP' : 'AP');
+          var exP = '相手は ' + (PT === def ? nm(b) + '（' + attr + '）［' + (aLive.map(nm).join('・') || 'なし') + '］AP ' + apN + '、自分は DP ' + dpN : nm(pit) + '［' + (dLive.map(nm).join('・') || 'なし') + '］DP ' + dpN + '、自分は ' + attr + ' で AP ' + apN) + (gN ? '。使うと ' + (PT === def ? 'DP ' + (dpN + gN) : 'AP ' + (apN + gN)) : '') + '（目安。このあとの効果で変わることがあります）';
+          var ansP = yield { type: 'payHand', side: PT, card: px0, extra: exP, text: needs.map(function (e) { return e.kind ? 'サポートに' + (e.attr || '') + e.kind + '+' + e.n : '【ダイス】' + e.n; }).join('・') };
           if (ansP && ansP.idx != null && PH[ansP.idx]) pIdx = ansP.idx;
         } else {
           var pv0 = 1e9; PH.forEach(function (y, i) { var w = worth(PT, y) - discardGain(PT, y) * 6; if (w < pv0) { pv0 = w; pIdx = i; } });
           if (pv0 > 7) pIdx = -1;
+          if (pIdx >= 0) { var apC = apNowF(), dpC = dpNowF(), gC = payGain(needs, PT === def ? 'DP' : 'AP'); if (gC > 0) { var flips = PT === def ? (dpC < apC && dpC + gC >= apC) : (apC < dpC && apC + gC >= dpC); var already = PT === def ? dpC >= apC : apC >= dpC; if (!flips && !(already && pv0 <= 2)) pIdx = -1; } } /* 値が変わる効果は、使えば届く（上回る）ときだけ。もう足りていれば、ほぼ要らない札のときだけ */
         }
         if (pIdx >= 0) { discard(PT, pIdx, true); PS.paid.push(px0); ev(PT, nm(px0) + 'の本領発揮（手札1枚で）'); LG((PT === def ? '守備' : '攻撃') + '：' + nm(px0) + ' の【手札①】で効果を使う'); }
       }
