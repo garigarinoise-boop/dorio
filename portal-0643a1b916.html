@@ -41,6 +41,8 @@
   h2.sec { font-size: 16px; margin: 28px 0 0; padding-bottom: 4px; border-bottom: 2px solid var(--line); letter-spacing: .05em; }
   .tool.g { border-left-color: #2f7d4f; } .tool.g .go { color: #2f7d4f; }
   .tool.p { border-left-color: #c58a12; } .tool.p .go { color: #c58a12; }
+  .tool.a { border-left-color: #5a5fc8; } .tool.a .go { color: #5a5fc8; }
+  a.sublink { display: block; margin: -6px 0 0 14px; font-size: 13px; color: var(--muted); text-decoration: none; } a.sublink:hover { color: var(--accent); }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tool.g .go { color: #5cc287; } :root:not([data-theme="light"]) .tool.p .go { color: #e2b04a; } }
   ol.flow { margin: 0; padding-left: 1.3em; font-size: 14px; }
   ol.flow li { margin: 4px 0; }
@@ -75,6 +77,13 @@
       <ul><li>勝率・作戦検証・環境対戦表・入れ替え探し</li><li>数字はシミュレーションによる目安です</li></ul>
       <div class="go">シミュレーターを開く →</div>
     </a>
+    <a class="tool" href="https://script.google.com/macros/s/AKfycbxhC_9N3a38zSzWqnsUkzr0y9w85yBoLooG8Byz1Nke9IiQWbOyetbP6Fh_599DQ9dv/exec" target="_blank" rel="noopener">
+      <h2>ドリオ戦績トラッカー <span class="tag">戦績の記録</span></h2>
+      <p>試合をスマホから数タップで記録して、相手球団別・先攻後攻などの勝率を自動で集計します。</p>
+      <ul><li>自分の Google アカウントでだけ開けます</li><li>記録先はスプレッドシート「ショップ大会メモ」の戦績ログ（下のリンク）</li></ul>
+      <div class="go">戦績トラッカーを開く →</div>
+    </a>
+    <a class="sublink" href="https://docs.google.com/spreadsheets/d/10ysv8OnWXFT3q8gYJASstKcCl6_Lo5QJqlpPBSFJI8k/edit" target="_blank" rel="noopener">└ 戦績の記録先（スプレッドシート）を開く →</a>
   </div>
 
   <h3>ドリオの使い方の流れ（おすすめ）</h3>
@@ -91,6 +100,12 @@
       <p>NPB の選手をドラフトしてチームを組むゲーム（友人の「神ゲーシート」が元）。リンクを知っていれば誰でも遊べます。</p>
       <div class="go">通算ドラフトを開く →</div>
     </a>
+    <a class="tool g" href="https://8236.tokuzawat.com/" target="_blank" rel="noopener">
+      <h2>8236分の1 自動周回 <span class="tag">ブックマークレット</span></h2>
+      <p>ミニゲーム「8236分の1」を自分の Chrome で自動周回し、G1馬・高額馬の結果カードだけ保存するブックマークレット。</p>
+      <ul><li>リンク先はゲーム本体です。ブックマークレットは Chrome のブックマークから実行します（作り方は Obsidian の「8236自動周回」ノート）</li></ul>
+      <div class="go">8236分の1 を開く →</div>
+    </a>
   </div>
 
   <h2 class="sec">ポケモン</h2>
@@ -100,6 +115,22 @@
       <p>ポケモンチャンピオンズの6匹の構築を1000点満点で評価します。</p>
       <ul><li>非公開：自分の Claude アカウントでログインしているときだけ開けます</li></ul>
       <div class="go">アナライザーを開く →</div>
+    </a>
+  </div>
+
+  <h2 class="sec">自動化（Google Apps Script）</h2>
+  <div class="tools">
+    <a class="tool a" href="https://script.google.com/home/projects/1ku6oHy47fm7cIxYH5ZTCoY1hABEAvFu4smNHQMEzFoWHELpzD2fNrk-Z/edit" target="_blank" rel="noopener">
+      <h2>出勤ウォッチ <span class="tag">自動チェック</span></h2>
+      <p>推しの出勤表を4時間ごとに自動チェックして、変わったら Gmail で知らせます。</p>
+      <ul><li>画面はありません。リンク先は Apps Script のプロジェクト（自分のアカウントでだけ開けます）</li></ul>
+      <div class="go">プロジェクトを開く →</div>
+    </a>
+    <a class="tool a" href="https://script.google.com/home/projects/10TpdKEK8dkgVQ5cVdjTEdWSSId7yiPAHJqoL7y2LXkXjzuGrE_tm4i6G/edit" target="_blank" rel="noopener">
+      <h2>予定自動更新 <span class="tag">予備の仕組み</span></h2>
+      <p>Obsidian の「予定」ノートを Google カレンダーから作り直す予備の仕組み。Claude の定期タスクが止まったときだけ引き継ぎます。</p>
+      <ul><li>リンク先は Apps Script のプロジェクト（自分のアカウントでだけ開けます）</li></ul>
+      <div class="go">プロジェクトを開く →</div>
     </a>
   </div>
 
