@@ -3200,8 +3200,8 @@ function simRun_(SA, SB, opt) {
       var PT = payFor[pf][0], PL = payFor[pf][1], PH = payFor[pf][2], PS = payFor[pf][3];
       for (var pl = 0; pl < PL.length; pl++) {
         var px0 = PL[pl], pfx0 = PT.S.fx(px0);
-        var needs = (pfx0.supBonus || []).concat(pfx0.supDice || []).concat((pfx0.acts || []).filter(function (e) { return e.when === 'supPlay'; })).filter(function (e) { return e.cond && e.cond.handCost && (!e.hon || honActive(PT, px0.no, px0)); });
-        var tpNeeds = (pfx0.supBonus || []).filter(function (e) { return e.cond && e.cond.tpCost && (!e.hon || honActive(PT, px0.no, px0)); });
+        var needs = (pfx0.supBonus || []).concat(pfx0.supDice || []).concat((pfx0.acts || []).filter(function (e) { return e.when === 'supPlay'; })).filter(function (e) { return e.cond && e.cond.handCost && (!e.hon || honActive(PT, px0.no, px0)) && (!e.side || e.side === 'both' || e.side === (PT === def ? 'def' : 'atk')); }); /* 【守備】の効果は守備のときだけ（2026-10-26 ユーザー指摘：攻撃で野口） */
+        var tpNeeds = (pfx0.supBonus || []).filter(function (e) { return e.cond && e.cond.tpCost && (!e.hon || honActive(PT, px0.no, px0)) && (!e.side || e.side === 'both' || e.side === (PT === def ? 'def' : 'atk')); });
         if (tpNeeds.length && PT.tp >= 1) { var payTP = PT.human ? false : PT.tp - reserve(PT) >= 1 && (risp || final); if (PT.human) { var ansTP2 = yield { type: 'choice', side: PT, title: nm(px0) + '：TP を1つ使って効果を使う', opts: ['使わない', '使う'] }; payTP = !!(ansTP2 && ansTP2.i === 1); } if (payTP) { PT.tp--; PS.paid.push(px0); ev(PT, nm(px0) + '（TP を使う）'); } }
         if (!needs.length || !PH.length) continue;
         var pIdx = -1;
