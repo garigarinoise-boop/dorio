@@ -77,8 +77,10 @@ const F1 = (() => {
   const gauss = () => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
 
   // ---- 名前・チーム・コース ----
-  const FIRST = "ルカ マックス オリバー ノア レオ ハーヴェイ セバスチャン マテオ アントン ニコ ラファエル ジャック ユウキ ソウタ カイト リアム ダニエル アレックス マルコ フェリックス テオ エミル ヴィクトル トマス アドリアン ケンジ".split(" ");
-  const LAST = "ベルナール ハートマン コスタ リンドクヴィスト オコナー ヴァレンティ ノヴァク フィッシャー ロッシ デュボワ サンドバル ミラー 早瀬 桐生 神崎 ブラント ケラー モロー アルヴェス ペトロフ ヴァイス ストーン ラングレー 城戸 マルティネス ホルム".split(" ");
+  const FIRST = "ルカ マックス オリバー ノア レオ ハーヴェイ セバスチャン マテオ アントン ニコ ラファエル ジャック リアム ダニエル アレックス マルコ フェリックス テオ エミル ヴィクトル トマス アドリアン ジョージ ランド エステバン ピエール ケビン ヤン オスカー ガブリエル アンドレア ミケル カルロス フランコ ルイス ヨナス".split(" ");
+  const LAST = "ベルナール ハートマン コスタ リンドクヴィスト オコナー ヴァレンティ ノヴァク フィッシャー ロッシ デュボワ サンドバル ミラー ブラント ケラー モロー アルヴェス ペトロフ ヴァイス ストーン ラングレー マルティネス ホルム ラッセル ガスリー ニールセン シューマン ドゥーハン ファン・デル・ベルク クラーク リヴィエール ブラウン ソレンセン ハミルトン バルデス".split(" ");
+  const JP_SEI = "早瀬 桐生 神崎 城戸 角田 佐藤 中嶋 片山 小林 岩佐".split(" "), JP_MEI = "颯太 悠希 海斗 健二 蓮 大翔 湊 歩夢 拓真 陽向".split(" ");
+  const genName = () => rnd() < 0.08 ? pick(JP_SEI) + " " + pick(JP_MEI) : pick(FIRST) + "・" + pick(LAST);
   const TEAMS = [["アストラ", "#c8102e", "#ffffff"], ["ノヴァ", "#0a66c2", "#ffd200"], ["ヴェルデ", "#0b8a4a", "#ffffff"], ["ソラリス", "#ff7a00", "#1a1a1a"], ["ヘリオス", "#e8c600", "#1a1a1a"], ["ブラックバード", "#1a1a1a", "#e10600"], ["コバルト", "#1d3a8a", "#69c3ff"], ["シルバーライン", "#b8bec6", "#0b2a5b"], ["マゼンタ", "#d6338a", "#ffffff"], ["ターコイズ", "#11a6a6", "#ffffff"]];
   const SUF = ["レーシング", "モータースポーツ", "GP", "F1チーム", "グランプリ"];
   // 架空のコース：pw＝パワー寄り(0〜1)、ovt＝抜きやすさ、wear＝タイヤの減り、pit＝ピットロス秒、sc＝周ごとのSC確率、rain＝雨の確率
@@ -96,7 +98,7 @@ const F1 = (() => {
   const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
 
   let uid = 1;
-  const newDriver = (lvl, ageMin, ageMax) => ({ id: uid++, name: pick(FIRST) + "・" + pick(LAST), age: ri(ageMin, ageMax), pace: clamp(Math.round(lvl + gauss() * 4), 55, 97), cons: clamp(Math.round(lvl + gauss() * 6), 50, 97), tm: clamp(Math.round(lvl + gauss() * 7), 45, 97), craft: clamp(Math.round(lvl + gauss() * 6), 45, 97), wet: clamp(Math.round(lvl + gauss() * 8), 40, 98), pts: 0, wins: 0, podiums: 0, career: { starts: 0, wins: 0, titles: 0 }, contract: ri(1, 3) });
+  const newDriver = (lvl, ageMin, ageMax) => ({ id: uid++, name: genName(), age: ri(ageMin, ageMax), pace: clamp(Math.round(lvl + gauss() * 4), 55, 97), cons: clamp(Math.round(lvl + gauss() * 6), 50, 97), tm: clamp(Math.round(lvl + gauss() * 7), 45, 97), craft: clamp(Math.round(lvl + gauss() * 6), 45, 97), wet: clamp(Math.round(lvl + gauss() * 8), 40, 98), pts: 0, wins: 0, podiums: 0, career: { starts: 0, wins: 0, titles: 0 }, contract: ri(1, 3) });
   const newTeam = (i, t, lvl) => ({ id: i, name: t[0] + " " + pick(SUF), color: t[1], color2: t[2], car: { aero: clamp(Math.round(lvl + gauss() * 3), 50, 95), power: clamp(Math.round(lvl + gauss() * 3), 50, 95), chassis: clamp(Math.round(lvl + gauss() * 3), 50, 95), rel: clamp(Math.round(lvl + 4 + gauss() * 4), 55, 98) }, budget: Math.round(60 + lvl * 1.2), drivers: [newDriver(lvl + 3, 22, 34).id, newDriver(lvl - 2, 19, 30).id], pts: 0, hist: [], devQ: [] });
 
   let S = null;
@@ -106,7 +108,7 @@ const F1 = (() => {
 
   function newGame(seed) {
     RS = (seed >>> 0) || ((Date.now() ^ 0x5bd1e995) >>> 0); uid = 1;
-    S = { v: 1, season: 1, round: 0, my: null, drivers: {}, teams: [], free: [], news: [], history: [], race: null, last: null };
+    S = { v: 1, nameFix: 1, season: 1, round: 0, my: null, drivers: {}, teams: [], free: [], news: [], history: [], race: null, last: null };
     const order = TEAMS.slice().sort(() => rnd() - 0.5);
     order.forEach((t, i) => {
       const lvl = 81 - i * 1.0 + ri(-1, 1), tm = { id: i, name: t[0] + " " + pick(SUF), color: t[1], color2: t[2], car: { aero: 0, power: 0, chassis: 0, rel: 0 }, budget: 0, drivers: [], pts: 0, hist: [] };
@@ -323,7 +325,9 @@ const F1 = (() => {
   const money = m => "$" + (Math.round(m * 10) / 10) + "M";
   const KEY = "f1_manager_save_v1";
   function save() { if (!S) return; S.rs = RS; S.uid = uid; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } }
-  function load(txt) { try { const d = JSON.parse(txt != null ? txt : localStorage.getItem(KEY) || "null"); if (!d || !d.teams) return false; S = d; RS = d.rs; uid = d.uid; return true; } catch (e) { return false; } }
+  function load(txt) { try { const d = JSON.parse(txt != null ? txt : localStorage.getItem(KEY) || "null"); if (!d || !d.teams) return false; S = d; RS = d.rs; uid = d.uid; fixNames(); return true; } catch (e) { return false; } }
+  // 旧版は名と姓を日本人・外国人まぜて作っていた（日本人だらけに見えた）。1回だけ作り直す。日本人は2人まで
+  function fixNames() { if (S.nameFix) return; const OLD_JP = /ユウキ|ソウタ|カイト|ケンジ|早瀬|桐生|神崎|城戸/; let jp = 0; Object.values(S.drivers).forEach(d => { if (!OLD_JP.test(d.name)) return; d.name = jp < 2 ? pick(JP_SEI) + " " + pick(JP_MEI) : pick(FIRST) + "・" + pick(LAST); jp++; }); S.nameFix = 1; save(); }
   function wipe() { try { localStorage.removeItem(KEY); } catch (e) { } S = null; }
   const exportSave = () => { save(); return JSON.stringify(S); };
 
@@ -502,7 +506,7 @@ function drawTrack() {
     else f = Math.max(0, Math.min(0.999, (R.t - c.lapStart) / ((c.lapEnd - c.lapStart) || 1)));
     const p = posAt(geo, f), tm = F1.team(c.tm), mine = c.tm === S().my;
     ctx.beginPath(); ctx.arc(X(p), Y(p), mine ? 8 : 6, 0, Math.PI * 2); ctx.fillStyle = tm.color; ctx.fill(); ctx.lineWidth = mine ? 3 : 1.5; ctx.strokeStyle = mine ? "#fff" : tm.color2; ctx.stroke();
-    if (mine) { ctx.fillStyle = "#fff"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"; ctx.fillText(F1.drv(c.id).name.split("・")[1] || "", X(p), Y(p) - 12); }
+    if (mine) { ctx.fillStyle = "#fff"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"; const nm0 = F1.drv(c.id).name; ctx.fillText(nm0.includes("・") ? nm0.split("・").pop() : nm0.split(" ")[0], X(p), Y(p) - 12); }
   });
   const lapEl = $("#lapc"); if (lapEl) lapEl.textContent = R.finished ? "終了" : started ? "L" + Math.min(R.laps, R.lap + 1) + " / " + R.laps : "スタート前";
   const fl = $("#flag"); if (fl) fl.innerHTML = R.finished ? '<div class="flag fin">🏁 チェッカー</div>' : R.sc ? '<div class="flag sc">🟡 セーフティカー（ピットの損失が半分）</div>' : R.wet > 0.15 ? `<div class="flag rain">🌧 路面がウェット（${Math.round(R.wet * 100)}%）</div>` : "";
