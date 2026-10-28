@@ -123,7 +123,7 @@ const F1 = (() => {
 
   const TYRE = { S: { n: "ソフト", off: -0.75, deg: 0.085, life: 17, col: "#e10600" }, M: { n: "ミディアム", off: 0, deg: 0.05, life: 27, col: "#ffd200" }, H: { n: "ハード", off: 0.6, deg: 0.03, life: 40, col: "#f2f2f2" }, I: { n: "インター", off: 0, deg: 0.04, life: 30, col: "#2bb24c" }, W: { n: "ウェット", off: 0, deg: 0.03, life: 35, col: "#1f6fe0" } };
   // ペース：t＝タイム差、w＝タイヤの減り、f＝燃料の使い方
-  const PACE = { push: { t: -0.3, w: 1.4, f: 1.05, n: "攻める" }, norm: { t: 0, w: 1, f: 1, n: "普通" }, save: { t: 0.35, w: 0.68, f: 0.97, n: "タイヤを守る" }, lift: { t: 0.45, w: 0.85, f: 0.88, n: "燃料セーブ" } };
+  const PACE = { push: { t: -0.3, w: 1.4, f: 1.05, n: "攻める" }, norm: { t: 0, w: 1, f: 1, n: "普通" }, save: { t: 0.35, w: 0.68, f: 0.97, n: "タイヤを守る" }, lift: { t: 0.22, w: 0.85, f: 0.85, n: "燃料セーブ" } };
   const FUEL = { full: { n: "多め", extra: 1.5 }, std: { n: "標準", extra: 0.3 }, light: { n: "少なめ", extra: -1.6 } };
   const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
   const REG_TYPES = {
