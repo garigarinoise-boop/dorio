@@ -974,6 +974,19 @@ function vTable() {
   document.querySelectorAll("[data-tb]").forEach(b => b.onclick = () => { U.sub.tb = b.dataset.tb; render(); });
 }
 
+/* 表示テーマ：ダーク（最初）→ ライト → 端末に合わせる。上の帯のボタンで切り替え */
+(function () {
+  const KEY = "f1_theme", ORDER = ["dark", "light", "auto"], ICON = { dark: "🌙", light: "☀", auto: "🌓" }, LABEL = { dark: "ダーク", light: "ライト", auto: "端末に合わせる" };
+  let cur = "dark"; try { cur = localStorage.getItem(KEY) || "dark"; } catch (e) { }
+  const apply = () => { if (cur === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", cur); const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", "#0b0d12"); };
+  apply();
+  const addBtn = () => { const hd = document.getElementById("hd"); if (!hd || document.getElementById("thm")) return; const b = document.createElement("button"); b.id = "thm"; b.type = "button"; b.title = "表示：" + LABEL[cur]; b.textContent = ICON[cur]; b.style.cssText = "background:rgba(255,255,255,.14);border:0;color:#fff;border-radius:8px;width:34px;height:34px;font-size:17px;flex:none;margin-left:4px"; b.onclick = () => { cur = ORDER[(ORDER.indexOf(cur) + 1) % ORDER.length]; try { localStorage.setItem(KEY, cur); } catch (e) { } apply(); b.textContent = ICON[cur]; b.title = "表示：" + LABEL[cur]; if (typeof toast === "function") toast("表示：" + LABEL[cur]); if (typeof render === "function" && window.__themeRerender) window.__themeRerender(); }; hd.appendChild(b); };
+  const start = () => { addBtn(); const hd = document.getElementById("hd"); if (hd) new MutationObserver(addBtn).observe(hd, { childList: true }); };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+})();
+window.__themeRerender = () => { if (typeof drawTrack === "function" && typeof S === "function" && S() && S().race) drawTrack(); };
+boot();
+
 </script>
 </body>
 </html>
