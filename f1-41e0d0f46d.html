@@ -424,6 +424,7 @@ const F1 = (() => {
     if (c.tm === S.my && S.radioStop !== false) radio(R, c, d, tr);
     // 予定のピットの1周前：自分の車なら止めて確認する
     if (c.tm === S.my && S.pitStop !== false && !c.pitReq) { const nx = c.plan.stops[c.stopsDone]; if (nx && nx.lap - 1 === c.lap && c.warnedStop !== c.stopsDone + ":" + nx.lap) { c.warnedStop = c.stopsDone + ":" + nx.lap; R.alerts.push({ k: "pitsoon", id: c.id }); } }
+    if (c.cover && !c.pitReq) { const o = R.cars.find(x => x.id === c.cover.id); if (!o || o.out) c.cover = null; else if (o.pits > c.cover.pits) { c.pitReq = c.cover.comp || nextComp(c); say(R, "🔁 L" + c.lap + " " + d.name + "：" + drv(o.id).name + " のピットに合わせて入る", true); c.cover = null; } }
     // ピット
     let pitTo = null;
     if (c.pitReq) { pitTo = c.pitReq; c.pitReq = null; }
@@ -434,6 +435,7 @@ const F1 = (() => {
       const loss = (R.sc ? tr.pit * 0.5 : tr.pit) + stat + err; extra += loss;
       if (c.sets && !setsLeft(c.sets, pitTo)) { const alt = (["I", "W"].includes(pitTo) ? ["I", "W"] : ["M", "H", "S"]).find(z => setsLeft(c.sets, z)); say(R, "⚠ " + d.name + "：" + TYRE[pitTo].n + "のセットが残っていない" + (alt ? " → " + TYRE[alt].n : ""), c.tm === S.my); if (alt) pitTo = alt; }
       const setAge = c.sets ? (takeSet(c.sets, pitTo) || 0) : 0;
+      if (c.tm !== S.my && S.rivalStop !== false) { const ord = order(R), i = ord.indexOf(c); [ord[i - 1], ord[i + 1]].forEach((m, j) => { if (m && m.tm === S.my && !m.out && !m.fin && !m.pitReq && !m.cover && m.lap - m.lastPit > 3 && Math.abs(m.tot - c.tot) < 5 && R.laps - m.lap > 3) R.alerts.push({ k: "rivalpit", id: m.id, who: c.id, rel: j === 0 ? "後ろ" : "前" }); }); }
       c.saidTyre = false; c.comp = pitTo; c.age = setAge; c.pits++; c.lastPit = c.lap; if (!c.used.includes(pitTo)) c.used.push(pitTo);
       if (c.plan.stops[c.stopsDone] && c.lap >= c.plan.stops[c.stopsDone].lap - 6) c.stopsDone++;
       say(R, "🔧 L" + c.lap + " " + d.name + " ピットイン → " + TYRE[pitTo].n + "（作業" + (stat + err).toFixed(1) + "秒" + (err ? "・作業ミス" : "") + "）", c.tm === S.my);
@@ -993,7 +995,7 @@ function vRace() {
   $("#main").innerHTML = `
   <div class="card"><div class="row"><b class="sp">${esc(tr.name)}</b><span class="small muted" id="lapc"></span></div><div id="flag"></div>
     <canvas id="trk" width="640" height="380"></canvas>
-    <div class="row" style="margin-top:8px"><button class="b ${U.paused ? "p" : ""}" id="pp">${U.paused ? (started ? "▶ 再開" : "▶ スタート") : "⏸ 一時停止"}</button>${[1, 3, 10].map(k => `<button class="b ${U.speed === k ? "on" : ""}" data-sp="${k}">×${k}</button>`).join("")}<span class="sp"></span><button class="b" id="toEnd">最後まで</button></div><label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="radioStop" ${S().radioStop !== false ? "checked" : ""}> ドライバーの無線で止める（タイヤが限界・前を抜けない・後ろが速い）</label><label class="small" style="display:block"><input type="checkbox" id="pitStop" ${S().pitStop !== false ? "checked" : ""}> 予定のピットの1周前に止める</label></div>
+    <div class="row" style="margin-top:8px"><button class="b ${U.paused ? "p" : ""}" id="pp">${U.paused ? (started ? "▶ 再開" : "▶ スタート") : "⏸ 一時停止"}</button>${[1, 3, 10].map(k => `<button class="b ${U.speed === k ? "on" : ""}" data-sp="${k}">×${k}</button>`).join("")}<span class="sp"></span><button class="b" id="toEnd">最後まで</button></div><label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="radioStop" ${S().radioStop !== false ? "checked" : ""}> ドライバーの無線で止める（タイヤが限界・前を抜けない・後ろが速い）</label><label class="small" style="display:block"><input type="checkbox" id="rivalStop" ${S().rivalStop !== false ? "checked" : ""}> すぐ前・後ろの車がピットに入ったら止める</label><label class="small" style="display:block"><input type="checkbox" id="pitStop" ${S().pitStop !== false ? "checked" : ""}> 予定のピットの1周前に止める</label></div>
   <div id="ctls"></div>
   ${!started ? `<div class="card"><h3>予選結果</h3>${gridTable(R)}</div>` : ""}
   <div class="card"><h3>タイミング</h3><div style="overflow-x:auto"><table class="tower" id="tower"></table></div></div>
@@ -1023,8 +1025,10 @@ ${ucHtml(R, c)}
       <div class="small" style="margin-top:4px">燃料：<b class="${fl < 0 ? "bad" : ""}">${fl < 0 ? "約" + (-fl).toFixed(1) + "周分たりない" : "余裕 " + fl.toFixed(1) + "周分"}</b></div>
       <div class="row small" style="margin-top:6px"><span class="muted">ペース</span>${Object.keys(F1.PACE).map(k => `<button class="b ${c.pace === k ? "on" : ""}" data-pace="${c.id}:${k}">${F1.PACE[k].n}</button>`).join("")}</div>
       <div class="row small" style="margin-top:6px"><span class="muted">次の周でピット</span>${["S", "M", "H", "I", "W"].map(k => `<button class="b ${c.pitReq === k ? "on" : ""}" data-pit="${c.id}:${k}" ${c.sets && !stockN(c, k) ? "disabled" : ""}>${F1.TYRE[k].n}${stockTxt(c, k)}</button>`).join("")}${c.pitReq ? `<button class="b" data-pit="${c.id}:x">取消</button>` : ""}</div>
+${coverHtml(R, c)}
       <div class="row small" style="margin-top:6px"><span class="muted">予定：${nx ? nx.lap + "周目に" + F1.TYRE[nx.comp].n : "もうピットの予定なし"}</span><span class="sp"></span><label><input type="checkbox" data-auto="${c.id}" ${c.autoReact ? "checked" : ""}> SC・雨・燃料はおまかせ</label></div></div>`;
   }).join("");
+  box.querySelectorAll("[data-cover]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.cover.split(":"), c = F1.carAt(R, +id); if (k === "x") c.cover = null; else { const o = F1.carAt(R, +k); c.cover = { id: o.id, pits: o.pits, comp: null }; toast(F1.drv(c.id).name + "：" + F1.drv(o.id).name + " が入ったら同じ周に入ります"); } F1.save(); drawCtls(); });
   box.querySelectorAll("[data-pace]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.pace.split(":"); F1.carAt(R, +id).pace = k; drawCtls(); });
   box.querySelectorAll("[data-pit]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.pit.split(":"); const c = F1.carAt(R, +id); c.pitReq = k === "x" ? null : k; drawCtls(); if (k !== "x") toast(F1.drv(c.id).name + "：次の周で" + F1.TYRE[k].n + "に交換"); });
   box.querySelectorAll("[data-auto]").forEach(b => b.onchange = () => { F1.carAt(R, +b.dataset.auto).autoReact = b.checked; });
@@ -1091,7 +1095,7 @@ function drawTrack() {
 function resumeRace() { const R0 = S().race; if (R0 && !R0.started) { F1.advance(R0, 0); U.paused = false; vRace(); } U.paused = false; U.last = 0; const pp = $("#pp"); if (pp) { pp.textContent = "⏸ 一時停止"; pp.classList.remove("p"); } cancelAnimationFrame(U.raf); U.raf = requestAnimationFrame(tick); }
 function pauseRace() { U.paused = true; cancelAnimationFrame(U.raf); const pp = $("#pp"); if (pp) { pp.textContent = "▶ 再開"; pp.classList.add("p"); } if (S().race) F1.save(); }
 let lastUi = 0;
-document.addEventListener("change", e => { if (e.target && e.target.id === "radioStop") { S().radioStop = e.target.checked; F1.save(); } if (e.target && e.target.id === "pitStop") { S().pitStop = e.target.checked; F1.save(); } });
+document.addEventListener("change", e => { if (e.target && e.target.id === "radioStop") { S().radioStop = e.target.checked; F1.save(); } if (e.target && e.target.id === "rivalStop") { S().rivalStop = e.target.checked; F1.save(); } if (e.target && e.target.id === "pitStop") { S().pitStop = e.target.checked; F1.save(); } });
 function tick(now) {
   const R = S().race; if (!R || U.paused) return;
   const dt = U.last ? Math.min(0.1, (now - U.last) / 1000) : 0; U.last = now;
@@ -1102,6 +1106,12 @@ function tick(now) {
   U.raf = requestAnimationFrame(tick);
 }
 // アンダーカット：前の車に勝てそうか、ピット後どこに戻るか
+// 合わせる相手：すぐ前・すぐ後ろの車
+function coverHtml(R, c) {
+  if (c.cover) { const o = R.cars.find(x => x.id === c.cover.id); return `<div class="row small" style="margin-top:6px"><span>🔁 <b>${o ? esc(F1.drv(o.id).name) : ""}</b> が入ったら同じ周に入る（${F1.TYRE[c.cover.comp || F1.nextComp(c)].n}）</span><button class="b" data-cover="${c.id}:x">やめる</button></div>`; }
+  const ord = F1.order(R), i = ord.indexOf(c), nb2 = [[ord[i - 1], "前"], [ord[i + 1], "後ろ"]].filter(([o]) => o && !o.out && !o.fin);
+  return nb2.length ? `<div class="row small" style="margin-top:6px"><span class="muted">合わせる</span>${nb2.map(([o, l]) => `<button class="b" data-cover="${c.id}:${o.id}">${l}の${esc(F1.drv(o.id).name)}が入ったら入る</button>`).join("")}</div>` : "";
+}
 function ucHtml(R, c) {
   const u = F1.undercut(R, c); if (!u) return "";
   const a = u.ahead, T = F1.TYRE[u.comp].n, sg = v => (v > 0 ? "+" : "") + v;
@@ -1109,9 +1119,9 @@ function ucHtml(R, c) {
 }
 function alertBox(al) {
   const R = S().race, tr = F1.TRACKS[R.tr], mine = R.cars.filter(c => c.tm === S().my && !c.out && !c.fin);
-  if (al.k === "radio" || al.k === "pitsoon") { const sp = R.cars.find(c => c.id === al.id); mine.sort((x, y) => (y === sp) - (x === sp)); }
-  const title = { pitsoon: "🔧 " + (al.id ? esc(F1.drv(al.id).name) : "") + "：次の周でピット予定", radio: "📻 " + (al.id ? esc(F1.drv(al.id).name) : "") + " から無線", sc: "🟡 セーフティカー出動", rain: "🌧 雨が降ってきた", dry: "☀ 路面が乾いてきた", dnf: "❌ リタイア", fuel: "⛽ 燃料が足りない" }[al.k];
-  const msg = { pitsoon: (() => { const c = R.cars.find(x => x.id === al.id); if (!c) return ""; const nx = c.plan.stops[c.stopsDone]; return `予定：${nx.lap}周目に${F1.TYRE[nx.comp].n}。予定どおりでよければそのまま再開。タイヤを変えるなら下で選ぶ。<div class="row" style="margin-top:6px"><button class="b" data-delay="${c.id}:3">3周延ばす</button><button class="b" data-delay="${c.id}:x">この予定を消す</button></div>${ucHtml(R, c)}`; })(), radio: `「${esc(al.msg || "")}」${al.rk === "tyre" ? "<br>次の周でピットに入れるか、「タイヤを守る」で引っ張るか。" : al.rk === "stuck" ? "<br>このコースは抜きにくい。アンダーカット（先にピット）か、我慢してタイヤを守るか。" : "<br>抑えるなら「攻める」、無理なら先にピットへ。"}${(() => { const c = R.cars.find(x => x.id === al.id); return c ? ucHtml(R, c) : ""; })()}`, sc: `ピットの損失が約${(tr.pit * 0.5).toFixed(0)}秒に減っています。タイヤが古いなら今が入りどき。`, rain: "路面が濡れるとドライタイヤは大きく遅れます。インター（小雨）・ウェット（大雨）への交換を考えてください。", dry: "ドライタイヤに戻すタイミングです。早すぎると滑り、遅すぎるとタイムを失います。", dnf: `${al.id ? esc(F1.drv(al.id).name) : ""} がリタイアしました。`, fuel: `${al.id ? esc(F1.drv(al.id).name) : ""} はこのペースだと最後まで燃料が持ちません。ペースを「燃料セーブ」にしてください（SC中は燃料が減りにくい）。` }[al.k];
+  if (al.k === "radio" || al.k === "pitsoon" || al.k === "rivalpit") { const sp = R.cars.find(c => c.id === al.id); mine.sort((x, y) => (y === sp) - (x === sp)); }
+  const title = { rivalpit: "🔁 " + (al.rel || "") + "の " + (al.who ? esc(F1.drv(al.who).name) : "") + " がピットに入った", pitsoon: "🔧 " + (al.id ? esc(F1.drv(al.id).name) : "") + "：次の周でピット予定", radio: "📻 " + (al.id ? esc(F1.drv(al.id).name) : "") + " から無線", sc: "🟡 セーフティカー出動", rain: "🌧 雨が降ってきた", dry: "☀ 路面が乾いてきた", dnf: "❌ リタイア", fuel: "⛽ 燃料が足りない" }[al.k];
+  const msg = { rivalpit: (() => { const c = R.cars.find(x => x.id === al.id); if (!c) return ""; return `${esc(F1.drv(c.id).name)} はどうする？　すぐ入れば${al.rel === "前" ? "アンダーカットを防げる" : "相手の前を守れるか勝負"}。入るなら下でタイヤを選んで再開（次に線を越えたときに入る）。${ucHtml(R, c)}`; })(), pitsoon: (() => { const c = R.cars.find(x => x.id === al.id); if (!c) return ""; const nx = c.plan.stops[c.stopsDone]; return `予定：${nx.lap}周目に${F1.TYRE[nx.comp].n}。予定どおりでよければそのまま再開。タイヤを変えるなら下で選ぶ。<div class="row" style="margin-top:6px"><button class="b" data-delay="${c.id}:3">3周延ばす</button><button class="b" data-delay="${c.id}:x">この予定を消す</button></div>${ucHtml(R, c)}`; })(), radio: `「${esc(al.msg || "")}」${al.rk === "tyre" ? "<br>次の周でピットに入れるか、「タイヤを守る」で引っ張るか。" : al.rk === "stuck" ? "<br>このコースは抜きにくい。アンダーカット（先にピット）か、我慢してタイヤを守るか。" : "<br>抑えるなら「攻める」、無理なら先にピットへ。"}${(() => { const c = R.cars.find(x => x.id === al.id); return c ? ucHtml(R, c) : ""; })()}`, sc: `ピットの損失が約${(tr.pit * 0.5).toFixed(0)}秒に減っています。タイヤが古いなら今が入りどき。`, rain: "路面が濡れるとドライタイヤは大きく遅れます。インター（小雨）・ウェット（大雨）への交換を考えてください。", dry: "ドライタイヤに戻すタイミングです。早すぎると滑り、遅すぎるとタイムを失います。", dnf: `${al.id ? esc(F1.drv(al.id).name) : ""} がリタイアしました。`, fuel: `${al.id ? esc(F1.drv(al.id).name) : ""} はこのペースだと最後まで燃料が持ちません。ペースを「燃料セーブ」にしてください（SC中は燃料が減りにくい）。` }[al.k];
   modal(`<h3>${title}</h3><p class="small">${msg}</p>${mine.map(c => `<div class="ctl"><div class="row"><b class="sp">${esc(F1.drv(c.id).name)}　P${posOf(R, c)}</b>${ty(c.comp)}<span class="small">${c.age}周・燃料${fuelLeft(R, c) < 0 ? "不足" : "OK"}</span></div><div class="row small" style="margin-top:6px">${["S", "M", "H", "I", "W"].map(k => `<button class="b ${c.pitReq === k ? "on" : ""}" data-apit="${c.id}:${k}" ${c.sets && !stockN(c, k) ? "disabled" : ""}>${F1.TYRE[k].n}${stockTxt(c, k)}</button>`).join("")}<button class="b" data-apit="${c.id}:x">入らない</button></div><div class="row small" style="margin-top:6px">${Object.keys(F1.PACE).map(k => `<button class="b ${c.pace === k ? "on" : ""}" data-apace="${c.id}:${k}">${F1.PACE[k].n}</button>`).join("")}</div></div>`).join("")}<button class="b p big" style="margin-top:10px" data-x id="goOn">この指示で再開</button>`, true);
   document.querySelectorAll("[data-apit]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.apit.split(":"); const c = F1.carAt(R, +id); c.pitReq = k === "x" ? null : k; b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b && k !== "x")); });
   document.querySelectorAll("[data-apace]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.apace.split(":"); F1.carAt(R, +id).pace = k; b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); });
