@@ -733,7 +733,7 @@ function fpReport() {
   const pct = v => (v >= 1 ? "+" : "") + Math.round((v - 1) * 100) + "%";
   const rows = ["S", "M", "H"].map(k => { const measured = w.meas.some(m => m.comp === k), gap = F1.TYRE[k].off + (est ? est.off[k] : 0) - (est ? est.off.M : 0);
     return `<tr><td>${ty(k)} ${F1.TYRE[k].n}</td><td class="n">${est ? pct(est.wf[k]) : "?"}<span class="small muted"> ±${est ? est.err[k] : 25}%</span></td><td class="n">${k === "M" ? "基準" : (gap > 0 ? "+" : "") + gap.toFixed(2) + "秒"}</td><td class="n">約${F1.estLife(k, tr, est)}周</td><td class="small">${measured ? "実測" : est ? "推定" : "想定"}</td></tr>`; }).join("");
-  const plans = t.drivers.map(id => { const d = F1.drv(id), sets = w.sets[id], b = F1.bestPlan(tr, d, 0, { sets, est }); return `<div class="small">${esc(d.name)}：${F1.TYRE[b.start].n}スタート${b.stops.map(x => ` → ${x.lap}周目 ${F1.TYRE[x.comp].n}`).join("")}（${b.stops.length}ストップ）${w.qPred && w.qPred[id] ? `・予選の予想 <b>P${w.qPred[id]}</b>前後` : ""}</div>`; }).join("");
+  const plans = t.drivers.map(id => { const d = F1.drv(id), sets = w.sets[id], b = F1.bestPlan(tr, d, 0, { sets, est }); return `<div class="small">${esc(d.name)}：${F1.TYRE[b.start].n}スタート${b.stops.map(x => ` → ${x.lap}周目 ${F1.TYRE[x.comp].n}`).join("")}（${b.stops.length}ストップ）${w.qPred && w.qsim && w.qsim[id] ? `・予選の予想 <b>P${w.qPred[id]}</b>前後` : ""}</div>`; }).join("");
   const did = t.drivers.map(id => `${esc(F1.drv(id).name)}：${(w.prog[id] || []).map(k => P[k].n).join("・") || "いつもどおり"}`).join("<br>");
   return `<div class="card"><h3>フリー走行のデータ</h3><p class="small muted">${did}</p>
     <div style="overflow-x:auto"><table><tr><th>タイヤ</th><th class="n">減り（想定比）</th><th class="n">ペース差</th><th class="n">崖</th><th></th></tr>${rows}</table></div>
