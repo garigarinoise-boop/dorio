@@ -444,8 +444,8 @@ const F1 = (() => {
       if (R.sc) end = Math.max(end, ahead.lapEnd + 0.6);
       else if (gap < 1.2 && end < ahead.lapEnd + 0.25 && !extra) {
         const dd = drv(c.id), da = drv(ahead.id), adv = ahead.lapEnd - end;
-        const p = clamp(tr.ovt * (0.25 + adv * 0.9) * (0.75 + (dd.craft - da.craft) / 150), 0, 0.95);
-        if (rnd() < p) { if (end > ahead.lapEnd - 0.1) end = ahead.lapEnd - 0.1; ahead.lapEnd += 0.25; ahead.stuck += 2; c.stuck = 0; if (c.tm === S.my || ahead.tm === S.my) say(R, "⚔ L" + (c.lap + 1) + " " + dd.name + " が " + da.name + " を抜いた", true); }
+        /* 抜きにくいコースほど、抜くのに要る速さの差（need 秒/周）が大きい。モナコ級は1.4秒近く要る */ const need = 0.15 + (1 - tr.ovt) * 1.6, sig = 1 / (1 + Math.exp(-(adv - need) / 0.35)), p = clamp((0.03 + tr.ovt * 0.75) * sig * (0.75 + (dd.craft - da.craft) / 150), 0, 0.9);
+        if (rnd() < p) { R.passes = (R.passes || 0) + 1; if (end > ahead.lapEnd - 0.1) end = ahead.lapEnd - 0.1; ahead.lapEnd += 0.25; ahead.stuck += 2; c.stuck = 0; if (c.tm === S.my || ahead.tm === S.my) say(R, "⚔ L" + (c.lap + 1) + " " + dd.name + " が " + da.name + " を抜いた", true); }
         else { end = Math.max(end, ahead.lapEnd + 0.3); c.stuck++; }
       } else c.stuck = Math.max(0, c.stuck - 1);
     }
@@ -503,7 +503,7 @@ const F1 = (() => {
     const fl = res.filter(c => !c.out && c.pos <= 10).sort((a, b) => a.best - b.best)[0];
     res.forEach(c => { const d = drv(c.id), tm = team(c.tm); d.career.starts++; c.got = 0; if (!c.out && c.pos <= 10) { c.got = POINTS[c.pos - 1] + (fl === c ? 1 : 0); d.pts += c.got; tm.pts += c.got; } if (c.pos === 1 && !c.out) { d.wins++; d.career.wins++; } if (c.pos <= 3 && !c.out) d.podiums++; });
     const w = res[0];
-    const rec = { round: S.round + 1, name: tr.name, winner: drv(w.id).name, wteam: team(w.tm).name, fl: fl ? drv(fl.id).name : "-", res: res.map(c => ({ id: c.id, tm: c.tm, pos: c.pos, out: c.out, why: c.why, gap: c.out ? null : c.finT - res[0].finT, lapsDown: res[0].lap - c.lap, pits: c.pits, got: c.got, grid: c.grid })) };
+    const rec = { passes: R.passes || 0, round: S.round + 1, name: tr.name, winner: drv(w.id).name, wteam: team(w.tm).name, fl: fl ? drv(fl.id).name : "-", res: res.map(c => ({ id: c.id, tm: c.tm, pos: c.pos, out: c.out, why: c.why, gap: c.out ? null : c.finT - res[0].finT, lapsDown: res[0].lap - c.lap, pits: c.pits, got: c.got, grid: c.grid })) };
     S.last = rec; S.results = (S.results || []).concat([rec]);
     S.teams.forEach(tm => { const got = res.filter(c => c.tm === tm.id).reduce((t, c) => t + c.got, 0); tm.budget += 1 + got * 0.3; });
     news("第" + rec.round + "戦 " + tr.name + "：優勝 " + rec.winner + "（" + rec.wteam + "）");
@@ -711,7 +711,8 @@ const F1 = (() => {
   const exportSave = () => { save(); return JSON.stringify(S); };
 
   const estLife = (comp, tr, est, paceW) => Math.round(TYRE[comp].life / (tr.wear * S.regs.wear * (paceW || 1) * (est && est.wf[comp] || 1)));
-  return { NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  const passNeed = tr => r1(0.15 + (1 - tr.ovt) * 1.6);
+  return { passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -822,7 +823,7 @@ function gpCard(tr, round) {
 }
 function trackInfo(tr) {
   const lv = (v, a) => a[v < 0.35 ? 0 : v < 0.65 ? 1 : 2];
-  return `<div class="small muted">${tr.laps}周・ピットロス約${tr.pit}秒・${lv(tr.pw, ["曲がりの多いコース", "バランス型", "直線の長いコース"])}・抜きやすさ ${lv(tr.ovt, ["低", "中", "高"])}・タイヤの減り ${tr.wear * S().regs.wear < 0.9 ? "少" : tr.wear * S().regs.wear < 1.1 ? "中" : "多"}・燃料 ${tr.fuel >= 1.08 ? "厳しい" : "普通"}・雨の確率 ${Math.round(tr.rain * 100)}%</div>`;
+  return `<div class="small muted">${tr.laps}周・ピットロス約${tr.pit}秒・${lv(tr.pw, ["曲がりの多いコース", "バランス型", "直線の長いコース"])}・抜きやすさ ${lv(tr.ovt, ["低", "中", "高"])}（抜くには1周あたり約${F1.passNeed(tr)}秒速さが要る）・タイヤの減り ${tr.wear * S().regs.wear < 0.9 ? "少" : tr.wear * S().regs.wear < 1.1 ? "中" : "多"}・燃料 ${tr.fuel >= 1.08 ? "厳しい" : "普通"}・雨の確率 ${Math.round(tr.rain * 100)}%</div>`;
 }
 function regCard() {
   const s = S(), r = s.regs, nx = s.nextReg, RT = F1.REG_TYPES;
@@ -841,7 +842,7 @@ function vHome() {
      <p class="hint">トップは ${Math.round(Math.max(...s.teams.map(x => F1.carPace(x, tr))))}。</p>
      ${fpDone() ? `<button class="b p big" id="quali" style="margin-top:6px">予選を走る</button>` : `<button class="b p big" id="fp" style="margin-top:6px">フリー走行</button><button class="b big" id="quali" style="margin-top:6px">フリー走行を飛ばして予選へ</button>`}</div>${fpDone() ? fpReport() : ""}`}
   ${regCard()}
-  ${s.last ? `<div class="card"><h3>前戦 ${esc(s.last.name)}</h3><table>${s.last.res.slice(0, 10).map(r => resRow(r)).join("")}${s.last.res.filter(r => r.tm === s.my && r.pos > 10).map(r => resRow(r)).join("")}</table></div>` : ""}
+  ${s.last ? `<div class="card"><h3>前戦 ${esc(s.last.name)}</h3>${s.last.passes != null ? `<p class="small muted">オーバーテイク ${s.last.passes}回</p>` : ""}<table>${s.last.res.slice(0, 10).map(r => resRow(r)).join("")}${s.last.res.filter(r => r.tm === s.my && r.pos > 10).map(r => resRow(r)).join("")}</table></div>` : ""}
   <div class="card"><h3>コンストラクター</h3><table>${tt.map((x, i) => `<tr class="${x.id === s.my ? "me" : ""}"><td>${i + 1}</td><td>${tbar(x)}${esc(x.name)}</td><td class="n">${x.pts}</td></tr>`).join("")}</table></div>
   <div class="card"><h3>ニュース</h3>${s.news.slice(0, 10).map(n => `<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">${esc(n.t)}</div>`).join("")}</div>`;
   if ($("#quali")) $("#quali").onclick = qualiSetup;
@@ -898,6 +899,8 @@ function resRow(r) { const d = F1.drv(r.id), tm = F1.team(r.tm); return `<tr cla
 let geo = null;
 // 手で形を決めたコース：pts＝角の点（y は下向き）、start＝この番号の点から次の点までの直線の真ん中がスタート
 const SHAPES = {
+  // モナルカ市街地：スタート → サン・デボーテ → 上り坂 → カジノ → ミラボー → ヘアピン → ポルティエ → トンネル → ヌーベルシケイン → タバコ → プール → ラスカス
+  6: { start: 0, pts: [[0.16, 0.64], [0.48, 0.50], [0.54, 0.50], [0.66, 0.24], [0.73, 0.12], [0.82, 0.09], [0.87, 0.16], [0.90, 0.30], [0.82, 0.38], [0.79, 0.43], [0.85, 0.47], [0.93, 0.54], [0.96, 0.63], [0.82, 0.80], [0.62, 0.88], [0.51, 0.88], [0.47, 0.84], [0.43, 0.86], [0.36, 0.80], [0.30, 0.75], [0.27, 0.79], [0.22, 0.73], [0.18, 0.76], [0.10, 0.73], [0.08, 0.65]] },
   11: { start: 0, pts: [[0.46, 0.73], [0.82, 0.88], [0.96, 0.82], [0.94, 0.68], [0.84, 0.62], [0.88, 0.52], [0.78, 0.46], [0.82, 0.36], [0.72, 0.30], [0.62, 0.22], [0.54, 0.26], [0.50, 0.36], [0.28, 0.58], [0.20, 0.68], [0.14, 0.62], [0.10, 0.45], [0.06, 0.28], [0.08, 0.12], [0.16, 0.06], [0.24, 0.12], [0.55, 0.60], [0.60, 0.66], [0.50, 0.68]] }
 };
 function trackGeo(tr) {
