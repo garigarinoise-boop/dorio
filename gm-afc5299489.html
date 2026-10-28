@@ -425,10 +425,10 @@ function startPick() {
 
 /* ---------- 共通 ---------- */
 function render() {
-  const c = ME(), s = S();
-  $("#hd").innerHTML = `<span class="crest" style="background:${esc(c.color)};border-color:${esc(c.color2)}"></span><div class="t"><b>${esc(c.name)}</b><small>第${s.season}シーズン・${s.week >= s.fixtures.length ? "全日程終了" : "第" + (s.week + 1) + "節前"}・${GM.table().indexOf(c) + 1}位</small></div><div class="money">予算<br><b>${yen(c.budget)}</b></div>`;
+  const c = ME(), s = S(), pre = U.pre;
+  $("#hd").innerHTML = `<span class="crest" style="background:${esc(c.color)};border-color:${esc(c.color2)}"></span><div class="t"><b>${esc(c.name)}</b><small>第${s.season}シーズン・${pre ? "第" + pre.week + "節 試合中" : s.week >= s.fixtures.length ? "全日程終了" : "第" + (s.week + 1) + "節前"}・${pre ? pre.rank : GM.table().indexOf(c) + 1}位</small></div><div class="money">予算<br><b>${yen(pre ? pre.budget : c.budget)}</b></div>`;
   $("#tabs").innerHTML = TABS.map(([k, ic, l]) => `<button class="${U.tab === k ? "on" : ""}" data-t="${k}"><span class="ic">${ic}</span>${l}</button>`).join("");
-  document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { stopAnim(); U.tab = b.dataset.t; U.selSwap = null; render(); window.scrollTo(0, 0); });
+  document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { stopAnim(); U.pre = null; U.tab = b.dataset.t; U.selSwap = null; render(); window.scrollTo(0, 0); });
   ({ home: vHome, match: vMatch, team: vTeam, market: vMarket, table: vTable, club: vClub })[U.tab]();
 }
 function plRow(p, c, right, extra) {
@@ -457,7 +457,7 @@ function vHome() {
   ${s.offers.length ? `<div class="card"><h3>届いているオファー</h3>${s.offers.map(o => { const p = c.players.find(q => q.id === o.pid); return p ? plRow(p, c, `<b>${yen(o.amt)}</b><br><button class="b" data-ao="${o.id}">売る</button>`, "・" + esc(GM.club(o.from).name)) : ""; }).join("")}<p class="hint">オファーは2節で消えます。</p></div>` : ""}
   <div class="card"><h3>順位（上位と自分）</h3>${miniTable(tb, r)}</div>
   <div class="card news"><h3>ニュース</h3>${s.news.slice(0, 10).map(n => `<div><span class="muted small">S${n.s} 第${n.w}節後</span> ${esc(n.t)}</div>`).join("") || '<p class="muted small">まだありません</p>'}</div>`;
-  if ($("#go")) $("#go").onclick = () => { const m = GM.playWeek(); U.match = m; U.tab = "match"; render(); };
+  if ($("#go")) $("#go").onclick = () => { U.pre = { week: s.week + 1, rank: GM.table().indexOf(c) + 1, budget: c.budget }; const m = GM.playWeek(); U.match = m; U.tab = "match"; render(); };
   if ($("#quick")) $("#quick").onclick = () => { const m = GM.playWeek(); U.match = m; U.match.instant = true; U.tab = "match"; render(); };
   if ($("#endS")) $("#endS").onclick = () => { const rec = GM.endSeason(); U.lastRec = rec; render(); showSeasonEnd(rec); };
   document.querySelectorAll("[data-rn]").forEach(b => b.onclick = e => { e.stopPropagation(); GM.renew(+b.dataset.rn, true); render(); });
@@ -488,7 +488,7 @@ function vMatch() {
     <div class="row" style="margin-top:8px"><button class="b" data-sp="1">×1</button><button class="b" data-sp="3">×3</button><button class="b" id="skip">結果まで</button><span class="sp"></span><button class="b p" id="back">ホームへ</button></div></div>
     <div class="card"><h3>実況</h3><div class="feed" id="feed"></div></div>
     <div class="card" id="statsCard" style="display:none"></div>`;
-  $("#back").onclick = () => { stopAnim(); U.tab = "home"; render(); };
+  $("#back").onclick = () => { stopAnim(); U.pre = null; U.tab = "home"; render(); };
   document.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => { if (anim) anim.speed = +b.dataset.sp; });
   $("#skip").onclick = () => { if (anim) anim.t = 91; };
   runAnim(m, !!m.instant || m === S().lastMatch && m.shown);
@@ -497,7 +497,7 @@ function nameOf(id) { const [p] = GM.findP(id); return p ? p.name : "?"; }
 function runAnim(m, instant) {
   stopAnim();
   const H = GM.club(m.h), A = GM.club(m.a), cv = $("#pitch"), ctx = cv.getContext("2d"), W = cv.width, Hh = cv.height;
-  const colA = (H.color === A.color || near(H.color, A.color)) ? A.color2 : A.color;
+  const swapA = H.color === A.color || near(H.color, A.color), colA = swapA ? A.color2 : A.color, rimA = swapA ? A.color : A.color2, rimH = H.color2;
   const slots = (xi, home) => { const by = { GK: [], DF: [], MF: [], FW: [] }; xi.forEach(x => by[x.slot].push(x)); const out = []; const lines = { GK: 0.06, DF: 0.24, MF: 0.47, FW: 0.68 };
     Object.keys(by).forEach(k => by[k].forEach((x, i, arr) => { const y = (i + 1) / (arr.length + 1); const bx = lines[k]; out.push({ id: x.id, bx: home ? bx : 1 - bx, by: y, x: 0, y: 0, ph: Math.random() * 6 }); })); return out; };
   const ph = slots(m.xiH, true), pa = slots(m.xiA, false);
@@ -509,7 +509,7 @@ function runAnim(m, instant) {
   say(`<span class="muted">キックオフ。支配率の見込み ${Math.round(m.posH * 100)}% - ${Math.round((1 - m.posH) * 100)}%</span>`);
   const fin = () => {
     $("#sc").textContent = m.gh + " - " + m.ga; $("#clock").textContent = "試合終了";
-    m.shown = true; showStats(m);
+    m.shown = true; showStats(m); if (U.pre) { U.pre = null; anim = null; setTimeout(() => { if (U.tab === "match") { const sc = window.scrollY; hdOnly(); window.scrollTo(0, sc); } }, 0); }
   };
   const step = now => {
     if (!anim) return;
@@ -525,16 +525,16 @@ function runAnim(m, instant) {
     // ボール：保持側の選手のあいだを動く
     if (Math.random() < 0.02 * st.speed) { st.poss = Math.random() < m.posH ? "H" : "A"; const team = st.poss === "H" ? ph : pa, q = team[1 + Math.floor(Math.random() * (team.length - 1))]; if (q) { st.ball.tx = q.x || q.bx; st.ball.ty = q.y || q.by; } }
     const b = st.ball; b.x += (b.tx - b.x) * 0.06; b.y += (b.ty - b.y) * 0.06;
-    draw(ctx, W, Hh, ph, pa, b, H.color, colA, st, now);
+    draw(ctx, W, Hh, ph, pa, b, H.color, colA, st, now, rimH, rimA);
     if (st.flash > 0) st.flash -= 0.02;
     if (st.t >= 90) { fin(); stopAnim(); return; }
     st.raf = requestAnimationFrame(step);
   };
-  if (instant) { evs.filter(e => e.type !== "shot").forEach(e => { const tm = e.side === "H" ? H : A; if (e.type === "goal") say(`<b>${e.m}' ⚽</b> ${clubDot(tm)}${esc(nameOf(e.pid))}${e.aid ? `<span class="muted">（${esc(nameOf(e.aid))}）</span>` : ""}`); else say(`${e.m}' ${clubDot(tm)}${esc(nameOf(e.pid))} 負傷`, "bad"); }); ph.concat(pa).forEach(p => { p.x = p.bx; p.y = p.by; }); draw(ctx, W, Hh, ph, pa, st.ball, H.color, colA, st, 0); fin(); anim = null; return; }
+  if (instant) { evs.filter(e => e.type !== "shot").forEach(e => { const tm = e.side === "H" ? H : A; if (e.type === "goal") say(`<b>${e.m}' ⚽</b> ${clubDot(tm)}${esc(nameOf(e.pid))}${e.aid ? `<span class="muted">（${esc(nameOf(e.aid))}）</span>` : ""}`); else say(`${e.m}' ${clubDot(tm)}${esc(nameOf(e.pid))} 負傷`, "bad"); }); ph.concat(pa).forEach(p => { p.x = p.bx; p.y = p.by; }); draw(ctx, W, Hh, ph, pa, st.ball, H.color, colA, st, 0, rimH, rimA); fin(); anim = null; return; }
   st.raf = requestAnimationFrame(step);
 }
-function near(a, b) { const h = s => [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16)); const x = h(a), y = h(b); return Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) + Math.abs(x[2] - y[2]) < 120; }
-function draw(ctx, W, H, ph, pa, ball, cH, cA, st, now) {
+function near(a, b) { const h = s => [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16)); const x = h(a), y = h(b); return Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) + Math.abs(x[2] - y[2]) < 230; }
+function draw(ctx, W, H, ph, pa, ball, cH, cA, st, now, rH, rA) {
   const css = getComputedStyle(document.documentElement);
   ctx.fillStyle = css.getPropertyValue("--pitch") || "#2f7d3e"; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = css.getPropertyValue("--pitch2") || "#2a7238"; for (let i = 0; i < 10; i += 2) ctx.fillRect(i * W / 10, 0, W / 10, H);
@@ -548,7 +548,7 @@ function draw(ctx, W, H, ph, pa, ball, cH, cA, st, now) {
     const push = (poss === "H" ? 1 : -1) * 0.07 * (home ? 1 : 1);
     const tx = clamp01(p.bx + push + Math.sin(t * 0.9 + p.ph) * 0.025 + (ball.x - 0.5) * 0.18), ty = clamp01(p.by + Math.cos(t * 0.7 + p.ph) * 0.03 + (ball.y - p.by) * 0.12);
     p.x = p.x ? p.x + (tx - p.x) * 0.05 : tx; p.y = p.y ? p.y + (ty - p.y) * 0.05 : ty;
-    ctx.beginPath(); ctx.arc(m + p.x * (W - 2 * m), m + p.y * (H - 2 * m), 9, 0, Math.PI * 2); ctx.fillStyle = home ? cH : cA; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.stroke();
+    ctx.beginPath(); ctx.arc(m + p.x * (W - 2 * m), m + p.y * (H - 2 * m), 9, 0, Math.PI * 2); ctx.fillStyle = home ? cH : cA; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = (home ? rH : rA) || "#fff"; ctx.stroke();
   });
   move(ph, true); move(pa, false);
   ctx.beginPath(); ctx.arc(m + ball.x * (W - 2 * m), m + ball.y * (H - 2 * m), 5, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "#111"; ctx.lineWidth = 1; ctx.stroke();
@@ -565,6 +565,7 @@ function showStats(m) {
   <div class="row" style="align-items:flex-start"><div class="sp"><b class="small">${esc(H.name)}</b><table>${xi(m.xiH, H)}</table></div><div class="sp"><b class="small">${esc(A.name)}</b><table>${xi(m.xiA, A)}</table></div></div>`;
 }
 
+function hdOnly() { const c = ME(), s = S(); $("#hd").innerHTML = `<span class="crest" style="background:${esc(c.color)};border-color:${esc(c.color2)}"></span><div class="t"><b>${esc(c.name)}</b><small>第${s.season}シーズン・${s.week >= s.fixtures.length ? "全日程終了" : "第" + (s.week + 1) + "節前"}・${GM.table().indexOf(c) + 1}位</small></div><div class="money">予算<br><b>${yen(c.budget)}</b></div>`; }
 /* ---------- チーム ---------- */
 function vTeam() {
   const c = ME(), sub = U.sub.team || "xi";
