@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="サッカーGM">
+<meta name="theme-color" content="#0f2f5c">
+<title>サッカーGM</title>
+<style>
+:root { --bg:#eef1f5; --card:#fff; --ink:#18202c; --muted:#677385; --line:#dfe4ea; --navy:#0f2f5c; --acc:#e0402c; --good:#1d8a46; --bad:#c0392b; --chip:#f0f3f8; --pitch:#2f7d3e; --pitch2:#2a7238; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#0f131a; --card:#1a2029; --ink:#e9edf3; --muted:#9aa5b5; --line:#2a3240; --navy:#0b1f3d; --chip:#232b37; --pitch:#245f30; --pitch2:#20562b; } }
+:root[data-theme="dark"] { --bg:#0f131a; --card:#1a2029; --ink:#e9edf3; --muted:#9aa5b5; --line:#2a3240; --navy:#0b1f3d; --chip:#232b37; --pitch:#245f30; --pitch2:#20562b; }
+* { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html,body { margin:0; background:var(--bg); color:var(--ink); font-family:"Hiragino Sans","Yu Gothic UI","Meiryo",system-ui,sans-serif; font-size:15px; line-height:1.55; }
+header { position:sticky; top:0; z-index:5; background:var(--navy); color:#fff; padding:calc(env(safe-area-inset-top) + 10px) 14px 10px; display:flex; align-items:center; gap:10px; }
+header .crest { width:28px; height:28px; border-radius:50%; border:3px solid #fff; flex:none; }
+header .t { flex:1; min-width:0; }
+header .t b { display:block; font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+header .t small { opacity:.8; font-size:12px; }
+header .money { font-size:13px; text-align:right; }
+main { max-width:720px; margin:0 auto; padding:12px 12px calc(env(safe-area-inset-bottom) + 84px); }
+nav.tabs { position:fixed; bottom:0; left:0; right:0; z-index:6; display:flex; background:var(--card); border-top:1px solid var(--line); padding-bottom:env(safe-area-inset-bottom); }
+nav.tabs button { flex:1; background:none; border:0; color:var(--muted); font-size:11px; padding:8px 0 7px; display:flex; flex-direction:column; align-items:center; gap:2px; font-family:inherit; }
+nav.tabs button .ic { font-size:19px; line-height:1; }
+nav.tabs button.on { color:var(--acc); font-weight:700; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:12px; }
+.card h3 { margin:0 0 8px; font-size:15px; }
+.row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.sp { flex:1; }
+.muted { color:var(--muted); } .small { font-size:12px; } .good { color:var(--good); } .bad { color:var(--bad); }
+button.b { font-family:inherit; font-size:14px; border:1px solid var(--line); background:var(--chip); color:var(--ink); border-radius:9px; padding:8px 12px; }
+button.p { background:var(--acc); color:#fff; border-color:var(--acc); font-weight:700; }
+button.big { width:100%; padding:13px; font-size:16px; }
+button:disabled { opacity:.45; }
+select, input[type=text] { font-family:inherit; font-size:15px; padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th, td { padding:6px 4px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; }
+th { color:var(--muted); font-weight:600; font-size:12px; }
+td.n, th.n { text-align:right; font-variant-numeric:tabular-nums; }
+tr.me td { background:color-mix(in srgb, var(--acc) 12%, transparent); font-weight:700; }
+.dot { display:inline-block; width:10px; height:10px; border-radius:50%; vertical-align:middle; margin-right:4px; border:1px solid rgba(0,0,0,.25); }
+.pl { display:flex; align-items:center; gap:8px; padding:8px 4px; border-bottom:1px solid var(--line); }
+.pl:last-child { border-bottom:0; }
+.pos { font-size:11px; font-weight:700; border-radius:5px; padding:1px 5px; color:#fff; width:30px; text-align:center; flex:none; }
+.pos.GK { background:#d68910; } .pos.DF { background:#2e6fd0; } .pos.MF { background:#1d8a46; } .pos.FW { background:#c0392b; }
+.ovr { font-weight:800; font-size:17px; width:30px; text-align:right; font-variant-numeric:tabular-nums; flex:none; }
+.pl .nm { flex:1; min-width:0; }
+.pl .nm b { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:14px; }
+.pl .nm span { font-size:11px; color:var(--muted); }
+.pl .rt { text-align:right; font-size:12px; color:var(--muted); flex:none; }
+.pl.sel { outline:2px solid var(--acc); border-radius:8px; }
+.tag { font-size:10px; padding:1px 5px; border-radius:5px; background:var(--chip); color:var(--muted); margin-left:4px; }
+.seg { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:8px; }
+.seg button { font-family:inherit; font-size:13px; border:1px solid var(--line); background:var(--card); color:var(--ink); border-radius:999px; padding:5px 11px; }
+.seg button.on { background:var(--navy); color:#fff; border-color:var(--navy); }
+.bar { height:6px; border-radius:3px; background:var(--chip); overflow:hidden; }
+.bar i { display:block; height:100%; background:var(--acc); }
+.stat { display:grid; grid-template-columns:52px 1fr 30px; gap:6px; align-items:center; font-size:13px; margin:4px 0; }
+.modal { position:fixed; inset:0; z-index:20; background:rgba(0,0,0,.45); display:flex; align-items:flex-end; justify-content:center; }
+.sheet { background:var(--card); width:100%; max-width:720px; max-height:88vh; overflow:auto; border-radius:16px 16px 0 0; padding:16px 14px calc(env(safe-area-inset-bottom) + 16px); }
+.toast { position:fixed; left:50%; bottom:90px; transform:translateX(-50%); z-index:30; background:rgba(20,26,36,.92); color:#fff; padding:9px 14px; border-radius:10px; font-size:14px; max-width:90%; }
+canvas#pitch { width:100%; display:block; border-radius:10px; background:var(--pitch); touch-action:manipulation; }
+.score { display:flex; align-items:center; justify-content:center; gap:10px; font-size:15px; margin:6px 0; }
+.score .s { font-size:30px; font-weight:800; font-variant-numeric:tabular-nums; min-width:70px; text-align:center; }
+.score .tm { flex:1; display:flex; align-items:center; gap:6px; min-width:0; }
+.score .tm b { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.score .tm.r { justify-content:flex-end; text-align:right; }
+.feed { max-height:180px; overflow:auto; font-size:13px; }
+.feed div { padding:3px 0; border-bottom:1px dashed var(--line); }
+.clubpick { display:flex; align-items:center; gap:10px; padding:10px 6px; border-bottom:1px solid var(--line); }
+.clubpick .stars { color:#d4a017; letter-spacing:1px; }
+.news div { font-size:13px; padding:5px 0; border-bottom:1px solid var(--line); }
+.hint { font-size:12px; color:var(--muted); margin:6px 0 0; }
+</style>
+</head>
+<body>
+<header id="hd"></header>
+<main id="main"></main>
+<nav class="tabs" id="tabs"></nav>
+<script>
+/* ===== サッカーGM：ゲームの中身（画面に触らない） ===== */
+"use strict";
+const GM = (() => {
+  // ---- 乱数（セーブに状態を残すので、同じセーブなら同じ流れ） ----
+  let RS = 1;
+  const rnd = () => { RS = (RS + 0x6D2B79F5) | 0; let t = Math.imul(RS ^ (RS >>> 15), 1 | RS); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  const pick = a => a[Math.floor(rnd() * a.length)];
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const gauss = () => { let u = 0, v = 0; while (!u) u = rnd(); while (!v) v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); };
+  const poisson = l => { const L = Math.exp(-l); let k = 0, p = 1; do { k++; p *= rnd(); } while (p > L); return k - 1; };
+
+  // ---- 名前 ----
+  const SEI = "佐藤 鈴木 高橋 田中 伊藤 渡辺 山本 中村 小林 加藤 吉田 山田 佐々木 山口 松本 井上 木村 林 斎藤 清水 山崎 森 池田 橋本 阿部 石川 山下 中島 石井 小川 前田 岡田 長谷川 藤田 後藤 近藤 村上 遠藤 青木 坂本 斉藤 福田 太田 西村 藤井 金子 岡本 藤原 中野 三浦 原田 中川 松田 竹内 小野 田村 中山 和田 石田 森田 上田 原 柴田 酒井 工藤 横山 宮崎 宮本 内田 高木 安藤 島田 谷口 大野 高田 丸山 今井 河野 藤本 村田 武田 上野 杉山 増田 平野 大塚 千葉 久保 松井 小島 岩崎 桜井 野口 松尾 野村 木下 菊地 佐野 大西 杉本 新井 浜田 菅原 市川 水野 小松 島崎 古川 小山 高野 西田 菊池 山内 西川 五十嵐 北村 安田 中田 川口 平田 川崎 飯田 吉川 本田 久保田 沢田 辻 関 吉村 渡部 岩田 中西 服部 樋口 福島 川上 永井 松岡 田口 山中 森本 土屋 矢野 広瀬 秋山 石原 松下 大橋 松浦 吉岡 小池 馬場 浅野 荒木 大久保 野田 小沢 田辺 川村 星野 黒田 堀 尾崎 望月 永田 熊谷 内藤 松村 西山 大谷 平井 大島 岩本 片山 本間 早川 横田 岡崎 荒井 大石 鎌田 成田 宮田 小田 石橋 篠原 須藤 河合 大川 高井 高山 栗原 東 大和田".split(" ");
+  const MEI = "大輝 蓮 陽翔 湊 悠真 颯太 蒼 樹 大和 陸 翔太 拓海 海斗 優斗 瑛太 奏太 悠斗 健太 翼 隼人 駿 涼 航 慎吾 直樹 翔 亮 誠 大地 圭佑 遼 淳 真司 雄大 和也 達也 智也 拓也 浩二 隆之 一輝 晴 匠 響 律 新 凌 碧 聖 迅 惇 岳 謙 篤 貴大 祐介 啓太 将 剛 光 結人 怜 玲 尚 秀人 侑 透 塁 壮真 暖 心 朝陽 渉".split(" ");
+  const KATA1 = "ジョアン ルーカス マテウス ガブリエル ペドロ ダニエル ラファエル マルコ ルイス カルロス アンドレ ブルーノ ディエゴ フェリペ チアゴ アレックス イゴール レオ ジュニオール ヴィトール キム パク ソン イ ミン チェ".split(" ");
+  const KATA2 = "シウバ サントス ソウザ オリヴェイラ リマ ペレイラ コスタ ロドリゲス フェレイラ アウベス ゴメス マルティンス ロペス カルドーゾ ジュンス ミンジェ ヒョヌ ドンウォン".split(" ");
+  const genName = foreign => foreign ? pick(KATA1) + "・" + pick(KATA2) : pick(SEI) + " " + pick(MEI);
+
+  // ---- クラブ ----
+  const TOWN = "青葉 港南 白浜 北嶺 桜川 東雲 朝霧 星ヶ丘 若葉台 鷹ノ巣 紅葉坂 霧島台 浜風 雪見 緑ヶ原 蒼海 錦 陽ノ丘 銀杏 潮見 黒森 月見野".split(" ");
+  const SUF = "FC ユナイテッド シティ SC ヴィクトリー アスレティック レンジャーズ ウォリアーズ スターズ ドルフィンズ".split(" ");
+  const COLORS = [["#d62b2b", "#ffffff"], ["#1f4fb3", "#ffffff"], ["#1d8a46", "#ffffff"], ["#f2c230", "#1a1a1a"], ["#7a2ea8", "#ffffff"], ["#ff7a1a", "#1a1a1a"], ["#0f9fb8", "#ffffff"], ["#1a1a1a", "#f2c230"], ["#e05a9b", "#ffffff"], ["#6b4423", "#f2e6c8"], ["#8fc93a", "#1a1a1a"], ["#0b2a5b", "#e8c25a"], ["#b8b8b8", "#0b2a5b"], ["#a3123a", "#f5d76e"], ["#2e7d7a", "#f5f5f5"], ["#5b6ee1", "#ffffff"], ["#c0392b", "#1a1a1a"], ["#16a085", "#1a1a1a"]];
+
+  const POS = ["GK", "DF", "MF", "FW"];
+  const POS_JA = { GK: "GK", DF: "DF", MF: "MF", FW: "FW" };
+  const FORMS = { "4-4-2": [1, 4, 4, 2], "4-3-3": [1, 4, 3, 3], "3-5-2": [1, 3, 5, 2], "4-5-1": [1, 4, 5, 1], "5-3-2": [1, 5, 3, 2] };
+  const TRAIN = { バランス: { att: 1, def: 1, pas: 1, sta: 1 }, 攻撃: { att: 2.2, def: 0.4, pas: 0.8, sta: 0.6 }, 守備: { att: 0.4, def: 2.2, pas: 0.8, sta: 0.6 }, パス: { att: 0.7, def: 0.7, pas: 2.2, sta: 0.4 }, 体力: { att: 0.6, def: 0.6, pas: 0.4, sta: 2.4 } };
+
+  // 能力：att 攻撃 / def 守備（GKはセーブ）/ pas パス / sta 体力。0〜99
+  const ovr = p => Math.round(p.pos === "GK" ? p.def * 0.82 + p.pas * 0.08 + p.sta * 0.1
+    : p.pos === "DF" ? p.def * 0.6 + p.pas * 0.2 + p.sta * 0.12 + p.att * 0.08
+    : p.pos === "MF" ? p.pas * 0.45 + p.att * 0.25 + p.def * 0.15 + p.sta * 0.15
+    : p.att * 0.65 + p.pas * 0.15 + p.sta * 0.2);
+  const valueOf = p => { const o = ovr(p), ageF = p.age <= 21 ? 1.5 : p.age <= 24 ? 1.3 : p.age <= 28 ? 1 : p.age <= 31 ? 0.65 : 0.35, potF = 1 + Math.max(0, p.pot - o) / 40; return Math.max(50, Math.round(Math.pow(Math.max(30, o) - 25, 2.35) * 1.2 * ageF * potF / 10) * 10); }; // 万円（ovr70・25歳で約1億）
+  const wageOf = p => Math.max(20, Math.round(Math.pow(Math.max(30, ovr(p)) - 25, 2) * 0.09)); // 年俸（万円）を 1/10 単位 → 下で×10
+
+  let uid = 1;
+  const newPlayer = (pos, level, ageMin, ageMax, opt) => {
+    opt = opt || {};
+    const age = ri(ageMin, ageMax), foreign = !opt.youth && rnd() < 0.12;
+    const base = clamp(level + gauss() * 6, 25, 92);
+    const sh = { GK: [0.4, 1.15, 0.85, 0.9], DF: [0.65, 1.15, 0.9, 1], MF: [0.9, 0.8, 1.15, 1], FW: [1.18, 0.5, 0.9, 1] }[pos];
+    const st = k => clamp(Math.round(base * sh[k] + gauss() * 5), 15, 95);
+    const p = { id: uid++, name: genName(foreign), pos, age, att: st(0), def: st(1), pas: st(2), sta: st(3), form: 0, inj: 0, contract: ri(1, 4), apps: 0, goals: 0, assists: 0, rsum: 0, career: { apps: 0, goals: 0 }, foreign };
+    const o = ovr(p);
+    p.pot = clamp(Math.round(o + Math.max(0, (27 - age)) * (1.2 + rnd() * 2.6) + gauss() * 4), o, 96);
+    if (opt.potBoost) p.pot = clamp(p.pot + opt.potBoost, o, 96);
+    p.wage = wageOf(p) * 10; p.value = valueOf(p);
+    return p;
+  };
+
+  const newClub = (i, name, color, level) => {
+    const c = { id: i, name, color: color[0], color2: color[1], players: [], form: "4-4-2", lineup: null, train: "バランス", budget: Math.round((level - 40) * 260 + 6000), pop: clamp(Math.round(level - 10 + gauss() * 6), 20, 90), fac: { scout: 1, train: 1, stadium: 1, youth: 1 }, w: 0, d: 0, l: 0, gf: 0, ga: 0, hist: [] };
+    const plan = { GK: 3, DF: 8, MF: 8, FW: 5 };
+    for (const pos of POS) for (let k = 0; k < plan[pos]; k++) c.players.push(newPlayer(pos, level + (k < (pos === "GK" ? 1 : 4) ? 4 : -5), 18, 33));
+    return c;
+  };
+
+  // ---- 状態 ----
+  let S = null;
+  const club = id => S.clubs[id];
+  const me = () => S.clubs[S.my];
+  const allPlayers = () => S.clubs.flatMap(c => c.players.map(p => [p, c])).concat(S.free.map(p => [p, null]));
+  const findP = id => { for (const c of S.clubs) for (const p of c.players) if (p.id === id) return [p, c]; const f = S.free.find(p => p.id === id); return f ? [f, null] : [null, null]; };
+
+  function newGame(seed) {
+    RS = (seed >>> 0) || ((Date.now() ^ 0x9e3779b9) >>> 0); uid = 1;
+    const towns = TOWN.slice().sort(() => rnd() - 0.5).slice(0, 18);
+    const cols = COLORS.slice().sort(() => rnd() - 0.5);
+    const clubs = towns.map((t, i) => newClub(i, t + " " + pick(SUF), cols[i], 47 + Math.round((17 - i) * 0.95) + ri(-2, 2)));
+    S = { v: 1, rs: 0, uid: 0, season: 1, week: 0, clubs, my: null, free: [], fixtures: [], results: [], inbox: [], news: [], offers: [], listed: [], youthDone: false, scouted: {}, history: [], windowOpen: true };
+    for (let k = 0; k < 30; k++) S.free.push(newPlayer(pick(POS), ri(42, 58), 21, 34));
+    S.fixtures = makeFixtures(18);
+    clubs.forEach(c => autoLineup(c));
+    return S;
+  }
+  function chooseClub(id) { S.my = id; const c = me(); c.budget = Math.round(c.budget * 1.1); news("ようこそ " + c.name + " へ。クラブを強くしていこう。"); save(); }
+
+  // 2回総当たり（34節）
+  function makeFixtures(n) {
+    const ids = [...Array(n).keys()], rounds = [];
+    for (let r = 0; r < n - 1; r++) {
+      const wk = [];
+      for (let i = 0; i < n / 2; i++) { const a = ids[i], b = ids[n - 1 - i]; wk.push(r % 2 ? [a, b] : [b, a]); }
+      rounds.push(wk); ids.splice(1, 0, ids.pop());
+    }
+    return rounds.concat(rounds.map(w => w.map(([a, b]) => [b, a])));
+  }
+
+  // ---- スタメン ----
+  function autoLineup(c) {
+    const need = FORMS[c.form], avail = c.players.filter(p => !p.inj), used = new Set(), xi = [];
+    POS.forEach((pos, k) => {
+      const cand = avail.filter(p => !used.has(p.id)).map(p => [p, (p.pos === pos ? ovr(p) : ovr(Object.assign({}, p, { pos })) - 12) + p.form * 2]).sort((a, b) => b[1] - a[1]);
+      for (let j = 0; j < need[k] && cand[j]; j++) { used.add(cand[j][0].id); xi.push({ id: cand[j][0].id, slot: pos }); }
+    });
+    c.lineup = xi;
+  }
+  const lineupPlayers = c => (c.lineup || []).map(s => { const p = c.players.find(q => q.id === s.id); return p && !p.inj ? { p, slot: s.slot } : null; }).filter(Boolean);
+  const slotOvr = (p, slot) => p.pos === slot ? ovr(p) : ovr(Object.assign({}, p, { pos: slot })) - 12;
+
+  function teamStr(c) {
+    let xi = lineupPlayers(c); if (xi.length < 11) { autoLineup(c); xi = lineupPlayers(c); }
+    const g = s => xi.filter(x => x.slot === s);
+    const avg = (arr, f) => arr.length ? arr.reduce((t, x) => t + f(x), 0) / arr.length : 30;
+    const pen = x => x.p.pos === x.slot ? 0 : 12;
+    const fit = x => (x.p.form || 0) * 1.5 - pen(x);
+    const fw = g("FW"), mf = g("MF"), df = g("DF"), gk = g("GK");
+    const att = avg(fw, x => x.p.att + fit(x)) * 0.5 + avg(mf, x => x.p.att * 0.45 + x.p.pas * 0.55 + fit(x)) * 0.38 + avg(df, x => x.p.pas + fit(x)) * 0.12 + Math.max(0, fw.length - 2) * 1.5;
+    const def = avg(gk, x => x.p.def + fit(x)) * 0.28 + avg(df, x => x.p.def + fit(x)) * 0.5 + avg(mf, x => x.p.def + fit(x)) * 0.22 + Math.max(0, df.length - 4) * 1.5;
+    const mid = avg(mf, x => x.p.pas * 0.6 + x.p.sta * 0.4 + fit(x)) + (mf.length - 4) * 2.5;
+    const n = xi.length < 11 ? (11 - xi.length) * 4 : 0;
+    return { att: att - n, def: def - n, mid: mid - n, xi };
+  }
+
+  // ---- 試合 ----
+  function simMatch(hId, aId, wantEvents) {
+    const H = club(hId), A = club(aId), h = teamStr(H), a = teamStr(A);
+    const posH = clamp(0.5 + (h.mid - a.mid) / 80, 0.3, 0.7);
+    const xg = (o, d, pos, home) => clamp(1.0 * Math.exp((o - d) / 25) * (0.75 + pos * 0.5) * (home ? 1.12 : 0.92), 0.15, 4.2);
+    const xH = xg(h.att, a.def, posH, true), xA = xg(a.att, h.def, 1 - posH, false);
+    const gH = poisson(xH), gA = poisson(xA);
+    const shH = Math.max(gH, poisson(xH * 7.5)), shA = Math.max(gA, poisson(xA * 7.5));
+    const ev = [];
+    const scorer = t => { const w = t.xi.map(x => [x.p, x.slot === "FW" ? x.p.att * 3 : x.slot === "MF" ? x.p.att * 1.2 : x.slot === "DF" ? x.p.att * 0.3 : 0]); return wpick(w); };
+    const assister = (t, sc) => rnd() < 0.78 ? wpick(t.xi.filter(x => x.p !== sc).map(x => [x.p, x.slot === "MF" ? x.p.pas * 2 : x.slot === "FW" ? x.p.pas * 1.2 : x.slot === "DF" ? x.p.pas * 0.5 : 0.05])) : null;
+    const mins = n => [...Array(n)].map(() => ri(1, 90)).sort((x, y) => x - y);
+    mins(gH).forEach(m => { const s = scorer(h), as = assister(h, s); ev.push({ m, side: "H", type: "goal", pid: s.id, aid: as ? as.id : null }); });
+    mins(gA).forEach(m => { const s = scorer(a), as = assister(a, s); ev.push({ m, side: "A", type: "goal", pid: s.id, aid: as ? as.id : null }); });
+    if (wantEvents) {
+      mins(shH - gH).forEach(m => ev.push({ m, side: "H", type: "shot", pid: scorer(h).id }));
+      mins(shA - gA).forEach(m => ev.push({ m, side: "A", type: "shot", pid: scorer(a).id }));
+    }
+    // けが
+    [[H, h], [A, a]].forEach(([C, T], si) => { if (rnd() < 0.09) { const x = pick(T.xi); x.p.inj = ri(1, 5); if (wantEvents) ev.push({ m: ri(10, 85), side: si ? "A" : "H", type: "inj", pid: x.p.id }); } });
+    ev.sort((x, y) => x.m - y.m);
+    // 記録
+    const rate = (T, gf, ga, side) => T.xi.forEach(x => {
+      const p = x.p, g = ev.filter(e => e.type === "goal" && e.side === side && e.pid === p.id).length, as = ev.filter(e => e.type === "goal" && e.side === side && e.aid === p.id).length;
+      let r = 6 + g * 1.0 + as * 0.6 + (gf > ga ? 0.4 : gf < ga ? -0.4 : 0) + (x.slot === "GK" || x.slot === "DF" ? (ga === 0 ? 0.7 : -ga * 0.25) : 0) + gauss() * 0.45;
+      r = clamp(Math.round(r * 10) / 10, 3, 10); x.r = r;
+      p.apps++; p.goals += g; p.assists += as; p.rsum += r; p.career.apps++; p.career.goals += g;
+      p.form = clamp((p.form || 0) * 0.6 + (r - 6.3) * 0.8, -3, 3);
+      p.sta2 = 1;
+    });
+    rate(h, gH, gA, "H"); rate(a, gA, gH, "A");
+    return { h: hId, a: aId, gh: gH, ga: gA, xH, xA, posH, shH, shA, ev, xiH: h.xi.map(x => ({ id: x.p.id, slot: x.slot, r: x.r })), xiA: a.xi.map(x => ({ id: x.p.id, slot: x.slot, r: x.r })) };
+  }
+  function wpick(w) { const t = w.reduce((s, x) => s + Math.max(0.01, x[1]), 0); let r = rnd() * t; for (const x of w) { r -= Math.max(0.01, x[1]); if (r <= 0) return x[0]; } return w[w.length - 1][0]; }
+
+  function applyResult(m) {
+    const H = club(m.h), A = club(m.a);
+    H.gf += m.gh; H.ga += m.ga; A.gf += m.ga; A.ga += m.gh;
+    if (m.gh > m.ga) { H.w++; A.l++; } else if (m.gh < m.ga) { A.w++; H.l++; } else { H.d++; A.d++; }
+    // 観客収入（ホーム）
+    const att = Math.round(clamp(H.pop * 220 * (0.7 + H.fac.stadium * 0.3) * (0.85 + rnd() * 0.3), 3000, 48000));
+    H.budget += Math.round(att * 0.12); m.att = att;
+  }
+  const pts = c => c.w * 3 + c.d;
+  const table = () => S.clubs.slice().sort((x, y) => pts(y) - pts(x) || (y.gf - y.ga) - (x.gf - x.ga) || y.gf - x.gf);
+
+  // 1節すすめる。自分の試合の結果を返す
+  function playWeek() {
+    if (S.week >= S.fixtures.length) return null;
+    const wk = S.fixtures[S.week]; let mine = null;
+    S.clubs.forEach(c => { if (c.id !== S.my) aiManage(c); else if (!c.lineup || lineupPlayers(c).length < 11) autoLineup(c); });
+    wk.forEach(([h, a]) => { const m = simMatch(h, a, h === S.my || a === S.my); m.week = S.week + 1; applyResult(m); if (h === S.my || a === S.my) { mine = m; S.lastMatch = m; } S.results.push({ w: S.week + 1, h, a, gh: m.gh, ga: m.ga }); });
+    weekly(); S.week++;
+    if (S.week === 17) { S.windowOpen = true; news("夏の移籍期間が開きました（第18節まで）。"); }
+    if (S.week === 19) { S.windowOpen = false; news("夏の移籍期間が閉じました。"); }
+    if (S.week === 2) { S.windowOpen = false; news("開幕の移籍期間が閉じました。次は第17節のあと。"); }
+    save(); return mine;
+  }
+
+  // 週ごとの処理：練習・けが・給料・オファー
+  function weekly() {
+    S.clubs.forEach(c => {
+      const tr = TRAIN[c.train] || TRAIN.バランス, fac = 1 + (c.fac.train - 1) * 0.15;
+      c.players.forEach(p => {
+        if (p.inj) p.inj--;
+        const room = p.pot - ovr(p), ageF = p.age <= 21 ? 1.25 : p.age <= 24 ? 1 : p.age <= 27 ? 0.55 : p.age <= 30 ? 0.15 : 0;
+        const play = p.sta2 ? 1.25 : 0.85; p.sta2 = 0;
+        if (room > 0 && ageF > 0) { const g = 0.16 * ageF * fac * play * Math.min(1.6, room / 8); for (const k of ["att", "def", "pas", "sta"]) if (rnd() < g * tr[k] * 0.9) p[k] = Math.min(97, p[k] + 1); }
+        if (p.age >= 31 && rnd() < 0.05 * (p.age - 30)) { const k = pick(["att", "def", "pas", "sta", "sta"]); p[k] = Math.max(15, p[k] - 1); }
+      });
+      c.budget -= Math.round(c.players.reduce((t, p) => t + p.wage, 0) / 34);
+    });
+    // 売りに出した選手へのオファー
+    if (S.my != null) {
+      S.listed = S.listed.filter(id => me().players.some(p => p.id === id));
+      S.listed.forEach(id => {
+        const p = me().players.find(q => q.id === id); if (!p || rnd() > 0.45) return;
+        const buyers = S.clubs.filter(c => c.id !== S.my && c.budget > p.value * 0.7 && c.players.length < 30);
+        if (!buyers.length) return; const b = pick(buyers), amt = Math.round(p.value * (0.75 + rnd() * 0.45) / 10) * 10;
+        S.offers.push({ id: uid++, pid: p.id, from: b.id, amt, week: S.week }); inbox(b.name + " から " + p.name + " に " + yen(amt) + " のオファー。");
+      });
+      // 自分の主力に不意のオファー
+      if (rnd() < 0.12) { const top = me().players.slice().sort((x, y) => valueOf(y) - valueOf(x)).slice(0, 6), p = pick(top), b = pick(S.clubs.filter(c => c.id !== S.my && c.budget > p.value)); if (p && b && !S.offers.some(o => o.pid === p.id)) { const amt = Math.round(p.value * (1.05 + rnd() * 0.35) / 10) * 10; S.offers.push({ id: uid++, pid: p.id, from: b.id, amt, week: S.week }); inbox(b.name + " が " + p.name + " の獲得を狙っています（" + yen(amt) + "）。"); } }
+      S.offers = S.offers.filter(o => S.week - o.week <= 2);
+    }
+    // ほかのクラブ同士の移籍（たまに）
+    if (S.windowOpen && rnd() < 0.5) aiTransfer();
+    S.clubs.forEach(c => c.players.forEach(p => { p.value = valueOf(p); }));
+  }
+
+  function aiManage(c) {
+    // 弱いポジションに合わせて陣形を変え、スタメンを組む
+    if (rnd() < 0.15) { const n = { GK: 0, DF: 0, MF: 0, FW: 0 }; c.players.forEach(p => { if (!p.inj && ovr(p) > 55) n[p.pos]++; }); c.form = n.FW >= 3 ? "4-3-3" : n.MF >= 6 ? "4-5-1" : n.DF >= 6 ? "5-3-2" : "4-4-2"; }
+    autoLineup(c); if (rnd() < 0.2) c.train = pick(Object.keys(TRAIN));
+  }
+  function aiTransfer() {
+    const buyer = pick(S.clubs.filter(c => c.id !== S.my)); const need = weakestPos(buyer);
+    const pool = allPlayers().filter(([p, c]) => p.pos === need && (!c || (c.id !== buyer.id && c.id !== S.my && c.players.length > 20)) && (c ? p.value : p.wage * 2) < buyer.budget * 0.6 && ovr(p) > avgOvr(buyer) - 2);
+    if (!pool.length) return; const [p, from] = pick(pool), fee = from ? p.value : 0;
+    if (from) { from.players = from.players.filter(q => q !== p); from.budget += fee; autoLineup(from); } else S.free = S.free.filter(q => q !== p);
+    buyer.players.push(p); buyer.budget -= fee; p.contract = ri(2, 4); autoLineup(buyer);
+    news(p.name + "（" + p.pos + "）が " + (from ? from.name : "フリー") + " から " + buyer.name + " へ移籍" + (fee ? "（" + yen(fee) + "）" : "") + "。");
+  }
+  const avgOvr = c => { const t = c.players.map(ovr).sort((a, b) => b - a).slice(0, 16); return t.reduce((s, x) => s + x, 0) / Math.max(1, t.length); };
+  const weakestPos = c => { const need = { GK: 2, DF: 7, MF: 7, FW: 4 }; let best = "MF", bv = 1e9; POS.forEach(pos => { const xs = c.players.filter(p => p.pos === pos).map(ovr).sort((a, b) => b - a), v = xs.slice(0, need[pos]).reduce((s, x) => s + x, 0) / need[pos]; if (v < bv) { bv = v; best = pos; } }); return best; };
+
+  // ---- 移籍（自分） ----
+  const askPrice = p => Math.round(p.value * 1.15 / 10) * 10;
+  function buy(pid, offerAmt) {
+    const [p, from] = findP(pid); const c = me(); if (!p) return { ok: false, msg: "選手が見つからない" };
+    if (!S.windowOpen && from) return { ok: false, msg: "移籍期間外です（フリーの選手はいつでも契約できます）" };
+    if (c.players.length >= 32) return { ok: false, msg: "選手が多すぎます（32人まで）" };
+    const fee = from ? (offerAmt || askPrice(p)) : 0;
+    if (fee + p.wage > c.budget) return { ok: false, msg: "予算が足りません" };
+    if (from) {
+      if (from.players.filter(q => q.pos === p.pos).length <= (p.pos === "GK" ? 2 : 4)) return { ok: false, msg: from.name + " は放出を拒否（その位置の選手が足りない）" };
+      const need = askPrice(p) * (0.88 + rnd() * 0.12); if (fee < need) return { ok: false, msg: from.name + " がオファーを断りました（もう少し上積みが要りそう）" };
+      from.players = from.players.filter(q => q !== p); from.budget += fee; autoLineup(from);
+    } else S.free = S.free.filter(q => q !== p);
+    c.players.push(p); c.budget -= fee; p.contract = ri(2, 4); p.form = 0; delete S.scouted[p.id + "x"];
+    news(p.name + " を " + (from ? from.name + " から " + yen(fee) + " で" : "フリーで") + " 獲得。"); save();
+    return { ok: true, msg: p.name + " を獲得しました" };
+  }
+  function acceptOffer(oid) {
+    const o = S.offers.find(x => x.id === oid); if (!o) return { ok: false, msg: "オファーがもうありません" };
+    const c = me(), p = c.players.find(q => q.id === o.pid), b = club(o.from); if (!p) return { ok: false, msg: "選手がいません" };
+    if (c.players.length <= 18) return { ok: false, msg: "選手が18人を切るので売れません" };
+    c.players = c.players.filter(q => q !== p); c.lineup = (c.lineup || []).filter(s => s.id !== p.id); b.players.push(p); b.budget -= o.amt; c.budget += o.amt; autoLineup(b);
+    S.offers = S.offers.filter(x => x.pid !== p.id); S.listed = S.listed.filter(id => id !== p.id);
+    news(p.name + " を " + b.name + " へ " + yen(o.amt) + " で売却。"); save(); return { ok: true, msg: p.name + " を売却しました" };
+  }
+  function release(pid) { const c = me(), p = c.players.find(q => q.id === pid); if (!p) return; if (c.players.length <= 18) return { ok: false, msg: "18人を切るので放出できません" }; const pay = Math.round(p.wage * p.contract * 0.5); c.budget -= pay; c.players = c.players.filter(q => q !== p); c.lineup = (c.lineup || []).filter(s => s.id !== pid); S.free.push(p); news(p.name + " との契約を解除（違約金 " + yen(pay) + "）。"); save(); return { ok: true, msg: "契約を解除しました" }; }
+  // スカウト：潜在能力の見え方（施設レベルと調査で精度が上がる）
+  function potView(p) {
+    if (S.my != null && me().players.includes(p)) return { lo: p.pot, hi: p.pot, exact: true };
+    const lvl = S.my != null ? me().fac.scout : 1, sc = S.scouted[p.id] ? 2 : 0, err = Math.max(1, 12 - lvl * 2 - sc * 3);
+    const seed = (p.id * 9301 + 49297) % 233280 / 233280, mid = clamp(Math.round(p.pot + (seed - 0.5) * err), ovr(p), 99);
+    return { lo: clamp(mid - err, ovr(p), 99), hi: clamp(mid + err, ovr(p), 99), exact: false };
+  }
+  function scout(pid) { const c = me(), cost = 60; if (c.budget < cost) return { ok: false, msg: "予算が足りません" }; c.budget -= cost; S.scouted[pid] = 1; save(); return { ok: true, msg: "スカウトを派遣しました（潜在能力が詳しく見えます）" }; }
+
+  // ---- 施設 ----
+  const FAC = { scout: ["スカウト網", "移籍市場の潜在能力が正確に見える・ユースの質"], train: ["練習場", "選手の成長が早くなる"], stadium: ["スタジアム", "観客収入が増える"], youth: ["ユース", "毎年入るユース選手の数と質"] };
+  const facCost = l => 1500 * l * l;
+  function upgrade(k) { const c = me(), l = c.fac[k]; if (l >= 5) return { ok: false, msg: "最大レベルです" }; const cost = facCost(l); if (c.budget < cost) return { ok: false, msg: "予算が足りません（" + yen(cost) + "）" }; c.budget -= cost; c.fac[k]++; news(FAC[k][0] + " をレベル " + c.fac[k] + " に。"); save(); return { ok: true, msg: FAC[k][0] + " を強化しました" }; }
+
+  // ---- シーズン終了 ----
+  function endSeason() {
+    const tb = table(), my = me(), rank = tb.indexOf(my) + 1;
+    const scorers = S.clubs.flatMap(c => c.players.map(p => [p, c])).sort((x, y) => y[0].goals - x[0].goals);
+    const mvp = S.clubs.flatMap(c => c.players.map(p => [p, c])).filter(([p]) => p.apps >= 15).sort((x, y) => y[0].rsum / y[0].apps - x[0].rsum / x[0].apps)[0];
+    const rec = { season: S.season, champion: tb[0].name, myRank: rank, my: my.name, pts: pts(my), top: scorers[0] ? { name: scorers[0][0].name, club: scorers[0][1].name, goals: scorers[0][0].goals } : null, mvp: mvp ? { name: mvp[0].name, club: mvp[1].name, r: (mvp[0].rsum / mvp[0].apps).toFixed(2) } : null };
+    S.history.push(rec);
+    // 賞金・人気
+    tb.forEach((c, i) => { c.budget += Math.round((18 - i) * 420 + 2500); c.pop = clamp(c.pop + (9 - i) * 0.6, 15, 99); c.hist.push(i + 1); });
+    my.budget += 0; // スポンサー（人気で）
+    tb.forEach(c => { c.budget += Math.round(c.pop * 45); if (c.id !== S.my && c.budget < 3000) c.budget = 3000 + ri(0, 2000); });
+    const leaving = [];
+    // 年齢・引退・契約
+    S.clubs.forEach(c => {
+      c.players.forEach(p => { p.age++; p.contract--; p.apps = 0; p.goals = 0; p.assists = 0; p.rsum = 0; p.form = 0; p.inj = 0; if (p.age >= 30) { const k = 0.5 + (p.age - 30) * 0.9; for (const s of ["att", "def", "pas", "sta"]) p[s] = Math.max(15, Math.round(p[s] - k * (0.5 + rnd()))); } });
+      c.players = c.players.filter(p => { if (p.age >= 35 && rnd() < 0.25 + (p.age - 35) * 0.25 || p.age >= 39) { if (c.id === S.my) leaving.push(p.name + "（引退）"); return false; } return true; });
+      c.players.forEach(p => { if (p.contract <= 0) { if (c.id === S.my) { p.contract = 0; } else if (rnd() < 0.8 || ovr(p) > avgOvr(c)) { p.contract = ri(1, 3); p.wage = Math.max(p.wage, wageOf(p) * 10); } else { c.players = c.players.filter(q => q !== p); S.free.push(p); } } });
+      c.w = c.d = c.l = c.gf = c.ga = 0;
+    });
+    // ユース
+    S.clubs.forEach(c => { const n = c.id === S.my ? 1 + c.fac.youth : ri(1, 3), q = c.id === S.my ? 34 + c.fac.youth * 3 + c.fac.scout * 2 : ri(36, 46); for (let k = 0; k < n; k++) { const p = newPlayer(pick(POS), q, 16, 18, { youth: true, potBoost: c.id === S.my ? c.fac.youth * 2 : 0 }); p.contract = 3; p.wage = 30; p.youth = true; c.players.push(p); if (c.id === S.my) inbox("ユースから " + p.name + "（" + p.pos + "・" + p.age + "歳・潜在" + p.pot + "）が昇格。"); } });
+    // AI：人数を整える
+    S.clubs.forEach(c => { if (c.id === S.my) return; while (c.players.length > 28) { const w = c.players.slice().sort((x, y) => ovr(x) - ovr(y))[0]; c.players = c.players.filter(q => q !== w); S.free.push(w); } while (c.players.length < 22) { const pos = weakestPos(c), f = S.free.filter(p => p.pos === pos).sort((x, y) => ovr(y) - ovr(x))[0]; if (f) { S.free = S.free.filter(q => q !== f); c.players.push(f); } else c.players.push(newPlayer(pos, avgOvr(c) - 4, 19, 26)); } autoLineup(c); });
+    // フリーを補充・整理
+    S.free = S.free.filter(p => p.age < 36).slice(-40); while (S.free.length < 30) S.free.push(newPlayer(pick(POS), ri(40, 58), 20, 33));
+    S.season++; S.week = 0; S.fixtures = makeFixtures(18); S.results = []; S.offers = []; S.windowOpen = true; S.scouted = {};
+    if (leaving.length) inbox("退団：" + leaving.join("、"));
+    news("第" + S.season + "シーズン開幕。移籍期間は第2節まで開いています。");
+    autoLineup(my); save();
+    return rec;
+  }
+  const expiring = () => me().players.filter(p => p.contract <= 0);
+  function renew(pid, yes) { const p = me().players.find(q => q.id === pid); if (!p) return; if (yes) { p.contract = ri(2, 4); p.wage = Math.max(p.wage, wageOf(p) * 10); news(p.name + " と契約延長（年俸 " + yen(p.wage) + "）。"); } else { me().players = me().players.filter(q => q !== p); S.free.push(p); news(p.name + " が契約満了で退団。"); } save(); }
+
+  // ---- 記録・通知 ----
+  const news = t => { S.news.unshift({ s: S.season, w: S.week, t }); S.news = S.news.slice(0, 80); };
+  const inbox = t => { S.inbox.unshift(t); S.inbox = S.inbox.slice(0, 30); news(t); };
+  const yen = m => { m = Math.round(m); const a = Math.abs(m); return (m < 0 ? "−" : "") + (a >= 10000 ? (a / 10000).toFixed(a >= 100000 ? 1 : 2).replace(/\.?0+$/, "") + "億円" : a + "万円"); };
+
+  // ---- セーブ ----
+  const KEY = "gm_soccer_save_v1";
+  function save() { if (!S) return; S.rs = RS; S.uid = uid; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } }
+  function load(txt) { try { const d = JSON.parse(txt != null ? txt : localStorage.getItem(KEY) || "null"); if (!d || !d.clubs) return false; S = d; RS = d.rs; uid = d.uid; return true; } catch (e) { return false; } }
+  function wipe() { try { localStorage.removeItem(KEY); } catch (e) { } S = null; }
+  const exportSave = () => { save(); return JSON.stringify(S); };
+
+  return { newGame, chooseClub, playWeek, endSeason, table, pts, ovr, valueOf, askPrice, potView, scout, buy, acceptOffer, release, upgrade, facCost, FAC, FORMS, TRAIN, POS, autoLineup, lineupPlayers, slotOvr, teamStr, renew, expiring, avgOvr, yen, save, load, wipe, exportSave, findP, club, me, get S() { return S; }, simMatch, rnd };
+})();
+
+</script>
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const U = { tab: "home", sub: {}, selSwap: null, match: null };
+const TABS = [["home", "🏠", "ホーム"], ["match", "⚽", "試合"], ["team", "👥", "チーム"], ["market", "🔁", "移籍"], ["table", "🏆", "順位"], ["club", "🏟", "クラブ"]];
+const S = () => GM.S, ME = () => GM.me();
+const yen = GM.yen, ovr = GM.ovr;
+function toast(t) { const d = document.createElement("div"); d.className = "toast"; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2400); }
+function stars(n) { return "★".repeat(n) + "☆".repeat(5 - n); }
+const posTag = p => `<span class="pos ${p.pos}">${p.pos}</span>`;
+const clubDot = c => `<span class="dot" style="background:${esc(c.color)}"></span>`;
+
+/* ---------- 起動 ---------- */
+function boot() { if (GM.load()) { if (S().my == null) startPick(); else render(); } else startScreen(); }
+function startScreen() {
+  $("#hd").innerHTML = `<div class="t"><b>サッカーGM</b><small>クラブを率いて頂点を目指す</small></div>`; $("#tabs").innerHTML = "";
+  $("#main").innerHTML = `<div class="card"><h3>新しく始める</h3><p class="small muted">架空のリーグ（18クラブ・34節）で、1つのクラブの監督兼GMになります。選手の獲得・育成・売却でチームを強くして、優勝を目指してください。試合は自動で進み、点の動きとスタッツで見守ります。</p><button class="b p big" id="ng">リーグを作る</button></div>
+  <div class="card"><h3>セーブデータを読み込む</h3><textarea id="imp" style="width:100%;height:70px" placeholder="書き出したセーブデータを貼り付け"></textarea><button class="b" id="impb">読み込む</button></div>`;
+  $("#ng").onclick = () => { GM.newGame(); startPick(); };
+  $("#impb").onclick = () => { if (GM.load($("#imp").value.trim())) { GM.save(); render(); toast("読み込みました"); } else toast("読み込めませんでした"); };
+}
+function startPick() {
+  const tb = S().clubs.slice().sort((a, b) => GM.avgOvr(b) - GM.avgOvr(a));
+  const st = c => { const r = tb.indexOf(c); return r < 3 ? 5 : r < 7 ? 4 : r < 11 ? 3 : r < 15 ? 2 : 1; };
+  $("#hd").innerHTML = `<div class="t"><b>クラブを選ぶ</b><small>★が少ないほど難しい（そのぶん育てがいがある）</small></div>`;
+  $("#main").innerHTML = `<div class="card">${S().clubs.map(c => `<div class="clubpick">${clubDot(c)}<div class="sp"><b>${esc(c.name)}</b><div class="small muted">戦力 <span class="stars">${stars(st(c))}</span>・予算 ${yen(c.budget)}・人気 ${Math.round(c.pop)}</div></div><button class="b" data-c="${c.id}">選ぶ</button></div>`).join("")}</div>`;
+  document.querySelectorAll("[data-c]").forEach(b => b.onclick = () => { GM.chooseClub(+b.dataset.c); U.tab = "home"; render(); toast(ME().name + " の監督に就任しました"); });
+}
+
+/* ---------- 共通 ---------- */
+function render() {
+  const c = ME(), s = S();
+  $("#hd").innerHTML = `<span class="crest" style="background:${esc(c.color)};border-color:${esc(c.color2)}"></span><div class="t"><b>${esc(c.name)}</b><small>第${s.season}シーズン・${s.week >= s.fixtures.length ? "全日程終了" : "第" + (s.week + 1) + "節前"}・${GM.table().indexOf(c) + 1}位</small></div><div class="money">予算<br><b>${yen(c.budget)}</b></div>`;
+  $("#tabs").innerHTML = TABS.map(([k, ic, l]) => `<button class="${U.tab === k ? "on" : ""}" data-t="${k}"><span class="ic">${ic}</span>${l}</button>`).join("");
+  document.querySelectorAll("[data-t]").forEach(b => b.onclick = () => { stopAnim(); U.tab = b.dataset.t; U.selSwap = null; render(); window.scrollTo(0, 0); });
+  ({ home: vHome, match: vMatch, team: vTeam, market: vMarket, table: vTable, club: vClub })[U.tab]();
+}
+function plRow(p, c, right, extra) {
+  const pv = GM.potView(p);
+  return `<div class="pl" data-p="${p.id}">${posTag(p)}<span class="ovr">${ovr(p)}</span><div class="nm"><b>${esc(p.name)}${p.inj ? '<span class="tag bad">けが' + p.inj + '</span>' : ""}${p.youth ? '<span class="tag">ユース</span>' : ""}</b><span>${p.age}歳・潜在 ${pv.exact ? pv.lo : pv.lo + "〜" + pv.hi}${c && c.id !== S().my ? "・" + esc(c.name) : ""}${extra || ""}</span></div><div class="rt">${right || ""}</div></div>`;
+}
+function bindPl(root) { (root || document).querySelectorAll(".pl[data-p]").forEach(el => el.onclick = () => openPlayer(+el.dataset.p)); }
+
+/* ---------- ホーム ---------- */
+function vHome() {
+  const s = S(), c = ME(), done = s.week >= s.fixtures.length;
+  const nx = !done ? s.fixtures[s.week].find(f => f[0] === s.my || f[1] === s.my) : null;
+  const opp = nx ? GM.club(nx[0] === s.my ? nx[1] : nx[0]) : null, home = nx && nx[0] === s.my;
+  const my = GM.teamStr(c), op = opp ? GM.teamStr(opp) : null;
+  const tb = GM.table(), r = tb.indexOf(c);
+  const exp = GM.expiring();
+  $("#main").innerHTML = `
+  ${done ? `<div class="card"><h3>シーズン終了</h3><p class="small muted">全34節が終わりました。シーズンを締めて、表彰・年齢・契約・ユースの処理をします。</p><button class="b p big" id="endS">シーズンを終える</button></div>` :
+  `<div class="card"><h3>第${s.week + 1}節　${home ? "ホーム" : "アウェイ"}</h3>
+    <div class="row">${clubDot(c)}<b>${esc(c.name)}</b><span class="muted">vs</span>${clubDot(opp)}<b>${esc(opp.name)}</b><span class="muted small">（${tb.indexOf(opp) + 1}位）</span></div>
+    ${["att", "mid", "def"].map((k, i) => `<div class="stat"><span class="small muted">${["攻撃", "中盤", "守備"][i]}</span><div class="bar"><i style="width:${Math.round(my[k] / (my[k] + op[k]) * 100)}%"></i></div><span class="small">${Math.round(my[k])}</span></div>`).join("")}
+    <p class="hint">赤い帯が長いほどこちらが上。相手は ${Math.round(op.att)} / ${Math.round(op.mid)} / ${Math.round(op.def)}。</p>
+    ${s.windowOpen ? '<p class="hint good">移籍期間中です（移籍タブで他クラブの選手を獲得できます）。</p>' : ""}
+    <div class="row" style="margin-top:8px"><button class="b p sp" id="go">試合を見る</button><button class="b" id="quick">結果だけ</button></div></div>`}
+  ${exp.length ? `<div class="card"><h3>契約満了の選手（${exp.length}人）</h3>${exp.map(p => plRow(p, c, `<button class="b" data-rn="${p.id}">延長</button> <button class="b" data-rl="${p.id}">退団</button>`)).join("")}</div>` : ""}
+  ${s.offers.length ? `<div class="card"><h3>届いているオファー</h3>${s.offers.map(o => { const p = c.players.find(q => q.id === o.pid); return p ? plRow(p, c, `<b>${yen(o.amt)}</b><br><button class="b" data-ao="${o.id}">売る</button>`, "・" + esc(GM.club(o.from).name)) : ""; }).join("")}<p class="hint">オファーは2節で消えます。</p></div>` : ""}
+  <div class="card"><h3>順位（上位と自分）</h3>${miniTable(tb, r)}</div>
+  <div class="card news"><h3>ニュース</h3>${s.news.slice(0, 10).map(n => `<div><span class="muted small">S${n.s} 第${n.w}節後</span> ${esc(n.t)}</div>`).join("") || '<p class="muted small">まだありません</p>'}</div>`;
+  if ($("#go")) $("#go").onclick = () => { const m = GM.playWeek(); U.match = m; U.tab = "match"; render(); };
+  if ($("#quick")) $("#quick").onclick = () => { const m = GM.playWeek(); U.match = m; U.match.instant = true; U.tab = "match"; render(); };
+  if ($("#endS")) $("#endS").onclick = () => { const rec = GM.endSeason(); U.lastRec = rec; render(); showSeasonEnd(rec); };
+  document.querySelectorAll("[data-rn]").forEach(b => b.onclick = e => { e.stopPropagation(); GM.renew(+b.dataset.rn, true); render(); });
+  document.querySelectorAll("[data-rl]").forEach(b => b.onclick = e => { e.stopPropagation(); GM.renew(+b.dataset.rl, false); render(); });
+  document.querySelectorAll("[data-ao]").forEach(b => b.onclick = e => { e.stopPropagation(); const r2 = GM.acceptOffer(+b.dataset.ao); toast(r2.msg); render(); });
+  bindPl();
+}
+function miniTable(tb, r) {
+  const idx = [0, 1, 2, 3, 4].concat([r - 1, r, r + 1]).filter((x, i, a) => x >= 0 && x < tb.length && a.indexOf(x) === i).sort((a, b) => a - b);
+  return `<table><tr><th>#</th><th>クラブ</th><th class="n">試</th><th class="n">差</th><th class="n">点</th></tr>${idx.map(i => { const c = tb[i]; return `<tr class="${c.id === S().my ? "me" : ""}"><td>${i + 1}</td><td>${clubDot(c)}${esc(c.name)}</td><td class="n">${c.w + c.d + c.l}</td><td class="n">${c.gf - c.ga}</td><td class="n">${GM.pts(c)}</td></tr>`; }).join("")}</table>`;
+}
+function showSeasonEnd(rec) {
+  modal(`<h3>第${rec.season}シーズン 終了</h3><p>優勝：<b>${esc(rec.champion)}</b></p><p>${esc(rec.my)}：<b>${rec.myRank}位</b>（${rec.pts}点）</p>${rec.top ? `<p class="small">得点王：${esc(rec.top.name)}（${esc(rec.top.club)}）${rec.top.goals}点</p>` : ""}${rec.mvp ? `<p class="small">MVP：${esc(rec.mvp.name)}（${esc(rec.mvp.club)}）平均評価 ${rec.mvp.r}</p>` : ""}<p class="small muted">賞金・スポンサー収入が入り、選手は1つ年を取りました。ユースから新しい選手が上がっています。契約満了の選手はホームで延長か退団を決めてください。</p><button class="b p big" data-x>次のシーズンへ</button>`);
+}
+
+/* ---------- 試合 ---------- */
+let anim = null;
+function stopAnim() { if (anim) { cancelAnimationFrame(anim.raf); anim = null; } }
+function vMatch() {
+  const m = U.match || S().lastMatch;
+  if (!m) { $("#main").innerHTML = `<div class="card"><p class="muted">まだ試合がありません。ホームから次の試合を始めてください。</p></div>`; return; }
+  const H = GM.club(m.h), A = GM.club(m.a);
+  $("#main").innerHTML = `<div class="card">
+    <div class="small muted" style="text-align:center">第${m.week}節</div>
+    <div class="score"><div class="tm">${clubDot(H)}<b>${esc(H.name)}</b></div><div class="s" id="sc">0 - 0</div><div class="tm r"><b>${esc(A.name)}</b>${clubDot(A)}</div></div>
+    <div style="text-align:center" class="small muted" id="clock">0'</div>
+    <canvas id="pitch" width="640" height="420"></canvas>
+    <div class="row" style="margin-top:8px"><button class="b" data-sp="1">×1</button><button class="b" data-sp="3">×3</button><button class="b" id="skip">結果まで</button><span class="sp"></span><button class="b p" id="back">ホームへ</button></div></div>
+    <div class="card"><h3>実況</h3><div class="feed" id="feed"></div></div>
+    <div class="card" id="statsCard" style="display:none"></div>`;
+  $("#back").onclick = () => { stopAnim(); U.tab = "home"; render(); };
+  document.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => { if (anim) anim.speed = +b.dataset.sp; });
+  $("#skip").onclick = () => { if (anim) anim.t = 91; };
+  runAnim(m, !!m.instant || m === S().lastMatch && m.shown);
+}
+function nameOf(id) { const [p] = GM.findP(id); return p ? p.name : "?"; }
+function runAnim(m, instant) {
+  stopAnim();
+  const H = GM.club(m.h), A = GM.club(m.a), cv = $("#pitch"), ctx = cv.getContext("2d"), W = cv.width, Hh = cv.height;
+  const colA = (H.color === A.color || near(H.color, A.color)) ? A.color2 : A.color;
+  const slots = (xi, home) => { const by = { GK: [], DF: [], MF: [], FW: [] }; xi.forEach(x => by[x.slot].push(x)); const out = []; const lines = { GK: 0.06, DF: 0.24, MF: 0.47, FW: 0.68 };
+    Object.keys(by).forEach(k => by[k].forEach((x, i, arr) => { const y = (i + 1) / (arr.length + 1); const bx = lines[k]; out.push({ id: x.id, bx: home ? bx : 1 - bx, by: y, x: 0, y: 0, ph: Math.random() * 6 }); })); return out; };
+  const ph = slots(m.xiH, true), pa = slots(m.xiA, false);
+  const evs = m.ev.slice(); let ei = 0, gh = 0, ga = 0;
+  const st = { t: 0, speed: 1, ball: { x: 0.5, y: 0.5, tx: 0.5, ty: 0.5 }, poss: "H", flash: 0, last: 0, raf: 0 };
+  anim = st;
+  const feed = $("#feed");
+  const say = (txt, cls) => { const d = document.createElement("div"); if (cls) d.className = cls; d.innerHTML = txt; feed.prepend(d); };
+  say(`<span class="muted">キックオフ。支配率の見込み ${Math.round(m.posH * 100)}% - ${Math.round((1 - m.posH) * 100)}%</span>`);
+  const fin = () => {
+    $("#sc").textContent = m.gh + " - " + m.ga; $("#clock").textContent = "試合終了";
+    m.shown = true; showStats(m);
+  };
+  const step = now => {
+    if (!anim) return;
+    const dt = Math.min(50, now - (st.last || now)); st.last = now;
+    st.t += dt / 1000 * (90 / 30) * st.speed; // 30秒で90分（×1）
+    while (ei < evs.length && evs[ei].m <= st.t) {
+      const e = evs[ei++], side = e.side, tm = side === "H" ? H : A;
+      if (e.type === "goal") { side === "H" ? gh++ : ga++; st.flash = 1; st.poss = side; st.ball.tx = side === "H" ? 0.985 : 0.015; st.ball.ty = 0.5; say(`<b>${e.m}' ⚽ ゴール！</b> ${clubDot(tm)}${esc(nameOf(e.pid))}${e.aid ? `<span class="muted">（アシスト ${esc(nameOf(e.aid))}）</span>` : ""}`); }
+      else if (e.type === "shot") { st.poss = side; st.ball.tx = side === "H" ? 0.93 : 0.07; st.ball.ty = 0.3 + Math.random() * 0.4; say(`${e.m}' ${clubDot(tm)}${esc(nameOf(e.pid))} のシュート`, "muted"); }
+      else if (e.type === "inj") say(`${e.m}' ${clubDot(tm)}${esc(nameOf(e.pid))} が負傷`, "bad");
+    }
+    $("#sc").textContent = gh + " - " + ga; $("#clock").textContent = Math.min(90, Math.floor(st.t)) + "'";
+    // ボール：保持側の選手のあいだを動く
+    if (Math.random() < 0.02 * st.speed) { st.poss = Math.random() < m.posH ? "H" : "A"; const team = st.poss === "H" ? ph : pa, q = team[1 + Math.floor(Math.random() * (team.length - 1))]; if (q) { st.ball.tx = q.x || q.bx; st.ball.ty = q.y || q.by; } }
+    const b = st.ball; b.x += (b.tx - b.x) * 0.06; b.y += (b.ty - b.y) * 0.06;
+    draw(ctx, W, Hh, ph, pa, b, H.color, colA, st, now);
+    if (st.flash > 0) st.flash -= 0.02;
+    if (st.t >= 90) { fin(); stopAnim(); return; }
+    st.raf = requestAnimationFrame(step);
+  };
+  if (instant) { evs.filter(e => e.type !== "shot").forEach(e => { const tm = e.side === "H" ? H : A; if (e.type === "goal") say(`<b>${e.m}' ⚽</b> ${clubDot(tm)}${esc(nameOf(e.pid))}${e.aid ? `<span class="muted">（${esc(nameOf(e.aid))}）</span>` : ""}`); else say(`${e.m}' ${clubDot(tm)}${esc(nameOf(e.pid))} 負傷`, "bad"); }); ph.concat(pa).forEach(p => { p.x = p.bx; p.y = p.by; }); draw(ctx, W, Hh, ph, pa, st.ball, H.color, colA, st, 0); fin(); anim = null; return; }
+  st.raf = requestAnimationFrame(step);
+}
+function near(a, b) { const h = s => [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16)); const x = h(a), y = h(b); return Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) + Math.abs(x[2] - y[2]) < 120; }
+function draw(ctx, W, H, ph, pa, ball, cH, cA, st, now) {
+  const css = getComputedStyle(document.documentElement);
+  ctx.fillStyle = css.getPropertyValue("--pitch") || "#2f7d3e"; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = css.getPropertyValue("--pitch2") || "#2a7238"; for (let i = 0; i < 10; i += 2) ctx.fillRect(i * W / 10, 0, W / 10, H);
+  ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 2; const m = 14;
+  ctx.strokeRect(m, m, W - 2 * m, H - 2 * m); ctx.beginPath(); ctx.moveTo(W / 2, m); ctx.lineTo(W / 2, H - m); ctx.stroke();
+  ctx.beginPath(); ctx.arc(W / 2, H / 2, 46, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeRect(m, H / 2 - 80, 70, 160); ctx.strokeRect(W - m - 70, H / 2 - 80, 70, 160);
+  ctx.strokeRect(m - 6, H / 2 - 28, 6, 56); ctx.strokeRect(W - m, H / 2 - 28, 6, 56);
+  const t = now / 1000, poss = st.poss;
+  const move = (arr, home) => arr.forEach(p => {
+    const push = (poss === "H" ? 1 : -1) * 0.07 * (home ? 1 : 1);
+    const tx = clamp01(p.bx + push + Math.sin(t * 0.9 + p.ph) * 0.025 + (ball.x - 0.5) * 0.18), ty = clamp01(p.by + Math.cos(t * 0.7 + p.ph) * 0.03 + (ball.y - p.by) * 0.12);
+    p.x = p.x ? p.x + (tx - p.x) * 0.05 : tx; p.y = p.y ? p.y + (ty - p.y) * 0.05 : ty;
+    ctx.beginPath(); ctx.arc(m + p.x * (W - 2 * m), m + p.y * (H - 2 * m), 9, 0, Math.PI * 2); ctx.fillStyle = home ? cH : cA; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.stroke();
+  });
+  move(ph, true); move(pa, false);
+  ctx.beginPath(); ctx.arc(m + ball.x * (W - 2 * m), m + ball.y * (H - 2 * m), 5, 0, Math.PI * 2); ctx.fillStyle = "#fff"; ctx.fill(); ctx.strokeStyle = "#111"; ctx.lineWidth = 1; ctx.stroke();
+  if (st.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${st.flash * 0.35})`; ctx.fillRect(0, 0, W, H); ctx.fillStyle = `rgba(255,255,255,${Math.min(1, st.flash * 1.5)})`; ctx.font = "bold 54px sans-serif"; ctx.textAlign = "center"; ctx.fillText("GOAL!", W / 2, H / 2 + 18); }
+}
+const clamp01 = v => Math.max(0.02, Math.min(0.98, v));
+function showStats(m) {
+  const H = GM.club(m.h), A = GM.club(m.a), card = $("#statsCard"); if (!card) return;
+  const row = (l, a, b, fmt) => { const t = (a + b) || 1; return `<div class="stat" style="grid-template-columns:40px 1fr 70px 1fr 40px"><b class="small" style="text-align:right">${fmt ? fmt(a) : a}</b><div class="bar" style="direction:rtl"><i style="width:${a / t * 100}%;background:${esc(H.color)}"></i></div><span class="small muted" style="text-align:center">${l}</span><div class="bar"><i style="width:${b / t * 100}%;background:${esc(A.color)}"></i></div><b class="small">${fmt ? fmt(b) : b}</b></div>`; };
+  const xi = (arr, c) => arr.map(x => { const [p] = GM.findP(x.id); return p ? `<tr><td><span class="pos ${x.slot}">${x.slot}</span></td><td>${esc(p.name)}</td><td class="n">${x.r != null ? x.r.toFixed(1) : "-"}</td></tr>` : ""; }).join("");
+  card.style.display = "";
+  card.innerHTML = `<h3>スタッツ</h3>${row("支配率", Math.round(m.posH * 100), Math.round((1 - m.posH) * 100), v => v + "%")}${row("シュート", m.shH, m.shA)}${row("得点期待値", +m.xH.toFixed(1), +m.xA.toFixed(1))}
+  <p class="small muted">観客 ${m.att ? m.att.toLocaleString() + "人" : "-"}</p>
+  <div class="row" style="align-items:flex-start"><div class="sp"><b class="small">${esc(H.name)}</b><table>${xi(m.xiH, H)}</table></div><div class="sp"><b class="small">${esc(A.name)}</b><table>${xi(m.xiA, A)}</table></div></div>`;
+}
+
+/* ---------- チーム ---------- */
+function vTeam() {
+  const c = ME(), sub = U.sub.team || "xi";
+  const seg = `<div class="seg">${[["xi", "スタメン"], ["all", "全選手"], ["train", "練習"]].map(([k, l]) => `<button class="${sub === k ? "on" : ""}" data-sub="${k}">${l}</button>`).join("")}</div>`;
+  let body = "";
+  if (sub === "xi") {
+    const xi = GM.lineupPlayers(c), ids = new Set(xi.map(x => x.p.id)), bench = c.players.filter(p => !ids.has(p.id)).sort((a, b) => ovr(b) - ovr(a));
+    const ts = GM.teamStr(c);
+    body = `<div class="card"><div class="row"><b>陣形</b><select id="form">${Object.keys(GM.FORMS).map(f => `<option ${c.form === f ? "selected" : ""}>${f}</option>`).join("")}</select><span class="sp"></span><button class="b" id="auto">おまかせ</button></div>
+      <p class="hint">入れ替えたい2人を順にタップ（スタメン↔控え、スタメンどうしで位置の入れ替え）。選手の詳しい情報は「全選手」から。</p>
+      <div class="stat"><span class="small muted">攻撃</span><div class="bar"><i style="width:${Math.min(100, ts.att)}%"></i></div><span class="small">${Math.round(ts.att)}</span></div>
+      <div class="stat"><span class="small muted">中盤</span><div class="bar"><i style="width:${Math.min(100, ts.mid)}%"></i></div><span class="small">${Math.round(ts.mid)}</span></div>
+      <div class="stat"><span class="small muted">守備</span><div class="bar"><i style="width:${Math.min(100, ts.def)}%"></i></div><span class="small">${Math.round(ts.def)}</span></div></div>
+      <div class="card"><h3>スタメン（${xi.length}/11）</h3>${xi.map(x => swapRow(x.p, x.slot)).join("")}</div>
+      <div class="card"><h3>控え（${bench.length}人）</h3>${bench.map(p => swapRow(p, null)).join("")}</div>`;
+  } else if (sub === "all") {
+    const sort = U.sub.sort || "pos", list = c.players.slice().sort(sort === "ovr" ? (a, b) => ovr(b) - ovr(a) : sort === "age" ? (a, b) => a.age - b.age : (a, b) => GM.POS.indexOf(a.pos) - GM.POS.indexOf(b.pos) || ovr(b) - ovr(a));
+    body = `<div class="card"><div class="seg">${[["pos", "ポジション順"], ["ovr", "能力順"], ["age", "若い順"]].map(([k, l]) => `<button class="${sort === k ? "on" : ""}" data-sort="${k}">${l}</button>`).join("")}</div>${list.map(p => plRow(p, c, `${p.goals}点<br>${p.apps ? (p.rsum / p.apps).toFixed(1) : "-"}`)).join("")}<p class="hint">右は今季の得点と平均評価。名前をタップで詳細（名前の変更・売り出し・契約解除）。</p></div>`;
+  } else {
+    body = `<div class="card"><h3>練習方針</h3><p class="small muted">若くて潜在能力に余裕のある選手ほど伸びます。練習場のレベルで伸びが早くなります。試合に出た選手は少し伸びやすくなります。</p>${Object.keys(GM.TRAIN).map(k => `<label class="row" style="padding:6px 0"><input type="radio" name="tr" value="${k}" ${c.train === k ? "checked" : ""}> <b>${k}</b><span class="small muted">${{ バランス: "全体をまんべんなく", 攻撃: "攻撃が伸びやすい", 守備: "守備（GKはセーブ）が伸びやすい", パス: "パスが伸びやすい", 体力: "体力が伸びやすい" }[k]}</span></label>`).join("")}</div>`;
+  }
+  $("#main").innerHTML = seg + body;
+  document.querySelectorAll("[data-sub]").forEach(b => b.onclick = () => { U.sub.team = b.dataset.sub; U.selSwap = null; render(); });
+  document.querySelectorAll("[data-sort]").forEach(b => b.onclick = () => { U.sub.sort = b.dataset.sort; render(); });
+  if ($("#form")) $("#form").onchange = e => { c.form = e.target.value; GM.autoLineup(c); GM.save(); render(); };
+  if ($("#auto")) $("#auto").onclick = () => { GM.autoLineup(c); GM.save(); render(); toast("スタメンを組み直しました"); };
+  document.querySelectorAll("input[name=tr]").forEach(r => r.onchange = () => { c.train = r.value; GM.save(); toast("練習方針：" + r.value); render(); });
+  document.querySelectorAll(".pl[data-sw]").forEach(el => el.onclick = () => doSwap(+el.dataset.sw));
+  if (sub === "all") bindPl();
+}
+function swapRow(p, slot) {
+  const sel = U.selSwap === p.id, off = slot && p.pos !== slot;
+  return `<div class="pl ${sel ? "sel" : ""}" data-sw="${p.id}">${slot ? `<span class="pos ${slot}">${slot}</span>` : posTag(p)}<span class="ovr">${slot ? GM.slotOvr(p, slot) : ovr(p)}</span><div class="nm"><b>${esc(p.name)}${p.inj ? '<span class="tag bad">けが' + p.inj + '</span>' : ""}${off ? '<span class="tag bad">本職' + p.pos + '</span>' : ""}</b><span>${p.age}歳・調子 ${p.form > 0.8 ? "↑" : p.form < -0.8 ? "↓" : "→"}・攻${p.att} 守${p.def} パ${p.pas} 体${p.sta}</span></div></div>`;
+}
+function doSwap(id) {
+  const c = ME(); if (U.selSwap == null) { U.selSwap = id; render(); return; }
+  if (U.selSwap === id) { U.selSwap = null; render(); return; }
+  const L = c.lineup, a = L.find(s => s.id === U.selSwap), b = L.find(s => s.id === id);
+  if (a && b) { const t = a.slot; a.slot = b.slot; b.slot = t; }
+  else if (a || b) { const inL = a || b, other = a ? id : U.selSwap; inL.id = other; }
+  U.selSwap = null; GM.save(); render();
+}
+
+/* ---------- 移籍 ---------- */
+function vMarket() {
+  const s = S(), sub = U.sub.mk || "buy";
+  const seg = `<div class="seg">${[["buy", "他クラブ"], ["free", "フリー"], ["sell", "売りに出す"]].map(([k, l]) => `<button class="${sub === k ? "on" : ""}" data-mk="${k}">${l}</button>`).join("")}</div>`;
+  const f = U.sub.f || { pos: "", sort: "ovr", maxAge: 40, afford: false };
+  const filt = `<div class="card"><div class="row"><select id="fpos"><option value="">全ポジション</option>${GM.POS.map(p => `<option ${f.pos === p ? "selected" : ""}>${p}</option>`).join("")}</select><select id="fsort">${[["ovr", "能力順"], ["pot", "潜在順"], ["cheap", "安い順"], ["young", "若い順"]].map(([k, l]) => `<option value="${k}" ${f.sort === k ? "selected" : ""}>${l}</option>`).join("")}</select><select id="fage">${[[40, "年齢指定なし"], [23, "23歳以下"], [26, "26歳以下"], [29, "29歳以下"]].map(([k, l]) => `<option value="${k}" ${+f.maxAge === k ? "selected" : ""}>${l}</option>`).join("")}</select><label class="small"><input type="checkbox" id="faff" ${f.afford ? "checked" : ""}> 買える額だけ</label></div></div>`;
+  let body = "";
+  const sorter = (a, b) => f.sort === "pot" ? GM.potView(b[0]).hi - GM.potView(a[0]).hi : f.sort === "cheap" ? price(a) - price(b) : f.sort === "young" ? a[0].age - b[0].age : ovr(b[0]) - ovr(a[0]);
+  const price = ([p, c]) => c ? GM.askPrice(p) : 0;
+  if (sub === "buy" || sub === "free") {
+    let list = sub === "buy" ? s.clubs.filter(c => c.id !== s.my).flatMap(c => c.players.map(p => [p, c])) : s.free.map(p => [p, null]);
+    list = list.filter(([p, c]) => (!f.pos || p.pos === f.pos) && p.age <= f.maxAge && (!f.afford || price([p, c]) + p.wage <= ME().budget)).sort(sorter).slice(0, 60);
+    body = filt + `<div class="card">${sub === "buy" && !s.windowOpen ? '<p class="small bad">移籍期間外です。他クラブの選手は、次の移籍期間（シーズン開幕〜第2節、第17〜18節のあと）に獲得できます。フリーの選手はいつでも契約できます。</p>' : ""}${list.map(([p, c]) => plRow(p, c, c ? yen(GM.askPrice(p)) : "年俸<br>" + yen(p.wage))).join("") || '<p class="muted small">該当する選手がいません</p>'}<p class="hint">潜在能力は推定の幅で表示（スカウト網のレベルと、スカウト派遣で正確になります）。上位60人まで表示。</p></div>`;
+  } else {
+    const c = ME();
+    body = `<div class="card"><h3>売りに出す</h3><p class="small muted">売りに出した選手には、毎節ほかのクラブからオファーが届くことがあります。オファーはホームで受けられます。</p>${c.players.slice().sort((a, b) => ovr(b) - ovr(a)).map(p => { const on = s.listed.includes(p.id); return plRow(p, c, `${yen(p.value)}<br><button class="b ${on ? "p" : ""}" data-ls="${p.id}">${on ? "売り出し中" : "売りに出す"}</button>`); }).join("")}</div>`;
+  }
+  $("#main").innerHTML = seg + body;
+  document.querySelectorAll("[data-mk]").forEach(b => b.onclick = () => { U.sub.mk = b.dataset.mk; render(); });
+  const upd = () => { U.sub.f = { pos: $("#fpos").value, sort: $("#fsort").value, maxAge: +$("#fage").value, afford: $("#faff").checked }; render(); };
+  ["#fpos", "#fsort", "#fage", "#faff"].forEach(k => { if ($(k)) $(k).onchange = upd; });
+  document.querySelectorAll("[data-ls]").forEach(b => b.onclick = e => { e.stopPropagation(); const id = +b.dataset.ls, L = S().listed; const i = L.indexOf(id); if (i >= 0) L.splice(i, 1); else L.push(id); GM.save(); render(); });
+  bindPl();
+}
+
+/* ---------- 選手の詳細 ---------- */
+function openPlayer(id) {
+  const [p, c] = GM.findP(id); if (!p) return;
+  const mine = c && c.id === S().my, pv = GM.potView(p);
+  const bar = (l, v) => `<div class="stat"><span class="small muted">${l}</span><div class="bar"><i style="width:${v}%"></i></div><span class="small">${v}</span></div>`;
+  modal(`<div class="row">${posTag(p)}<h3 style="margin:0" class="sp">${esc(p.name)}</h3><span class="ovr">${ovr(p)}</span></div>
+    <p class="small muted">${p.age}歳・${c ? esc(c.name) : "フリー"}・契約残り ${p.contract} 年・年俸 ${yen(p.wage)}・市場価値 ${yen(p.value)}</p>
+    ${bar("攻撃", p.att)}${bar(p.pos === "GK" ? "セーブ" : "守備", p.def)}${bar("パス", p.pas)}${bar("体力", p.sta)}
+    <p class="small">潜在能力：<b>${pv.exact ? pv.lo : pv.lo + "〜" + pv.hi}</b>${pv.exact ? "" : "（推定）"}</p>
+    <p class="small muted">今季 ${p.apps}試合 ${p.goals}得点 ${p.assists}アシスト${p.apps ? "・平均評価 " + (p.rsum / p.apps).toFixed(2) : ""}／通算 ${p.career.apps}試合 ${p.career.goals}得点</p>
+    ${mine ? `<div class="row"><input type="text" id="rn" value="${esc(p.name)}" class="sp"><button class="b" id="rnb">名前を変える</button></div>
+      <div class="row" style="margin-top:8px"><button class="b" id="lst">${S().listed.includes(p.id) ? "売り出しをやめる" : "売りに出す"}</button><button class="b" id="rel">契約解除</button></div>`
+    : `<div class="row" style="margin-top:8px">${c ? `<button class="b p sp" id="buy">${yen(GM.askPrice(p))} で獲得</button><button class="b" id="off">値切る（-10%）</button>` : `<button class="b p sp" id="buy">年俸 ${yen(p.wage)} で契約</button>`}${pv.exact || S().scouted[p.id] ? "" : '<button class="b" id="sct">スカウト派遣（60万円）</button>'}</div>`}
+    <button class="b big" style="margin-top:10px" data-x>閉じる</button>`);
+  const on = (k, f) => { const el = document.getElementById(k); if (el) el.onclick = f; };
+  on("rnb", () => { const v = $("#rn").value.trim(); if (v) { p.name = v.slice(0, 20); GM.save(); closeModal(); render(); toast("名前を変えました"); } });
+  on("lst", () => { const L = S().listed, i = L.indexOf(p.id); if (i >= 0) L.splice(i, 1); else L.push(p.id); GM.save(); closeModal(); render(); });
+  on("rel", () => { if (!confirm(p.name + " との契約を解除しますか？（残り契約の半分を違約金として払います）")) return; const r = GM.release(p.id); toast(r.msg); closeModal(); render(); });
+  on("buy", () => { const r = GM.buy(p.id); toast(r.msg); if (r.ok) { closeModal(); render(); } });
+  on("off", () => { const r = GM.buy(p.id, Math.round(GM.askPrice(p) * 0.9 / 10) * 10); toast(r.msg); if (r.ok) { closeModal(); render(); } });
+  on("sct", () => { const r = GM.scout(p.id); toast(r.msg); closeModal(); openPlayer(p.id); render(); });
+}
+function modal(html) { closeModal(); const m = document.createElement("div"); m.className = "modal"; m.id = "modal"; m.innerHTML = `<div class="sheet">${html}</div>`; m.onclick = e => { if (e.target === m || e.target.hasAttribute("data-x")) closeModal(); }; document.body.appendChild(m); }
+function closeModal() { const m = document.getElementById("modal"); if (m) m.remove(); }
+
+/* ---------- 順位 ---------- */
+function vTable() {
+  const sub = U.sub.tb || "league", tb = GM.table();
+  const seg = `<div class="seg">${[["league", "順位表"], ["scorer", "得点王"], ["hist", "歴代"]].map(([k, l]) => `<button class="${sub === k ? "on" : ""}" data-tb="${k}">${l}</button>`).join("")}</div>`;
+  let body = "";
+  if (sub === "league") body = `<div class="card" style="overflow-x:auto"><table><tr><th>#</th><th>クラブ</th><th class="n">勝</th><th class="n">分</th><th class="n">負</th><th class="n">得</th><th class="n">失</th><th class="n">点</th></tr>${tb.map((c, i) => `<tr class="${c.id === S().my ? "me" : ""}"><td>${i + 1}</td><td>${clubDot(c)}${esc(c.name)}</td><td class="n">${c.w}</td><td class="n">${c.d}</td><td class="n">${c.l}</td><td class="n">${c.gf}</td><td class="n">${c.ga}</td><td class="n"><b>${GM.pts(c)}</b></td></tr>`).join("")}</table></div>`;
+  else if (sub === "scorer") { const all = S().clubs.flatMap(c => c.players.map(p => [p, c])).filter(([p]) => p.goals > 0).sort((a, b) => b[0].goals - a[0].goals || b[0].assists - a[0].assists).slice(0, 20); body = `<div class="card">${all.map(([p, c], i) => plRow(p, c, `<b>${p.goals}点</b><br>${p.assists}A`)).join("") || '<p class="muted small">まだ得点がありません</p>'}</div>`; }
+  else body = `<div class="card">${S().history.slice().reverse().map(h => `<div class="pl"><div class="nm"><b>第${h.season}シーズン 優勝 ${esc(h.champion)}</b><span>${esc(h.my)} ${h.myRank}位（${h.pts}点）${h.top ? "・得点王 " + esc(h.top.name) + " " + h.top.goals + "点" : ""}${h.mvp ? "・MVP " + esc(h.mvp.name) : ""}</span></div></div>`).join("") || '<p class="muted small">まだ記録がありません</p>'}</div>`;
+  $("#main").innerHTML = seg + body;
+  document.querySelectorAll("[data-tb]").forEach(b => b.onclick = () => { U.sub.tb = b.dataset.tb; render(); });
+  bindPl();
+}
+
+/* ---------- クラブ ---------- */
+function vClub() {
+  const c = ME(), wages = c.players.reduce((t, p) => t + p.wage, 0);
+  $("#main").innerHTML = `<div class="card"><h3>お金</h3><p>予算 <b>${yen(c.budget)}</b>・年俸の合計 ${yen(wages)}（毎節 ${yen(wages / 34)} ずつ払う）</p><p class="small muted">収入はホームの観客、シーズン終了の賞金（順位が高いほど多い）とスポンサー（人気が高いほど多い）。人気 ${Math.round(c.pop)}。</p></div>
+  <div class="card"><h3>施設</h3>${Object.keys(GM.FAC).map(k => `<div class="pl"><div class="nm"><b>${GM.FAC[k][0]}　Lv.${c.fac[k]}</b><span>${GM.FAC[k][1]}</span></div><div class="rt">${c.fac[k] >= 5 ? "最大" : `<button class="b" data-up="${k}">${yen(GM.facCost(c.fac[k]))}</button>`}</div></div>`).join("")}</div>
+  <div class="card"><h3>クラブ名・カラー</h3><div class="row"><input type="text" id="cn" value="${esc(c.name)}" class="sp"><button class="b" id="cnb">変える</button></div><div class="row" style="margin-top:8px"><span class="small">メイン</span><input type="color" id="c1" value="${esc(c.color)}"><span class="small">サブ</span><input type="color" id="c2" value="${esc(c.color2)}"><button class="b" id="cb">色を変える</button></div>
+  <p class="hint">ほかのクラブの名前も変えられます：</p><div class="row"><select id="oc">${S().clubs.filter(x => x.id !== c.id).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select><input type="text" id="ocn" placeholder="新しい名前" class="sp"><button class="b" id="ocb">変える</button></div></div>
+  <div class="card"><h3>セーブ</h3><p class="small muted">進み具合はこの端末のブラウザに自動で保存されます。別の端末に移すときや、念のための控えには書き出してください。</p><div class="row"><button class="b" id="ex">セーブデータを書き出す</button><button class="b" id="restart">最初からやり直す</button></div><textarea id="exo" style="width:100%;height:70px;margin-top:8px;display:none" readonly></textarea></div>
+  <div class="card"><h3>遊び方のコツ</h3><ul class="small muted" style="margin:0;padding-left:1.2em"><li>若くて潜在能力の高い選手を安く買って育て、高く売るのが基本。</li><li>移籍期間はシーズン開幕〜第2節と、第17〜18節のあと。フリーの選手はいつでも契約できます。</li><li>スカウト網を上げると、移籍市場の潜在能力が正確に見えるようになります。</li><li>ホーム画面に追加すると、アプリのように起動できます（Safari の共有 → ホーム画面に追加）。</li></ul></div>`;
+  document.querySelectorAll("[data-up]").forEach(b => b.onclick = () => { const r = GM.upgrade(b.dataset.up); toast(r.msg); render(); });
+  $("#cnb").onclick = () => { const v = $("#cn").value.trim(); if (v) { c.name = v.slice(0, 24); GM.save(); render(); toast("クラブ名を変えました"); } };
+  $("#cb").onclick = () => { c.color = $("#c1").value; c.color2 = $("#c2").value; GM.save(); render(); };
+  $("#ocb").onclick = () => { const o = GM.club(+$("#oc").value), v = $("#ocn").value.trim(); if (o && v) { o.name = v.slice(0, 24); GM.save(); render(); toast("名前を変えました"); } };
+  $("#ex").onclick = () => { const t = $("#exo"); t.style.display = ""; t.value = GM.exportSave(); t.select(); try { navigator.clipboard.writeText(t.value); toast("コピーしました"); } catch (e) { } };
+  $("#restart").onclick = () => { if (confirm("今のセーブを消して最初からやり直しますか？（元に戻せません）")) { GM.wipe(); startScreen(); } };
+}
+
+boot();
+</script>
+</body>
+</html>
