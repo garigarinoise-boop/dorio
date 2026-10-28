@@ -1008,7 +1008,8 @@ function vRace() {
 // 今この瞬間の差（秒）：何周目のどこにいるかで比べる（線を越えた直後でも「+1周」にならない）
 function gapSec(R, a, b) { const p = o => o.lap + Math.max(0, Math.min(1, (R.t - o.lapStart) / ((o.lapEnd - o.lapStart) || 1))), lt = b.lt > 0 ? b.lt : (a.lt || 90); return Math.max(0, (p(a) - p(b)) * lt); }
 const lapFmt = t => !t || t > 900 ? "-" : Math.floor(t / 60) + ":" + (t % 60).toFixed(1).padStart(4, "0");
-const shortN = n => { const p = String(n).split(/[・ ]/); return p[p.length - 1]; };
+// 短い名前：名の頭1文字＋姓（同じ姓が2人いても見分けられる）。日本人名（空白区切り）は姓だけ
+const shortN = n => { n = String(n); if (n.includes(" ")) return n.split(" ")[0]; const p = n.split("・"); return p.length > 1 ? p[0][0] + "." + p[p.length - 1] : n; };
 // 自分の2台：順位・前後との差・直前の1周を前後の車と比べる
 function drawStrip() {
   const R = S().race, el = $("#strip"); if (!R || !el) return;
