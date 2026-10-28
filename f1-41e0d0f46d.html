@@ -510,7 +510,7 @@ const F1 = (() => {
     f2Round(tr);
     ["aero", "chassis"].forEach(k => { const sp = specOf(me(), k); if (!sp.known) { sp.known = true; news(sp.label + " の実測：" + (k === "aero" ? AERO_K : CHAS_K).map(x => STAT_N[x] + sp[x]).join("・")); } });
     // 国のF1熱：勝った人の国、地元での勝利は特に
-    const wd = drv(w.id); if (S.nations[wd.nat]) S.nations[wd.nat].fever = clamp(S.nations[wd.nat].fever + (wd.nat === tr.c ? 2 : 0.4), 5, 100);
+    const wd = drv(w.id); if (S.nations[wd.nat]) S.nations[wd.nat].fever = clamp(S.nations[wd.nat].fever + (wd.nat === tr.c ? 1 : 0.15), 5, 100);
     S.round++; S.race = null;
     S.teams.forEach(tm => { if (tm.id !== S.my) aiDevelop(tm); });
     deliverAll();
@@ -675,9 +675,9 @@ const F1 = (() => {
   // 国のF1熱とGPの契約（毎年）
   function worldYear(tt, dt, rec) {
     const N = S.nations, host = new Set(S.calendar.map(id => TRACKS[id].c));
-    for (const c in N) { const n = N[c]; let f = n.fever + (40 - n.fever) * 0.08 + gauss() * 1.5 + (host.has(c) ? 2 : -1);
-      const ds = dt.filter(d => d.nat === c); f += Math.min(8, ds.reduce((a, d) => a + d.pts, 0) / 40) + ds.reduce((a, d) => a + d.wins, 0) * 1.5 + (dt[0] && dt[0].nat === c ? 8 : 0);
-      S.teams.forEach((tm, i) => { if (tm.nat === c) { const r = tt.indexOf(tm); f += r < 3 ? 3 : r < 6 ? 1 : 0; } });
+    for (const c in N) { const n = N[c]; let f = n.fever + (45 - n.fever) * 0.15, tb = 0; f += gauss() * 1.5 + (host.has(c) ? 2 : -1);
+      const ds = dt.filter(d => d.nat === c); f += Math.min(5, ds.reduce((a, d) => a + d.pts, 0) / 60) + Math.min(5, ds.reduce((a, d) => a + d.wins, 0) * 0.6) + (dt[0] && dt[0].nat === c ? 5 : 0);
+      S.teams.forEach((tm, i) => { if (tm.nat === c) { const r = tt.indexOf(tm); tb += r < 3 ? 2 : r < 6 ? 1 : 0.3; } }); f += Math.min(3, tb);
       n.fever = clamp(Math.round(f), 5, 100); n.hist = (n.hist || []).concat([n.fever]).slice(-10); }
     // スポンサー：チームの国の熱が高いと集まりやすい
     S.teams.forEach(tm => { tm.sponsor = clamp(Math.round(tm.sponsor + (feverF(tm.nat) - 1) * 6), 30, 140); });
