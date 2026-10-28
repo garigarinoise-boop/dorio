@@ -155,6 +155,8 @@ const F1 = (() => {
     if (d.tm >= 88) t.push("タイヤを長持ちさせる"); if (d.craft >= 88) t.push("バトルに強い"); if (d.sponsor) t.push("ペイドライバー（+$" + d.sponsor + "M）"); if (d.age <= 22 && d.pot >= d.pace + 6) t.push("伸びしろ大");
     return t;
   };
+  // F2 の若手：今は遅いが伸びしろ（pot）がある
+  function newF2Driver(age) { const d = newDriver(ri(60, 70), age, { pay: rnd() < 0.2, hot: rnd() < 0.2, name: rnd() < 0.05 ? pick(JP) : null }); d.pot = clamp(d.pace + ri(6, 24), d.pace, 97); d.f2 = { pts: 0, wins: 0, starts: 0 }; d.salary = 1; S.drivers[d.id] = d; return d; }
   function newStaff(kind, lvl) { return { id: uid++, kind, name: pick(STAFF_N) + "・" + pick(STAFF_L), skill: clamp(Math.round(lvl + gauss() * 5), 45, 97), salary: 0 }; }
 
   let S = null;
@@ -184,6 +186,10 @@ const F1 = (() => {
     [[74, 19, {}], [72, 20, {}], [76, 31, {}], [70, 22, { pay: 1 }], [68, 24, { pay: 1 }], [73, 21, { hot: 1 }], [78, 35, {}], [71, 19, {}], [69, 26, { pay: 1 }], [75, 28, {}]].forEach(([l, a, o]) => { const d = newDriver(l, a, o); S.drivers[d.id] = d; S.free.push(d.id); });
     for (let k = 0; k < 4; k++) { S.staffPool.push(newStaff("strat", ri(60, 90))); S.staffPool.push(newStaff("crew", ri(60, 92))); }
     S.staffPool.forEach(st => st.salary = Math.round(st.skill / (st.kind === "strat" ? 12 : 14)));
+    S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {};
+    for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id);
+    // ほかのチームのジュニア（強いチームほど持っている）
+    S.teams.forEach((tm, i) => { S.academy[tm.id] = []; const n = i < 4 ? 2 : i < 8 ? 1 : 0; for (let k = 0; k < n; k++) { const pool = S.f2.drivers.filter(id => !Object.values(S.academy).some(a => a.includes(id))); const best = pool.map(drv).sort((a, b) => b.pot - a.pot)[k * 2 + ri(0, 2)]; if (best) S.academy[tm.id].push(best.id); } });
     S.calendar = TRACKS.map(t => t.id);
     S.nextReg = { season: 3, type: "aero" };
     return S;
@@ -193,18 +199,20 @@ const F1 = (() => {
   function newEntrant(name, color, color2, puId) {
     const id = S.teams.length;
     const tm = { id, name: name || "新規参入チーム", short: (name || "新規").slice(0, 6), color: color || "#ffffff", color2: color2 || "#e10600", pu: puId || "fr", works: false, budget: 160, owner: 100, sponsor: 60, devp: 55, car: { aero: 70, chassis: 70, rel: 72 }, staff: { strat: newStaff("strat", 62), crew: newStaff("crew", 66) }, drivers: [], pts: 0, hist: [], entrant: true };
-    tm.staff.strat.salary = 5; tm.staff.crew.salary = 5; S.teams.push(tm);
+    tm.staff.strat.salary = 5; tm.staff.crew.salary = 5; S.teams.push(tm); S.academy[id] = [];
     S.my = id; S.phase = "drivers"; news(tm.name + " が新規参入。" + pu(tm.pu).name + " のPUを使う。"); save(); return tm;
   }
   // ドライバー選び：候補＝今のチームのドライバー＋空いているドライバー（他チームから引き抜くと移籍金）
-  function driverCandidates() { const tm = me(); return tm.drivers.concat(S.free).map(drv); }
+  function driverCandidates() { const tm = me(); return tm.drivers.concat(S.free, academyOf(tm.id)).map(drv); }
+  const academyOf = id => (S.academy && S.academy[id]) || [];
+  const isAcademy = (id, tid) => academyOf(tid).includes(id);
   function signCost(d) { const tm = me(); return tm.drivers.includes(d.id) ? 0 : Math.max(0, d.salary - d.sponsor); }
   function confirmDrivers(ids) {
     const tm = me(); if (ids.length !== 2) return { ok: false, msg: "2人選んでください" };
     const out = tm.drivers.filter(x => !ids.includes(x)), inn = ids.filter(x => !tm.drivers.includes(x));
-    const cost = inn.reduce((t, x) => t + Math.max(0, drv(x).salary * 0.5), 0);
+    const cost = inn.reduce((t, x) => t + (isAcademy(x, tm.id) ? 0 : Math.max(0, drv(x).salary * 0.5)), 0);
     if (cost > tm.budget) return { ok: false, msg: "予算が足りません" };
-    tm.budget -= cost; out.forEach(x => S.free.push(x)); S.free = S.free.filter(x => !inn.includes(x)); tm.drivers = ids.slice();
+    tm.budget -= cost; out.forEach(x => S.free.push(x)); S.free = S.free.filter(x => !inn.includes(x)); inn.forEach(x => { if (isAcademy(x, tm.id)) { S.academy[tm.id] = academyOf(tm.id).filter(y => y !== x); S.f2.drivers = S.f2.drivers.filter(y => y !== x); drv(x).salary = salaryOf(drv(x)); } }); tm.drivers = ids.slice();
     inn.forEach(x => { drv(x).contract = 2; tm.budget += drv(x).sponsor; });
     // 新規参入で空きが出たら、ほかのチームは困らない（空きは free から）
     S.phase = "season"; news("ドライバーは " + ids.map(x => drv(x).name).join("・") + "。"); save(); return { ok: true, msg: "ドライバーが決まりました" };
@@ -215,33 +223,63 @@ const F1 = (() => {
   const perfDelta = (tm, d, tr) => (75 - carPace(tm, tr)) * 0.045 + (82 - d.pace) * 0.03;
 
   // 戦略の見積もり
-  function stintCost(comp, laps, tr, tmF) { const T = TYRE[comp], w = tr.wear * S.regs.wear * (tmF || 1); let c = T.off * laps + T.deg * w * laps * (laps - 1) / 2; const life = T.life / w; if (laps > life) c += (laps - life) * (laps - life + 1) / 2 * 0.25; return c; }
-  function bestPlan(tr, d, wet) {
-    if (wet) return { start: wet > 0.65 ? "W" : "I", stops: [] };
-    const L = tr.laps, tmF = 1.12 - d.tm / 250, cands = [], C = ["S", "M", "H"];
-    for (const a of C) for (const b of C) { if (a === b) continue; for (let x = 8; x <= L - 8; x++) cands.push({ cost: stintCost(a, x, tr, tmF) + stintCost(b, L - x, tr, tmF) + tr.pit, plan: { start: a, stops: [{ lap: x, comp: b }] } }); }
-    for (const a of C) for (const b of C) for (const c of C) { if (a === b && b === c) continue; for (let x = 7; x <= L - 14; x += 2) for (let y = x + 7; y <= L - 7; y += 2) cands.push({ cost: stintCost(a, x, tr, tmF) + stintCost(b, y - x, tr, tmF) + stintCost(c, L - y, tr, tmF) + tr.pit * 2, plan: { start: a, stops: [{ lap: x, comp: b }, { lap: y, comp: c }] } }); }
+  // 第1スティントはタイヤの使用済み周回（age0）から数える
+  function stintCost(comp, laps, tr, tmF, age0) { age0 = age0 || 0; const T = TYRE[comp], w = tr.wear * S.regs.wear * (tmF || 1); let c = T.off * laps + T.deg * w * (laps * (laps - 1) / 2 + age0 * laps); const life = T.life / w, end = age0 + laps; if (end > life) { const from = Math.max(age0, life); c += (end - from) * (end - from + 1) / 2 * 0.25; } return c; }
+  // opt.start＝スタートのタイヤが決まっているとき、opt.age＝そのタイヤの使用済み周回
+  function bestPlan(tr, d, wet, opt) {
+    opt = opt || {};
+    if (wet) return { start: wet > 0.65 ? "W" : "I", stops: [], fuel: "std" };
+    const L = tr.laps, tmF = 1.12 - d.tm / 250, cands = [], C = ["S", "M", "H"], A = opt.start ? [opt.start] : C, lock = opt.start ? (opt.age || 0) : null;
+    for (const a of A) for (const b of C) { if (a === b) continue; const g = planAges({ start: a, stops: [{ comp: b }] }, opt.sets, lock); if (!g) continue; for (let x = 6; x <= L - 8; x++) cands.push({ cost: stintCost(a, x, tr, tmF, g[0]) + stintCost(b, L - x, tr, tmF, g[1]) + tr.pit, plan: { start: a, stops: [{ lap: x, comp: b }] } }); }
+    for (const a of A) for (const b of C) for (const c of C) { if (a === b && b === c) continue; const g = planAges({ start: a, stops: [{ comp: b }, { comp: c }] }, opt.sets, lock); if (!g) continue; for (let x = 5; x <= L - 14; x += 2) for (let y = x + 7; y <= L - 7; y += 2) cands.push({ cost: stintCost(a, x, tr, tmF, g[0]) + stintCost(b, y - x, tr, tmF, g[1]) + stintCost(c, L - y, tr, tmF, g[2]) + tr.pit * 2, plan: { start: a, stops: [{ lap: x, comp: b }, { lap: y, comp: c }] } }); }
+    if (!cands.length) return { start: A[0], stops: [{ lap: Math.round(L / 2), comp: A[0] === "H" ? "M" : "H" }], fuel: "std" };
     cands.sort((p, q) => p.cost - q.cost); return Object.assign({ fuel: "std" }, cands[0].plan);
   }
+  // 金曜のフリー走行で S2・M1 を5周ずつ使った状態で予選へ
+  const ALLOC = { S: 8, M: 3, H: 2, I: 5, W: 2 }, FP_USED = { S: 2, M: 1 }, FP_LAPS = 5;
+  function newSets() { const o = {}; for (const k in ALLOC) { o[k] = []; for (let i = 0; i < ALLOC[k]; i++) o[k].push(i < (FP_USED[k] || 0) ? FP_LAPS : 0); } o.S = o.S.slice(1); return o; } // ソフト1セットは返却
+  // いちばん新しいセットを取り出す（無ければ null）
+  function takeSet(sets, k) { const a = sets[k]; if (!a || !a.length) return null; a.sort((x, y) => x - y); return a.shift(); }
+  const setsLeft = (sets, k) => sets && sets[k] ? sets[k].length : 99;
+  // 計画の各スティントの開始時の周回（在庫が足りなければ null）。lockAge＝スタートのタイヤが既に付いているとき
+  function planAges(plan, sets, lockAge) {
+    const comps = [plan.start].concat(plan.stops.map(x => x.comp)), cnt = {}, ages = [];
+    for (let i = 0; i < comps.length; i++) { const k = comps[i]; if (i === 0 && lockAge != null) { ages.push(lockAge); continue; } if (!sets || !sets[k]) { ages.push(0); continue; } const a = sets[k].slice().sort((x, y) => x - y), n = cnt[k] || 0; if (n >= a.length) return null; ages.push(a[n]); cnt[k] = n + 1; }
+    return ages;
+  }
   // 戦略担当の腕しだいでズレる「おすすめ」
-  function recPlan(tr, d, wet, strat) { const p = JSON.parse(JSON.stringify(bestPlan(tr, d, wet))); const err = Math.round((100 - strat) / 9); p.stops.forEach(s => s.lap = clamp(s.lap + ri(-err, err), 5, tr.laps - 5)); return p; }
-  const planCost = (plan, tr, d) => { const tmF = 1.12 - d.tm / 250; let prev = 0, comp = plan.start, c = 0; plan.stops.forEach(s => { c += stintCost(comp, s.lap - prev, tr, tmF) + tr.pit; prev = s.lap; comp = s.comp; }); return c + stintCost(comp, tr.laps - prev, tr, tmF); };
+  function recPlan(tr, d, wet, strat, opt) { const p = JSON.parse(JSON.stringify(bestPlan(tr, d, wet, opt))); const err = Math.round((100 - strat) / 9); p.stops.forEach(s => s.lap = clamp(s.lap + ri(-err, err), 4, tr.laps - 5)); return p; }
+  const planCost = (plan, tr, d, o) => { if (typeof o !== "object" || !o) o = { age: o || 0, lock: true }; const g = planAges(plan, o.sets, o.lock ? (o.age || 0) : null); if (!g) return Infinity; const tmF = 1.12 - d.tm / 250; let prev = 0, comp = plan.start, c = 0; plan.stops.forEach((s, i) => { c += stintCost(comp, s.lap - prev, tr, tmF, g[i]) + tr.pit; prev = s.lap; comp = s.comp; }); return c + stintCost(comp, tr.laps - prev, tr, tmF, g[plan.stops.length]); };
 
   // ---- レース ----
   function track() { return TRACKS[S.calendar[S.round]]; }
-  function setupRace() {
+  // 予選：Q1（全車）→ Q2（16台）→ Q3（10台）。choices[driverId]＝{ q1, q2 }（Q3はソフト）
+  const QTYRE_LAPS = 3;
+  function aiQualiTyres(tm, tr) { const rank = S.teams.slice().sort((a, b) => carPace(b, tr) - carPace(a, tr)).indexOf(tm); return { q1: rank <= 2 && rnd() < 0.5 ? "M" : "S", q2: rank <= 3 && rnd() < 0.7 ? "M" : "S" }; }
+  function setupRace(choices) {
+    choices = choices || {};
     const tr = track(), wetStart = rnd() < tr.rain * 0.35 ? 0.3 + rnd() * 0.5 : 0, willRain = !wetStart && rnd() < tr.rain;
-    const R = { tr: tr.id, lap: 0, t: 0, laps: tr.laps, wet: wetStart, rainAt: willRain ? ri(Math.round(tr.laps * 0.2), Math.round(tr.laps * 0.7)) : -1, rainTo: willRain ? 0.35 + rnd() * 0.5 : 0, rainLen: ri(8, 20), sc: null, scCount: 0, finished: false, flag: false, started: false, cars: [], feed: [], alerts: [] };
-    const q = [];
-    S.teams.forEach(tm => tm.drivers.forEach(id => { const d = drv(id); q.push({ id, tm: tm.id, q: tr.base + perfDelta(tm, d, tr) + TYRE.S.off + gauss() * (0.12 + (100 - d.cons) / 400) + (R.wet ? (1 - d.wet / 100) * 4 * R.wet : 0) }); }));
-    q.sort((a, b) => a.q - b.q);
-    q.forEach((x, i) => {
-      const d = drv(x.id), tm = team(x.tm), plan = x.tm === S.my ? recPlan(tr, d, R.wet, tm.staff.strat.skill) : aiPlan(tr, d, R.wet, tm);
-      R.cars.push({ id: x.id, tm: x.tm, grid: i + 1, q: x.q, lap: 0, lapStart: 0, lapEnd: 0, lt: 0, tot: 0, comp: plan.start, age: 0, pace: "norm", plan, stopsDone: 0, pitReq: null, out: false, why: "", pits: 0, best: 999, fin: false, finT: 0, used: [plan.start], lastPit: -9, fuel: 0, fuelWarned: false, stuck: 0, autoReact: x.tm !== S.my });
+    const R = { tr: tr.id, lap: 0, t: 0, laps: tr.laps, wet: wetStart, rainAt: willRain ? ri(Math.round(tr.laps * 0.2), Math.round(tr.laps * 0.7)) : -1, rainTo: willRain ? 0.35 + rnd() * 0.5 : 0, rainLen: ri(8, 20), sc: null, scCount: 0, finished: false, flag: false, started: false, cars: [], feed: [], alerts: [], quali: null };
+    const all = [];
+    S.teams.forEach(tm => tm.drivers.forEach(id => { const d = drv(id); const ch = tm.id === S.my ? (choices[id] || { q1: "S", q2: "S" }) : aiQualiTyres(tm, tr); all.push({ id, tm: tm.id, ch, base: tr.base + perfDelta(tm, d, tr) + (R.wet ? (1 - d.wet / 100) * 4 * R.wet : 0), noise: 0.1 + (100 - d.cons) / 420 }); }));
+    all.forEach(x => x.sets = newSets());
+    // 予選のアタック：新品を出して3周走ったら中古として戻す（Q3進出者のQ2タイヤだけは決勝スタート用に外しておく）
+    const useQ = (x, k) => { if (R.wet) { const a = takeSet(x.sets, "I"); x.sets.I.push((a || 0) + QTYRE_LAPS); return "I"; } if (!setsLeft(x.sets, k)) k = ["S", "M", "H"].find(z => setsLeft(x.sets, z)); const a = takeSet(x.sets, k); x.qAge = (a || 0) + QTYRE_LAPS; x.sets[k].push(x.qAge); return k; };
+    const lap = (x, comp, evo) => x.base + (R.wet ? 0 : TYRE[comp].off * 0.6) - evo + gauss() * x.noise; // 予選1周ではタイヤの差は決勝より小さい
+    const n = all.length, cut1 = Math.max(10, n - 6), cut2 = 10;
+    all.forEach(x => { x.ch.q1 = useQ(x, x.ch.q1); x.t1 = lap(x, R.wet ? "S" : x.ch.q1, 0); }); all.sort((a, b) => a.t1 - b.t1);
+    const q2 = all.slice(0, cut1); q2.forEach(x => { x.ch.q2 = useQ(x, x.ch.q2); x.q2Age = x.qAge; x.t2 = lap(x, R.wet ? "S" : x.ch.q2, 0.15); }); q2.sort((a, b) => a.t2 - b.t2);
+    const q3 = q2.slice(0, cut2); q3.forEach(x => { const q2set = x.sets[x.ch.q2].indexOf(x.q2Age); if (!R.wet && q2set >= 0) x.sets[x.ch.q2].splice(q2set, 1); useQ(x, "S"); x.t3 = lap(x, "S", 0.3); }); q3.sort((a, b) => a.t3 - b.t3);
+    const grid = q3.concat(q2.slice(cut2), all.slice(cut1));
+    R.quali = grid.map((x, i) => ({ id: x.id, tm: x.tm, pos: i + 1, t1: x.t1, t2: x.t2 == null ? null : x.t2, t3: x.t3 == null ? null : x.t3, q2t: x.ch.q2, q1t: x.ch.q1 }));
+    grid.forEach((x, i) => {
+      const d = drv(x.id), tm = team(x.tm), top10 = i < cut2 && !R.wet, opt = top10 ? { start: x.ch.q2, age: x.q2Age || QTYRE_LAPS, sets: x.sets } : { sets: x.sets };
+      const plan = x.tm === S.my ? recPlan(tr, d, R.wet, tm.staff.strat.skill, opt) : aiPlan(tr, d, R.wet, tm, opt);
+      R.cars.push({ id: x.id, tm: x.tm, grid: i + 1, q: x.t3 != null ? x.t3 : x.t2 != null ? x.t2 : x.t1, lap: 0, lapStart: 0, lapEnd: 0, lt: 0, tot: 0, comp: plan.start, age: top10 ? (x.q2Age || QTYRE_LAPS) : 0, lockStart: top10, sets: x.sets, pace: "norm", plan, stopsDone: 0, pitReq: null, out: false, why: "", pits: 0, best: 999, fin: false, finT: 0, used: [plan.start], lastPit: -9, fuel: 0, fuelWarned: false, stuck: 0, autoReact: x.tm !== S.my });
     });
     S.race = R; return R;
   }
-  function aiPlan(tr, d, wet, tm) { const p = recPlan(tr, d, wet, tm.staff.strat.skill); p.fuel = tm.staff.strat.skill >= 80 && rnd() < 0.35 ? "light" : "std"; return p; }
+  function aiPlan(tr, d, wet, tm, opt) { const p = recPlan(tr, d, wet, tm.staff.strat.skill, opt); p.fuel = tm.staff.strat.skill >= 80 && rnd() < 0.35 ? "light" : "std"; return p; }
   const carAt = (R, id) => R.cars.find(c => c.id === id);
   const order = R => R.cars.filter(c => !c.out).sort((a, b) => (b.fin - a.fin) || b.lap - a.lap || (a.fin ? a.finT - b.finT : a.tot - b.tot) || a.grid - b.grid).concat(R.cars.filter(c => c.out).sort((a, b) => b.lap - a.lap));
 
@@ -284,7 +322,9 @@ const F1 = (() => {
     if (pitTo && R.laps - c.lap >= 1) {
       const crew = tm.staff.crew.skill, stat = 1.9 + (100 - crew) * 0.025 + Math.abs(gauss()) * 0.25, err = rnd() < (100 - crew) * 0.0012 ? ri(2, 7) : 0;
       const loss = (R.sc ? tr.pit * 0.5 : tr.pit) + stat + err; extra += loss;
-      c.comp = pitTo; c.age = 0; c.pits++; c.lastPit = c.lap; if (!c.used.includes(pitTo)) c.used.push(pitTo);
+      if (c.sets && !setsLeft(c.sets, pitTo)) { const alt = (["I", "W"].includes(pitTo) ? ["I", "W"] : ["M", "H", "S"]).find(z => setsLeft(c.sets, z)); say(R, "⚠ " + d.name + "：" + TYRE[pitTo].n + "のセットが残っていない" + (alt ? " → " + TYRE[alt].n : ""), c.tm === S.my); if (alt) pitTo = alt; }
+      const setAge = c.sets ? (takeSet(c.sets, pitTo) || 0) : 0;
+      c.comp = pitTo; c.age = setAge; c.pits++; c.lastPit = c.lap; if (!c.used.includes(pitTo)) c.used.push(pitTo);
       if (c.plan.stops[c.stopsDone] && c.lap >= c.plan.stops[c.stopsDone].lap - 6) c.stopsDone++;
       say(R, "🔧 L" + c.lap + " " + d.name + " ピットイン → " + TYRE[pitTo].n + "（作業" + (stat + err).toFixed(1) + "秒" + (err ? "・作業ミス" : "") + "）", c.tm === S.my);
     }
@@ -334,6 +374,7 @@ const F1 = (() => {
     if (R.finished) return null;
     if (!R.started) {
       R.started = true;
+      R.cars.forEach(c => { if (c.lockStart || !c.sets) return; const k = setsLeft(c.sets, c.plan.start) ? c.plan.start : ["S", "M", "H", "I", "W"].find(z => setsLeft(c.sets, z)); const a = takeSet(c.sets, k); c.comp = k; c.age = a || 0; c.used = [k]; });
       R.cars.forEach((c, i) => { c.lapEnd = i * 0.25; c.tot = c.lapEnd; c.lap = 0; c.fuel = R.laps * TRACKS[R.tr].fuel * S.regs.fuel + FUEL[c.plan.fuel || "std"].extra; c.lapStart = c.lapEnd; c.lt = lapTime(R, c) + 2.5 + Math.abs(gauss()) * 0.6 + (c.grid - 1) * 0.12; c.lapEnd += c.lt; });
       say(R, "🚦 " + TRACKS[R.tr].name + " スタート（" + R.laps + "周）" + (R.wet ? "・ウェット" : ""));
     }
@@ -359,10 +400,29 @@ const F1 = (() => {
     S.last = rec; S.results = (S.results || []).concat([rec]);
     S.teams.forEach(tm => { const got = res.filter(c => c.tm === tm.id).reduce((t, c) => t + c.got, 0); tm.budget += 1 + got * 0.3; });
     news("第" + rec.round + "戦 " + tr.name + "：優勝 " + rec.winner + "（" + rec.wteam + "）");
+    f2Round(tr);
     S.round++; S.race = null;
     S.teams.forEach(tm => { if (tm.id !== S.my) aiDevelop(tm); });
     save(); return rec;
   }
+
+  // ---- F2 ----
+  function f2Round(tr) {
+    const ids = S.f2.drivers.slice(); if (!ids.length) return;
+    const sc = ids.map(id => { const d = drv(id); return { id, v: d.pace * 0.7 + d.craft * 0.15 + d.cons * 0.15 + (R0() < 0.06 + (100 - d.calm) / 1200 ? -30 : 0) + gauss() * 4.5 + (tr.rain && rnd() < tr.rain ? (d.wet - 70) * 0.25 : 0) }; }).sort((a, b) => b.v - a.v);
+    sc.forEach((x, i) => { const d = drv(x.id); d.f2.starts++; if (x.v < 0) return; if (i < 10) d.f2.pts += POINTS[i]; if (i === 0) d.f2.wins++; });
+    S.f2.results.push({ round: S.round + 1, name: tr.name.replace(" GP", ""), top: sc.slice(0, 3).map(x => x.id) });
+    if (S.f2.results.length > 16) S.f2.results.shift();
+  }
+  const R0 = () => rnd();
+  const f2Table = () => S.f2.drivers.map(drv).sort((a, b) => b.f2.pts - a.f2.pts || b.f2.wins - a.f2.wins);
+  const academyFee = d => 2 + Math.round(Math.max(0, d.pot - 75) / 4);
+  function joinAcademy(id) { const tm = me(), a = academyOf(tm.id), d = drv(id); if (a.length >= 3) return { ok: false, msg: "ジュニアは3人までです" }; if (Object.entries(S.academy).some(([t, l]) => +t !== tm.id && l.includes(id))) return { ok: false, msg: "ほかのチームのジュニアです" }; const fee = academyFee(d); if (tm.budget < fee) return { ok: false, msg: "予算が足りません（" + money(fee) + "）" }; tm.budget -= fee; a.push(id); S.academy[tm.id] = a; news(d.name + " をジュニアに迎えた（年 " + money(fee) + "）"); save(); return { ok: true, msg: d.name + " をジュニアに入れました" }; }
+  function leaveAcademy(id) { const tm = me(); S.academy[tm.id] = academyOf(tm.id).filter(x => x !== id); if (!S.f2.drivers.includes(id)) { drv(id).reserve = false; drv(id).salary = salaryOf(drv(id)); S.free.push(id); } save(); return { ok: true, msg: "ジュニアから外しました" }; }
+  // ジュニアを F1 に上げる（今のドライバーと交代、契約金なし）
+  function promote(outId, inId) { const tm = me(); if (!isAcademy(inId, tm.id)) return { ok: false, msg: "ジュニアではありません" }; if (S.race) return { ok: false, msg: "レース週末中はできません" }; tm.drivers = tm.drivers.map(x => x === outId ? inId : x); S.academy[tm.id] = academyOf(tm.id).filter(x => x !== inId); S.f2.drivers = S.f2.drivers.filter(x => x !== inId); S.free.push(outId); const d = drv(inId); d.reserve = false; d.contract = 2; d.salary = salaryOf(d); tm.budget += d.sponsor; news(d.name + " がジュニアから F1 に昇格（" + drv(outId).name + " と交代）"); save(); return { ok: true, msg: d.name + " を F1 に上げました" }; }
+  // スカウト：伸びしろは推定の幅（戦略担当の腕で少し正確に）
+  function potView(d) { const tm = me(); if (isAcademy(d.id, tm.id) || tm.drivers.includes(d.id)) return { lo: d.pot, hi: d.pot }; const err = 7, mid = clamp(d.pot + Math.round(((d.id * 7919) % 11) - 5), d.pace, 99); return { lo: clamp(mid - err, d.pace, 99), hi: clamp(mid + err, d.pace, 99) }; }
 
   // ---- 開発 ----
   const PARTS = { aero: ["空力", "曲がりの多いコースで速い"], chassis: ["シャシー", "どのコースでも少し速い"], rel: ["信頼性", "マシントラブルが減る"], pu: ["パワーユニット", "直線の長いコースで速い（ワークスだけ開発できる）"] };
@@ -400,7 +460,7 @@ const F1 = (() => {
   const teamTable = () => S.teams.slice().sort((a, b) => b.pts - a.pts);
   const teamOf = id => S.teams.find(t => t.drivers.includes(id));
   function endSeason() {
-    const dt = driverTable(), tt = teamTable(), rec = { season: S.season, champ: dt[0].name, champTeam: teamOf(dt[0].id).name, cons: tt[0].name, myRank: tt.indexOf(me()) + 1, myPts: me().pts, my: me().name, reg: null };
+    const dt = driverTable(), tt = teamTable(), myDevp0 = me().devp, myStaff0 = { strat: me().staff.strat.skill, crew: me().staff.crew.skill }, rec = { season: S.season, champ: dt[0].name, champTeam: teamOf(dt[0].id).name, cons: tt[0].name, myRank: tt.indexOf(me()) + 1, myPts: me().pts, my: me().name, reg: null };
     S.history.push(rec); dt[0].career.titles++;
     // お金：スポンサー＋賞金＋ペイドライバー − 給料 − PU代
     tt.forEach((tm, i) => { const sal = tm.drivers.reduce((t, id) => t + drv(id).salary, 0) + tm.staff.strat.salary + tm.staff.crew.salary, fee = tm.works ? 0 : pu(tm.pu).fee, pay = tm.drivers.reduce((t, id) => t + drv(id).sponsor, 0); const carry = Math.max(0, tm.budget) * 0.25; tm.lastYear = { owner: tm.owner, sponsor: tm.sponsor, prize: (S.teams.length - i) * 4, pay, sal, fee, carry: r1(carry) }; tm.budget = Math.max(60, Math.round(tm.owner + tm.sponsor + (S.teams.length - i) * 4 + pay - sal - fee + carry)); tm.sponsor = clamp(Math.round(tm.sponsor + (6 - i) * 1.5), 30, 130); tm.hist.push(i + 1); tm.pts = 0; });
@@ -411,28 +471,59 @@ const F1 = (() => {
     S.teams.forEach(tm => { for (const k of ["aero", "chassis", "rel"]) tm.car[k] = Math.round(tm.car[k] * 0.9 + 74 * 0.1 + gauss() * 1.2); });
     Object.values(S.pus).forEach(p => { p.lvl = r1(p.lvl * 0.92 + 80 * 0.08); });
     // ドライバー：年齢・成長・引退
-    Object.values(S.drivers).forEach(d => { d.age++; d.pts = 0; d.wins = 0; d.podiums = 0; d.contract--; const g = d.age <= 23 ? Math.min(4, Math.max(0, d.pot - d.pace)) : d.age <= 28 ? 1 : d.age >= 34 ? -2 : 0; for (const k of ["pace", "cons", "tm", "craft", "wet"]) d[k] = clamp(d[k] + (k === "pace" ? g : Math.round(g / 2)) + Math.round(gauss() * 0.7), 40, 98); if (d.age >= 30) d.calm = clamp(d.calm + 1, 20, 98); d.salary = salaryOf(d); });
+    const myIds = me().drivers.slice(), before = {}; myIds.forEach(id => before[id] = Object.assign({}, drv(id)));
+    Object.values(S.drivers).forEach(d => {
+      d.age++; d.pts = 0; d.wins = 0; d.podiums = 0; d.contract--;
+      const a = d.age, young = a <= 24, prime = a >= 25 && a <= 30, vet = a >= 31, old = a >= 34;
+      const ch = k => Math.round(gauss() * 0.8);
+      const up = (k, v) => d[k] = clamp(d[k] + v + ch(k), 35, 98);
+      if (young) { up("pace", Math.min(4, Math.max(0, Math.round((d.pot - d.pace) * 0.45)))); up("craft", 1); up("cons", 2); up("tm", 1); up("dev", 1); up("adapt", 1); up("wet", 1); }
+      else if (prime) { up("pace", a <= 27 ? 1 : 0); up("craft", 1); up("cons", 1); up("tm", 1); up("dev", 1); up("adapt", 0); up("wet", 0); }
+      else { up("pace", old ? -2 : -1); up("craft", old ? -2 : -1); up("cons", 1); up("tm", 1); up("dev", 2); up("adapt", old ? -1 : 0); up("wet", 0); }
+      d.calm = clamp(d.calm + (a <= 24 ? 1 : a >= 29 ? 2 : 1) + Math.round(gauss() * 1), 20, 98); // 経験で落ち着く
+      d.salary = salaryOf(d);
+    });
+    S.teams.forEach(tm => { const rank = tt.indexOf(tm); tm.devp = clamp(Math.round(tm.devp + (rank < 3 ? 1 : rank > 7 ? -1 : 0) + (tm.budget > 160 ? 1 : tm.budget < 90 ? -1 : 0) + gauss() * 1.2), 40, 95); for (const k of ["strat", "crew"]) { const st = tm.staff[k]; st.skill = clamp(Math.round(st.skill + gauss() * 1.5 + (k === "crew" ? 0.5 : 0)), 40, 97); } });
+    S.staffPool.forEach(st => st.skill = clamp(Math.round(st.skill + gauss() * 1.5), 40, 97));
+    // ジュニアは毎年もう少し伸びる（チームの育成）
+    Object.entries(S.academy || {}).forEach(([t, l]) => l.forEach(id => { const d = drv(id); if (d.pace < d.pot) { d.pace = Math.min(d.pot, d.pace + 1 + (rnd() < 0.5 ? 1 : 0)); d.cons = clamp(d.cons + 1, 35, 98); } }));
+    const growth = myIds.map(id => { const d = drv(id), b = before[id], diff = {}; ["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"].forEach(k => { if (d[k] !== b[k]) diff[k] = d[k] - b[k]; }); return { id, name: d.name, age: d.age, diff }; });
+    rec.growth = growth;
     const retire = Object.values(S.drivers).filter(d => d.age >= 36 && rnd() < 0.3 + (d.age - 36) * 0.25 || d.age >= 40);
     // CPU：契約切れ・引退の穴埋め（強い人から。お金の少ないチームはペイドライバー）
     const seat = [];
     S.teams.forEach(tm => { tm.drivers = tm.drivers.filter(id => { const d = drv(id); if (retire.includes(d)) { news(d.name + " が引退"); return false; } if (tm.id !== S.my && d.contract <= 0 && !(d.age < 34 && rnd() < 0.65)) { S.free.push(id); return false; } if (d.contract <= 0) d.contract = ri(1, 3); return true; }); });
     retire.forEach(d => { S.free = S.free.filter(x => x !== d.id); });
+    // F2 の締め：チャンピオン・卒業（22歳以上か王者、ジュニア以外は F1 の空き候補へ）・新人
+    if (S.f2) {
+      const f2t = f2Table(), champ = f2t[0];
+      if (champ) { S.f2.champs.push({ season: S.season, name: champ.name, id: champ.id }); rec.f2champ = champ.name; }
+      const inAcad = id => Object.values(S.academy).some(l => l.includes(id));
+      S.f2.drivers = S.f2.drivers.filter(id => { const d = drv(id); const grad = d.age >= 23 || d === champ || d.age >= 21 && d.pace >= 76; if (grad) { if (!inAcad(id)) { S.free.push(id); d.salary = salaryOf(d); } d.reserve = inAcad(id); news(d.name + " が F2 を卒業" + (d.reserve ? "（リザーブとしてチームに残る）" : "")); return false; } if (d.age >= 25) return false; return true; });
+      S.f2.drivers.forEach(id => { const d = drv(id); d.f2 = { pts: 0, wins: 0, starts: d.f2.starts }; });
+      while (S.f2.drivers.length < 22) S.f2.drivers.push(newF2Driver(ri(17, 19)).id);
+      S.f2.results = [];
+      // CPU のジュニア：有望な若手を取り合う
+      S.teams.forEach((tm, i) => { if (tm.id === S.my) return; const a = academyOf(tm.id).filter(id => S.f2.drivers.includes(id) || drv(id).reserve && drv(id).age <= 26); S.academy[tm.id] = a; if (a.length < 2 && rnd() < 0.5 + (tm.budget > 150 ? 0.3 : 0)) { const pool = S.f2.drivers.filter(id => !inAcad(id)).map(drv).sort((x, y) => y.pot - x.pot); if (pool[ri(0, 3)]) a.push(pool[ri(0, 3)] ? pool[Math.min(pool.length - 1, ri(0, 3))].id : pool[0].id); } });
+      if (S.academy[S.my]) S.academy[S.my] = academyOf(S.my).filter(id => { const ok = S.f2.drivers.includes(id) || drv(id).reserve && drv(id).age <= 26; if (!ok) { S.free.push(id); drv(id).salary = salaryOf(drv(id)); news(drv(id).name + " がジュニアを離れた"); } return ok; });
+    }
     // 新人（毎年3人）
     for (let k = 0; k < 3; k++) { const d = newDriver(ri(68, 76), ri(18, 21), { pay: rnd() < 0.3, hot: rnd() < 0.2 }); S.drivers[d.id] = d; S.free.push(d.id); }
-    S.teams.forEach(tm => { if (tm.id === S.my) return; while (tm.drivers.length < 2) { const pool = S.free.map(drv).sort((a, b) => (b.pace + (tm.budget < 90 ? b.sponsor : 0)) - (a.pace + (tm.budget < 90 ? a.sponsor : 0))), d = pool[0]; S.free = S.free.filter(x => x !== d.id); tm.drivers.push(d.id); d.contract = ri(1, 3); tm.budget += d.sponsor; news(d.name + " が " + tm.name + " と契約"); } });
+    S.teams.forEach(tm => { if (tm.id === S.my) return; while (tm.drivers.length < 2) { const ja = academyOf(tm.id).map(drv).filter(d => d.pace >= 72).sort((a, b) => b.pace - a.pace)[0]; if (ja) { S.academy[tm.id] = academyOf(tm.id).filter(x => x !== ja.id); S.f2.drivers = S.f2.drivers.filter(x => x !== ja.id); tm.drivers.push(ja.id); ja.contract = 2; ja.salary = salaryOf(ja); news(ja.name + " が " + tm.name + " のジュニアから F1 に昇格"); continue; } const pool = S.free.map(drv).sort((a, b) => (b.pace + (tm.budget < 90 ? b.sponsor : 0)) - (a.pace + (tm.budget < 90 ? a.sponsor : 0))), d = pool[0]; S.free = S.free.filter(x => x !== d.id); tm.drivers.push(d.id); d.contract = ri(1, 3); tm.budget += d.sponsor; news(d.name + " が " + tm.name + " と契約"); } });
     S.free = S.free.filter(id => drv(id).age < 36).sort((a, b) => drv(b).pace - drv(a).pace).slice(0, 12);
     while (S.free.length < 8) { const d = newDriver(ri(66, 76), ri(19, 30), { pay: rnd() < 0.35 }); S.drivers[d.id] = d; S.free.push(d.id); }
     // 次の規則変更の予告
     S.season++; S.round = 0; S.results = []; S.last = null; S.spent = {}; S.nextInv = {}; Object.values(S.pus).forEach(p => p.nextInv = 0);
     if (!S.nextReg || S.nextReg.season <= S.season) S.nextReg = planReg();
     news("第" + S.season + "シーズン開幕。" + (S.nextReg ? "来季（第" + S.nextReg.season + "シーズン）に「" + REG_TYPES[S.nextReg.type].n + "」が予告されています。" : ""));
+    rec.teamChange = { devp: me().devp - myDevp0, strat: me().staff.strat.skill - myStaff0.strat, crew: me().staff.crew.skill - myStaff0.crew };
     S.phase = me().drivers.length < 2 ? "drivers" : "season";
     save(); return rec;
   }
   function planReg() { const lastBig = S.history.slice().reverse().findIndex(h => h.reg === REG_TYPES.aero.n || h.reg === REG_TYPES.pu.n); const since = lastBig < 0 ? S.season : lastBig; const big = since >= 3 && rnd() < 0.6 || since >= 5; const lastType = (S.history.slice().reverse().find(h => h.reg === REG_TYPES.aero.n || h.reg === REG_TYPES.pu.n) || {}).reg; const type = big ? (lastType === REG_TYPES.aero.n ? "pu" : lastType === REG_TYPES.pu.n ? "aero" : pick(["aero", "pu"])) : pick(["cap", "tyre", "fuel", null]); return type ? { season: S.season + 1, type } : null; }
   function applyReg(reg) {
     if (!reg) return;
-    const t = reg.type; S.regs.era = "第" + (S.history.filter(h => h.reg).length + 2) + "世代";
+    const t = reg.type; if (REG_TYPES[t].big) S.regs.era = "第" + (S.history.filter(h => h.reg === REG_TYPES.aero.n || h.reg === REG_TYPES.pu.n).length + 2) + "世代";
     if (t === "aero") S.teams.forEach(tm => { const inv = (S.nextInv[tm.id] || {}).car || 0, ad = tm.drivers.reduce((s, id) => s + drv(id).adapt, 0) / 2; const base = 66 + tm.devp * 0.08 + Math.sqrt(inv) * 1.6 + (ad - 70) * 0.08; tm.car.aero = clamp(Math.round(base + gauss() * 3), 55, 95); tm.car.chassis = clamp(Math.round(base + gauss() * 3), 55, 95); tm.car.rel = clamp(Math.round(base - 4 + gauss() * 4), 55, 95); });
     if (t === "pu") Object.values(S.pus).forEach(p => { p.lvl = clamp(r1(70 + p.dev * 0.08 + Math.sqrt(p.nextInv) * 1.5 + gauss() * 3), 60, 95); });
     if (t === "cap") S.regs.cap = S.regs.cap >= 140 || (S.regs.cap > 110 && rnd() < 0.6) ? Math.max(100, S.regs.cap - 20) : Math.min(170, S.regs.cap + 20);
@@ -445,11 +536,11 @@ const F1 = (() => {
   const money = m => "$" + r1(m) + "M";
   const KEY = "f1_manager_save_v2";
   function save() { if (!S) return; S.rs = RS; S.uid = uid; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } }
-  function load(txt) { try { const d = JSON.parse(txt != null ? txt : localStorage.getItem(KEY) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d; RS = d.rs; uid = d.uid; return true; } catch (e) { return false; } }
+  function load(txt) { try { const d = JSON.parse(txt != null ? txt : localStorage.getItem(KEY) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d; RS = d.rs; uid = d.uid; if (!S.f2) { S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {}; S.teams.forEach(tm => S.academy[tm.id] = []); for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id); } return true; } catch (e) { return false; } }
   function wipe() { try { localStorage.removeItem(KEY); localStorage.removeItem("f1_manager_save_v1"); } catch (e) { } S = null; }
   const exportSave = () => { save(); return JSON.stringify(S); };
 
-  return { newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -559,8 +650,28 @@ function vHome() {
   ${s.last ? `<div class="card"><h3>前戦 ${esc(s.last.name)}</h3><table>${s.last.res.slice(0, 10).map(r => resRow(r)).join("")}${s.last.res.filter(r => r.tm === s.my && r.pos > 10).map(r => resRow(r)).join("")}</table></div>` : ""}
   <div class="card"><h3>コンストラクター</h3><table>${tt.map((x, i) => `<tr class="${x.id === s.my ? "me" : ""}"><td>${i + 1}</td><td>${tbar(x)}${esc(x.name)}</td><td class="n">${x.pts}</td></tr>`).join("")}</table></div>
   <div class="card"><h3>ニュース</h3>${s.news.slice(0, 10).map(n => `<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">${esc(n.t)}</div>`).join("")}</div>`;
-  if ($("#quali")) $("#quali").onclick = () => { F1.setupRace(); F1.save(); U.tab = "race"; U.paused = true; render(); };
-  if ($("#endS")) $("#endS").onclick = () => { const r = F1.endSeason(); const ly = ME().lastYear; render(); modal(`<h3>第${r.season}シーズン 終了</h3><p>ドライバーズチャンピオン：<b>${esc(r.champ)}</b>（${esc(r.champTeam)}）</p><p>コンストラクターズ：<b>${esc(r.cons)}</b></p><p>${esc(r.my)}：<b>${r.myRank}位</b>（${r.myPts}点）</p>${r.reg ? `<p class="bad"><b>規則変更：${esc(r.reg)}</b></p>` : ""}${ly ? `<p class="small muted">今季の予算 ${money(ME().budget)}＝オーナー ${money(ly.owner)}＋スポンサー ${money(ly.sponsor)}＋賞金 ${money(ly.prize)}${ly.pay ? "＋持ち込み " + money(ly.pay) : ""}＋繰り越し ${money(ly.carry)}−給料 ${money(ly.sal)}${ly.fee ? "−PU代 " + money(ly.fee) : ""}</p>` : ""}<button class="b p big" data-x>次のシーズンへ</button>`); };
+  if ($("#quali")) $("#quali").onclick = qualiSetup;
+  if ($("#endS")) $("#endS").onclick = () => { const r = F1.endSeason(); const ly = ME().lastYear; render(); modal(`<h3>第${r.season}シーズン 終了</h3><p>ドライバーズチャンピオン：<b>${esc(r.champ)}</b>（${esc(r.champTeam)}）</p><p>コンストラクターズ：<b>${esc(r.cons)}</b></p><p>${esc(r.my)}：<b>${r.myRank}位</b>（${r.myPts}点）</p>${r.reg ? `<p class="bad"><b>規則変更：${esc(r.reg)}</b></p>` : ""}${growthHtml(r)}${r.f2champ ? `<p class="small">F2 チャンピオン：<b>${esc(r.f2champ)}</b></p>` : ""}${ly ? `<p class="small muted">今季の予算 ${money(ME().budget)}＝オーナー ${money(ly.owner)}＋スポンサー ${money(ly.sponsor)}＋賞金 ${money(ly.prize)}${ly.pay ? "＋持ち込み " + money(ly.pay) : ""}＋繰り越し ${money(ly.carry)}−給料 ${money(ly.sal)}${ly.fee ? "−PU代 " + money(ly.fee) : ""}</p>` : ""}<button class="b p big" data-x>次のシーズンへ</button>`); };
+}
+// タイヤの在庫（新品の数／全部）
+const stockN = (c, k) => c.sets && c.sets[k] ? c.sets[k].length : 0;
+const stockTxt = (c, k) => { if (!c.sets || !c.sets[k]) return ""; const a = c.sets[k], n = a.filter(x => x === 0).length; return a.length ? ` <span class="small muted">${a.length}（新${n}）</span>` : ' <span class="small bad">0</span>'; };
+const stockLine = c => c.sets ? `<div class="small muted" style="margin-top:4px">残りのセット：${["S", "M", "H", "I", "W"].map(k => F1.TYRE[k].n + " " + stockN(c, k) + "（新" + c.sets[k].filter(x => x === 0).length + "）").join("・")}</div>` : "";
+function qualiSetup() {
+  const t = ME(), tr = F1.track(), opts = ["S", "M", "H"], ch = U.qch = U.qch && U.qch._r === S().round ? U.qch : { _r: S().round };
+  t.drivers.forEach(id => { if (!ch[id]) ch[id] = { q1: "S", q2: "S" }; });
+  const sel = (id, k) => `<div class="row small" style="margin-top:4px"><span style="width:34px">${k.toUpperCase()}</span>${opts.map(o => `<button class="b ${ch[id][k] === o ? "on" : ""}" data-qt="${id}:${k}:${o}">${F1.TYRE[o].n}</button>`).join("")}</div>`;
+  modal(`<h3>予選のタイヤ（${esc(tr.name)}）</h3><p class="small">Q1（22台→16台）・Q2（16台→10台）・Q3（上位10台の順位決め、ソフト）。<b>Q3まで進んだ10台は、Q2で使ったタイヤ（3周使用済み）で決勝をスタートします。</b>Q2をミディアムで抜ければ決勝が楽になりますが、遅いぶん落ちる危険があります。11番手以下はスタートのタイヤを自由に選べます。</p><p class="small">週末に使えるのはドライ13セット（ソフト8・ミディアム3・ハード2）。金曜の走行でソフト2・ミディアム1を使い、ソフト1は返却済み。<b>予選で使ったセットは中古（3周）になって決勝に残ります。</b>ミディアムを予選で使うと決勝の新品ミディアムが減ります。</p>
+    ${t.drivers.map(id => { const d = F1.drv(id); return `<div class="ctl"><b>${esc(d.name)}</b>${sel(id, "q1")}${sel(id, "q2")}<div class="small muted" style="margin-top:4px">Q3：ソフト</div></div>`; }).join("")}
+    <button class="b p big" id="runQ" style="margin-top:10px">予選を走る</button><button class="b big" data-x style="margin-top:6px">やめる</button>`);
+  document.querySelectorAll("[data-qt]").forEach(b => b.onclick = () => { const [id, k, o] = b.dataset.qt.split(":"); ch[id][k] = o; qualiSetup(); });
+  $("#runQ").onclick = () => { const c = {}; t.drivers.forEach(id => c[id] = { q1: ch[id].q1, q2: ch[id].q2 }); closeModal(); F1.setupRace(c); F1.save(); U.tab = "race"; U.paused = true; render(); };
+}
+const ATTR_N = { pace: "速さ", craft: "バトル", cons: "安定感", tm: "タイヤ管理", wet: "雨", dev: "開発", adapt: "規則変更", calm: "冷静さ" };
+function growthHtml(r) {
+  const g = (r.growth || []).map(x => { const ks = Object.keys(x.diff); return `<div class="small">${esc(x.name)}（${x.age}歳）：${ks.length ? ks.map(k => `${ATTR_N[k]}<b class="${x.diff[k] > 0 ? "good" : "bad"}">${x.diff[k] > 0 ? "+" : ""}${x.diff[k]}</b>`).join("・") : "変化なし"}</div>`; }).join("");
+  const tc = r.teamChange, sg = v => `<b class="${v > 0 ? "good" : v < 0 ? "bad" : ""}">${v > 0 ? "+" : ""}${v}</b>`;
+  return `<div class="ctl"><b class="small">1年での変化</b>${g}${tc ? `<div class="small">チームの開発力 ${sg(tc.devp)}・戦略担当 ${sg(tc.strat)}・ピットクルー ${sg(tc.crew)}</div>` : ""}</div>`;
 }
 function resRow(r) { const d = F1.drv(r.id), tm = F1.team(r.tm); return `<tr class="${r.tm === S().my ? "me" : ""}"><td>${r.out ? "R" : r.pos}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${r.out ? esc(r.why) : r.pos === 1 ? "優勝" : r.lapsDown > 0 ? "+" + r.lapsDown + "周" : "+" + r.gap.toFixed(1)}</td><td class="n small muted">${r.grid}番手</td><td class="n">${r.got ? r.got + "点" : ""}</td></tr>`; }
 
@@ -595,7 +706,10 @@ function vRace() {
   $("#toEnd").onclick = () => { if (!confirm("最後まで一気に進めますか？（このあとの判断は戦略と「おまかせ」で進みます）")) return; R.cars.forEach(c => { if (c.tm === S().my) c.autoReact = true; }); pauseRace(); let g = 0; while (!R.finished && g++ < 20000) F1.advance(R, 60); raceDone(); };
   drawCtls(); drawTower(); drawFeed(); drawTrack();
 }
-function gridTable(R) { return `<table>${R.cars.slice().sort((a, b) => a.grid - b.grid).map(c => { const d = F1.drv(c.id), tm = F1.team(c.tm); return `<tr class="${c.tm === S().my ? "me" : ""}"><td>${c.grid}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${c.q.toFixed(3)}</td><td>${ty(c.comp)}</td></tr>`; }).join("")}</table>`; }
+function gridTable(R) {
+  const q = R.quali || [], f = v => v == null ? "" : v.toFixed(3);
+  return `<div style="overflow-x:auto"><table><tr><th>#</th><th>ドライバー</th><th class="n">Q1</th><th class="n">Q2</th><th class="n">Q3</th><th>スタート</th></tr>${R.cars.slice().sort((a, b) => a.grid - b.grid).map(c => { const d = F1.drv(c.id), tm = F1.team(c.tm), x = q.find(z => z.id === c.id) || {}; return `<tr class="${c.tm === S().my ? "me" : ""}"><td>${c.grid}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${f(x.t1)}${x.q1t ? " " + x.q1t : ""}</td><td class="n small">${f(x.t2)}${x.t2 != null ? " " + x.q2t : ""}</td><td class="n small">${f(x.t3)}</td><td>${ty(c.comp)}${c.lockStart ? '<span class="small muted"> ' + c.age + '周</span>' : ""}</td></tr>`; }).join("")}</table></div><p class="hint">Q2・Q1 の横の字は使ったタイヤ。上位10台はQ2のタイヤでスタート。</p>`;
+}
 const posOf = (R, c) => F1.order(R).indexOf(c) + 1;
 function fuelLeft(R, c) { const tr = F1.TRACKS[R.tr]; return c.fuel - (R.laps - c.lap) * tr.fuel * S().regs.fuel; }
 function drawCtls() {
@@ -610,7 +724,7 @@ function drawCtls() {
     return `<div class="card"><div class="row"><b class="sp">${esc(d.name)}　P${posOf(R, c)}</b>${ty(c.comp)}<span class="small">${c.age}周目（崖まで約${Math.max(0, life - c.age)}周）</span></div>
       <div class="small" style="margin-top:4px">燃料：<b class="${fl < 0 ? "bad" : ""}">${fl < 0 ? "約" + (-fl).toFixed(1) + "周分たりない" : "余裕 " + fl.toFixed(1) + "周分"}</b></div>
       <div class="row small" style="margin-top:6px"><span class="muted">ペース</span>${Object.keys(F1.PACE).map(k => `<button class="b ${c.pace === k ? "on" : ""}" data-pace="${c.id}:${k}">${F1.PACE[k].n}</button>`).join("")}</div>
-      <div class="row small" style="margin-top:6px"><span class="muted">次の周でピット</span>${["S", "M", "H", "I", "W"].map(k => `<button class="b ${c.pitReq === k ? "on" : ""}" data-pit="${c.id}:${k}">${F1.TYRE[k].n}</button>`).join("")}${c.pitReq ? `<button class="b" data-pit="${c.id}:x">取消</button>` : ""}</div>
+      <div class="row small" style="margin-top:6px"><span class="muted">次の周でピット</span>${["S", "M", "H", "I", "W"].map(k => `<button class="b ${c.pitReq === k ? "on" : ""}" data-pit="${c.id}:${k}" ${c.sets && !stockN(c, k) ? "disabled" : ""}>${F1.TYRE[k].n}${stockTxt(c, k)}</button>`).join("")}${c.pitReq ? `<button class="b" data-pit="${c.id}:x">取消</button>` : ""}</div>
       <div class="row small" style="margin-top:6px"><span class="muted">予定：${nx ? nx.lap + "周目に" + F1.TYRE[nx.comp].n : "もうピットの予定なし"}</span><span class="sp"></span><label><input type="checkbox" data-auto="${c.id}" ${c.autoReact ? "checked" : ""}> SC・雨・燃料はおまかせ</label></div></div>`;
   }).join("");
   box.querySelectorAll("[data-pace]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.pace.split(":"); F1.carAt(R, +id).pace = k; drawCtls(); });
@@ -620,14 +734,15 @@ function drawCtls() {
   box.querySelectorAll("[data-pa]").forEach(b => b.onclick = () => planAct(b.dataset.pa));
 }
 function planEditor(c, tr) {
-  const d = F1.drv(c.id), R = S().race, cost = F1.planCost(c.plan, tr, d), best = F1.bestPlan(tr, d, R.wet), bc = F1.planCost(best, tr, d), sk = ME().staff.strat.skill;
+  const d = F1.drv(c.id), R = S().race, po = { age: c.age, lock: c.lockStart, sets: c.sets }, opt = c.lockStart ? { start: c.comp, age: c.age, sets: c.sets } : { sets: c.sets }, cost = F1.planCost(c.plan, tr, d, po), best = F1.bestPlan(tr, d, R.wet, opt), bc = F1.planCost(best, tr, d, po), sk = ME().staff.strat.skill;
   const sel = (v, attr) => `<select ${attr}>${(R.wet ? ["I", "W", "S", "M", "H"] : ["S", "M", "H", "I", "W"]).map(k => `<option value="${k}" ${v === k ? "selected" : ""}>${F1.TYRE[k].n}</option>`).join("")}</select>`;
   return `<div class="card"><h3>${esc(d.name)} の戦略（${c.grid}番手）</h3>
-    <div class="stop"><span class="small" style="width:64px">スタート</span>${sel(c.plan.start, `data-plan="${c.id}:start"`)}</div>
+    <div class="stop"><span class="small" style="width:64px">スタート</span>${c.lockStart ? ty(c.comp) + ` <span class="small">${F1.TYRE[c.comp].n}（Q2で${c.age}周使用済み・Q3進出のため固定）</span>` : sel(c.plan.start, `data-plan="${c.id}:start"`)}</div>
     ${c.plan.stops.map((s, i) => `<div class="stop"><span class="small" style="width:64px">ピット${i + 1}</span><input type="number" min="2" max="${tr.laps - 1}" value="${s.lap}" data-plan="${c.id}:lap:${i}"><span class="small">周目に</span>${sel(s.comp, `data-plan="${c.id}:comp:${i}"`)}<button class="b" data-pa="${c.id}:del:${i}">×</button></div>`).join("")}
     <div class="stop"><span class="small" style="width:64px">燃料</span><select data-plan="${c.id}:fuel">${Object.keys(F1.FUEL).map(k => `<option value="${k}" ${(c.plan.fuel || "std") === k ? "selected" : ""}>${F1.FUEL[k].n}</option>`).join("")}</select><span class="small muted">少なめは軽くて速いが、途中で燃料セーブが要る</span></div>
     <div class="row" style="margin-top:6px"><button class="b" data-pa="${c.id}:add">ピットを足す</button><button class="b" data-pa="${c.id}:rec">戦略担当の案にする</button></div>
-    <p class="hint">見積もり：理想より <b class="${cost - bc > 3 ? "bad" : ""}">${cost - bc >= 0 ? "+" : ""}${(cost - bc).toFixed(1)}秒</b>。戦略担当（腕 ${sk}）の案は腕が低いほどズレます。ドライのレースでは2種類以上のタイヤを使う決まり。</p></div>`;
+    ${stockLine(c)}
+    <p class="hint">見積もり：${isFinite(cost) ? `理想より <b class="${cost - bc > 3 ? "bad" : ""}">${cost - bc >= 0 ? "+" : ""}${(cost - bc).toFixed(1)}秒</b>` : '<b class="bad">タイヤのセットが足りない計画です</b>'}。中古のセットは使った周回の分だけ早く減ります。戦略担当（腕 ${sk}）の案は腕が低いほどズレます。ドライのレースでは2種類以上のタイヤを使う決まり。</p></div>`;
 }
 function editPlan(el) {
   const R = S().race, [id, k, i] = el.dataset.plan.split(":"), c = F1.carAt(R, +id);
@@ -641,7 +756,7 @@ function planAct(s) {
   const R = S().race, [id, k, i] = s.split(":"), c = F1.carAt(R, +id), tr = F1.TRACKS[R.tr];
   if (k === "add") { const last = c.plan.stops.length ? c.plan.stops[c.plan.stops.length - 1].lap : 0; c.plan.stops.push({ lap: Math.min(tr.laps - 3, last + 15), comp: "M" }); }
   else if (k === "del") c.plan.stops.splice(+i, 1);
-  else { const b = F1.recPlan(tr, F1.drv(c.id), R.wet, ME().staff.strat.skill); c.plan = b; c.comp = b.start; c.used = [b.start]; }
+  else { const b = F1.recPlan(tr, F1.drv(c.id), R.wet, ME().staff.strat.skill, c.lockStart ? { start: c.comp, age: c.age, sets: c.sets } : { sets: c.sets }); c.plan = b; c.comp = b.start; c.used = [b.start]; }
   F1.save(); drawCtls();
 }
 function drawTower() {
@@ -690,7 +805,7 @@ function alertBox(al) {
   const R = S().race, tr = F1.TRACKS[R.tr], mine = R.cars.filter(c => c.tm === S().my && !c.out && !c.fin);
   const title = { sc: "🟡 セーフティカー出動", rain: "🌧 雨が降ってきた", dry: "☀ 路面が乾いてきた", dnf: "❌ リタイア", fuel: "⛽ 燃料が足りない" }[al.k];
   const msg = { sc: `ピットの損失が約${(tr.pit * 0.5).toFixed(0)}秒に減っています。タイヤが古いなら今が入りどき。`, rain: "路面が濡れるとドライタイヤは大きく遅れます。インター（小雨）・ウェット（大雨）への交換を考えてください。", dry: "ドライタイヤに戻すタイミングです。早すぎると滑り、遅すぎるとタイムを失います。", dnf: `${al.id ? esc(F1.drv(al.id).name) : ""} がリタイアしました。`, fuel: `${al.id ? esc(F1.drv(al.id).name) : ""} はこのペースだと最後まで燃料が持ちません。ペースを「燃料セーブ」にしてください（SC中は燃料が減りにくい）。` }[al.k];
-  modal(`<h3>${title}</h3><p class="small">${msg}</p>${mine.map(c => `<div class="ctl"><div class="row"><b class="sp">${esc(F1.drv(c.id).name)}　P${posOf(R, c)}</b>${ty(c.comp)}<span class="small">${c.age}周・燃料${fuelLeft(R, c) < 0 ? "不足" : "OK"}</span></div><div class="row small" style="margin-top:6px">${["S", "M", "H", "I", "W"].map(k => `<button class="b ${c.pitReq === k ? "on" : ""}" data-apit="${c.id}:${k}">${F1.TYRE[k].n}</button>`).join("")}<button class="b" data-apit="${c.id}:x">入らない</button></div><div class="row small" style="margin-top:6px">${Object.keys(F1.PACE).map(k => `<button class="b ${c.pace === k ? "on" : ""}" data-apace="${c.id}:${k}">${F1.PACE[k].n}</button>`).join("")}</div></div>`).join("")}<button class="b p big" style="margin-top:10px" data-x id="goOn">この指示で再開</button>`, true);
+  modal(`<h3>${title}</h3><p class="small">${msg}</p>${mine.map(c => `<div class="ctl"><div class="row"><b class="sp">${esc(F1.drv(c.id).name)}　P${posOf(R, c)}</b>${ty(c.comp)}<span class="small">${c.age}周・燃料${fuelLeft(R, c) < 0 ? "不足" : "OK"}</span></div><div class="row small" style="margin-top:6px">${["S", "M", "H", "I", "W"].map(k => `<button class="b ${c.pitReq === k ? "on" : ""}" data-apit="${c.id}:${k}" ${c.sets && !stockN(c, k) ? "disabled" : ""}>${F1.TYRE[k].n}${stockTxt(c, k)}</button>`).join("")}<button class="b" data-apit="${c.id}:x">入らない</button></div><div class="row small" style="margin-top:6px">${Object.keys(F1.PACE).map(k => `<button class="b ${c.pace === k ? "on" : ""}" data-apace="${c.id}:${k}">${F1.PACE[k].n}</button>`).join("")}</div></div>`).join("")}<button class="b p big" style="margin-top:10px" data-x id="goOn">この指示で再開</button>`, true);
   document.querySelectorAll("[data-apit]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.apit.split(":"); const c = F1.carAt(R, +id); c.pitReq = k === "x" ? null : k; b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b && k !== "x")); });
   document.querySelectorAll("[data-apace]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.apace.split(":"); F1.carAt(R, +id).pace = k; b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); });
   $("#goOn").onclick = () => { closeModal(); drawCtls(); resumeRace(); };
@@ -722,11 +837,19 @@ function vCar() {
 /* ---------- チーム ---------- */
 function vTeam() {
   const t = ME(), s = S(), sub = U.sub.tm || "drv";
-  const seg = `<div class="seg">${[["drv", "ドライバー"], ["staff", "スタッフ"], ["money", "お金"], ["set", "名前・セーブ"]].map(([k, l]) => `<button class="${sub === k ? "on" : ""}" data-tm="${k}">${l}</button>`).join("")}</div>`;
+  const seg = `<div class="seg">${[["drv", "ドライバー"], ["f2", "育成・F2"], ["staff", "スタッフ"], ["money", "お金"], ["set", "名前・セーブ"]].map(([k, l]) => `<button class="${sub === k ? "on" : ""}" data-tm="${k}">${l}</button>`).join("")}</div>`;
   let body = "";
   if (sub === "drv") {
     body = t.drivers.map(id => { const d = F1.drv(id); return `<div class="card"><div class="row"><b class="sp">${esc(d.name)}</b><span class="small muted">${d.age}歳・契約残り${d.contract}年・年俸${money(d.salary)}</span></div>${attrGrid(d)}<div style="margin-top:4px">${tags(d)}</div><p class="small muted">今季 ${d.pts}点・${d.wins}勝・表彰台${d.podiums}回／通算 ${d.career.starts}戦 ${d.career.wins}勝・タイトル${d.career.titles}回</p></div>`; }).join("")
       + `<div class="card"><h3>空いているドライバー</h3><p class="small muted">契約金（年俸の半分）を払って入れ替え。ペイドライバーはスポンサー資金を持ってくる。レース週末中は入れ替えできません。</p>${s.free.map(id => { const d = F1.drv(id); return `<div class="drvm"><div class="row"><b class="sp">${esc(d.name)}</b><span class="small muted">${d.age}歳・年俸${money(d.salary)}</span></div>${attrGrid(d)}<div style="margin:4px 0">${tags(d)}</div><select data-sw="${id}"><option value="">入れ替える…</option>${t.drivers.map(x => `<option value="${x}">${esc(F1.drv(x).name)} と（契約金 ${money(F1.drv(id).salary * 0.5)}）</option>`).join("")}</select></div>`; }).join("")}</div>`;
+  } else if (sub === "f2") {
+    const ac = F1.academyOf(t.id), ft = F1.f2Table(), owner = id => { const e = Object.entries(s.academy).find(([k, l]) => l.includes(id)); return e ? F1.team(+e[0]) : null; };
+    const pv = d => { const p = F1.potView(d); return p.lo === p.hi ? "伸びしろ " + p.hi : "伸びしろ " + p.lo + "〜" + p.hi + "（推定）"; };
+    body = `<div class="card"><h3>自分のジュニア（${ac.length}/3）</h3><p class="small muted">ジュニアは F2 を走りながら、毎年ふつうより少し多く伸びます。F1 に上げるときは契約金なし（今のドライバーは空きに回ります）。F2 を卒業した後もリザーブとして26歳まで残せます。</p>
+      ${ac.length ? ac.map(id => { const d = F1.drv(id); return `<div class="drvm"><div class="row"><b class="sp">${esc(d.name)}</b><span class="small muted">${d.age}歳・${d.reserve ? "リザーブ" : "F2 " + d.f2.pts + "点 " + d.f2.wins + "勝"}・${pv(d)}</span></div>${attrGrid(d)}<div style="margin:4px 0">${tags(d)}</div><div class="row"><select data-pro="${id}"><option value="">F1 に上げる…</option>${t.drivers.map(x => `<option value="${x}">${esc(F1.drv(x).name)} と交代</option>`).join("")}</select><button class="b" data-lv="${id}">外す</button></div></div>`; }).join("") : '<p class="small muted">まだいません。下の F2 から選んでください。</p>'}</div>
+      <div class="card"><h3>F2 ランキング（第${s.season}シーズン）</h3><p class="small muted">F1 の各戦のあとに1戦。王者と、22歳以上・速い若手は卒業して F1 の空きドライバーに（ジュニアならチームに残る）。伸びしろは自分のジュニアにすると正確に分かります。</p>
+      <div style="overflow-x:auto"><table><tr><th>#</th><th>ドライバー</th><th class="n">歳</th><th class="n">速さ</th><th class="n">点</th><th></th></tr>${ft.map((d, i) => { const o = owner(d.id); return `<tr class="${o && o.id === t.id ? "me" : ""}"><td>${i + 1}</td><td>${esc(d.name)}<div class="small muted">${pv(d)}${o ? "・" + esc(o.short) + "のジュニア" : ""}</div></td><td class="n">${d.age}</td><td class="n">${d.pace}</td><td class="n">${d.f2.pts}</td><td>${o ? "" : `<button class="b" data-ja="${d.id}">${money(F1.academyFee(d))}で育成</button>`}</td></tr>`; }).join("")}</table></div></div>
+      ${s.f2.champs.length ? `<div class="card"><h3>F2 歴代王者</h3>${s.f2.champs.map(c => `<div class="small">第${c.season}シーズン：${esc(c.name)}${F1.teamOf(c.id) ? "（今は " + esc(F1.teamOf(c.id).short) + "）" : ""}</div>`).join("")}</div>` : ""}`;
   } else if (sub === "staff") {
     const stCard = (st, kind) => `<div class="card"><h3>${kind === "strat" ? "戦略担当" : "ピットクルー責任者"}</h3><div class="row"><b class="sp">${esc(st.name)}</b><span>腕 <b>${st.skill}</b></span><span class="small muted">年俸${money(st.salary)}</span></div><p class="hint">${kind === "strat" ? "腕が高いほど、レース前の「戦略担当の案」がズレにくく、セーフティカーへの反応も良い。" : "腕が高いほど、ピット作業が速く、作業ミスが少ない。"}</p></div>`;
     body = stCard(t.staff.strat, "strat") + stCard(t.staff.crew, "crew") + `<div class="card"><h3>引き抜ける人</h3><p class="small muted">雇うには年俸2年分の契約金がかかります。今の人と入れ替わります。</p>${s.staffPool.slice().sort((a, b) => b.skill - a.skill).map(st => `<div class="pick"><div class="sp"><b>${esc(st.name)}</b><div class="small muted">${st.kind === "strat" ? "戦略担当" : "ピットクルー"}・腕 ${st.skill}・年俸${money(st.salary)}</div></div><button class="b" data-hire="${st.id}">${money(st.salary * 2)} で雇う</button></div>`).join("")}</div>`;
@@ -743,6 +866,9 @@ function vTeam() {
   document.querySelectorAll("[data-tm]").forEach(b => b.onclick = () => { U.sub.tm = b.dataset.tm; render(); });
   document.querySelectorAll("[data-sw]").forEach(sel => sel.onchange = () => { if (!sel.value) return; if (S().race) { toast("レース週末中は入れ替えできません"); render(); return; } const r = F1.swapDriver(+sel.value, +sel.dataset.sw); toast(r.msg); render(); });
   document.querySelectorAll("[data-hire]").forEach(b => b.onclick = () => { const r = F1.hireStaff(+b.dataset.hire); toast(r.msg); render(); });
+  document.querySelectorAll("[data-ja]").forEach(b => b.onclick = () => { const r = F1.joinAcademy(+b.dataset.ja); toast(r.msg); render(); });
+  document.querySelectorAll("[data-lv]").forEach(b => b.onclick = () => { const r = F1.leaveAcademy(+b.dataset.lv); toast(r.msg); render(); });
+  document.querySelectorAll("[data-pro]").forEach(sel => sel.onchange = () => { if (!sel.value) return; const r = F1.promote(+sel.value, +sel.dataset.pro); toast(r.msg); render(); });
   const on = (id, f) => { const el = document.getElementById(id); if (el) el.onclick = f; };
   on("tnb", () => { const v = $("#tn").value.trim(); if (v) { t.name = v.slice(0, 24); F1.save(); render(); } });
   on("cb", () => { t.color = $("#c1").value; t.color2 = $("#c2").value; F1.save(); render(); });
@@ -764,18 +890,6 @@ function vTable() {
   document.querySelectorAll("[data-tb]").forEach(b => b.onclick = () => { U.sub.tb = b.dataset.tb; render(); });
 }
 
-/* 表示テーマ：ダーク（最初）→ ライト → 端末に合わせる。上の帯のボタンで切り替え */
-(function () {
-  const KEY = "f1_theme", ORDER = ["dark", "light", "auto"], ICON = { dark: "🌙", light: "☀", auto: "🌓" }, LABEL = { dark: "ダーク", light: "ライト", auto: "端末に合わせる" };
-  let cur = "dark"; try { cur = localStorage.getItem(KEY) || "dark"; } catch (e) { }
-  const apply = () => { if (cur === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", cur); const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", "#0b0d12"); };
-  apply();
-  const addBtn = () => { const hd = document.getElementById("hd"); if (!hd || document.getElementById("thm")) return; const b = document.createElement("button"); b.id = "thm"; b.type = "button"; b.title = "表示：" + LABEL[cur]; b.textContent = ICON[cur]; b.style.cssText = "background:rgba(255,255,255,.14);border:0;color:#fff;border-radius:8px;width:34px;height:34px;font-size:17px;flex:none;margin-left:4px"; b.onclick = () => { cur = ORDER[(ORDER.indexOf(cur) + 1) % ORDER.length]; try { localStorage.setItem(KEY, cur); } catch (e) { } apply(); b.textContent = ICON[cur]; b.title = "表示：" + LABEL[cur]; if (typeof toast === "function") toast("表示：" + LABEL[cur]); if (typeof render === "function" && window.__themeRerender) window.__themeRerender(); }; hd.appendChild(b); };
-  const start = () => { addBtn(); const hd = document.getElementById("hd"); if (hd) new MutationObserver(addBtn).observe(hd, { childList: true }); };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
-})();
-window.__themeRerender = () => { if (typeof drawTrack === "function" && typeof S === "function" && S() && S().race) drawTrack(); };
-boot();
 </script>
 </body>
 </html>
