@@ -896,36 +896,47 @@ function resRow(r) { const d = F1.drv(r.id), tm = F1.team(r.tm); return `<tr cla
 
 /* ---------- レース ---------- */
 let geo = null;
+// 手で形を決めたコース：pts＝角の点（y は下向き）、start＝この番号の点から次の点までの直線の真ん中がスタート
+const SHAPES = {
+  11: { start: 0, pts: [[0.46, 0.73], [0.82, 0.88], [0.96, 0.82], [0.94, 0.68], [0.84, 0.62], [0.88, 0.52], [0.78, 0.46], [0.82, 0.36], [0.72, 0.30], [0.62, 0.22], [0.54, 0.26], [0.50, 0.36], [0.28, 0.58], [0.20, 0.68], [0.14, 0.62], [0.10, 0.45], [0.06, 0.28], [0.08, 0.12], [0.16, 0.06], [0.24, 0.12], [0.55, 0.60], [0.60, 0.66], [0.50, 0.68]] }
+};
 function trackGeo(tr) {
   let seed = tr.seed; const r = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
   const pw = tr.pw, hs = tr.hs == null ? 0.5 : tr.hs, street = !!tr.street;
   // 角の点を中心からの角度順に並べる（交差しない）。直線の長いコースは点が少なく、低速のコースは内側への切れ込み（ヘアピン）が多い
   const n = street ? 9 + Math.floor(r() * 4) : Math.max(7, Math.round(13 - pw * 7 + r() * 3));
+  const shp = SHAPES[tr.id];
   let P = [];
-  for (let i = 0; i < n; i++) { const th = (i + (r() - 0.5) * 0.55) / n * Math.PI * 2; let rad = 0.62 + r() * 0.38; if (r() < 0.34 - hs * 0.2) rad *= 0.45 + r() * 0.2; P.push([Math.cos(th) * rad * 1.6, Math.sin(th) * rad]); }
-  if (!street) { /* 長い直線の途中にシケイン（左右の切り返し） */ const Q = []; P.forEach((p, i) => { const q = P[(i + 1) % P.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]); Q.push(p); if (L > 0.75 && r() < 0.5 - hs * 0.3) { const nx = -(q[1] - p[1]) / L, ny = (q[0] - p[0]) / L, sg = Math.hypot(p[0] + nx, p[1] + ny) < Math.hypot(p[0], p[1]) ? 1 : -1, o = 0.07 * sg, at = 0.35 + r() * 0.3; [[at, 0], [at + 0.06, o], [at + 0.13, o], [at + 0.19, 0]].forEach(([u, k]) => Q.push([p[0] + (q[0] - p[0]) * u + nx * k, p[1] + (q[1] - p[1]) * u + ny * k])); } }); P = Q; }
-  if (street) { // 市街地：碁盤の目に沿って直角に曲がる
+  if (shp) P = shp.pts.map(p => [p[0] * 1.6, p[1]]);
+  else for (let i = 0; i < n; i++) { const th = (i + (r() - 0.5) * 0.55) / n * Math.PI * 2; let rad = 0.62 + r() * 0.38; if (r() < 0.34 - hs * 0.2) rad *= 0.45 + r() * 0.2; P.push([Math.cos(th) * rad * 1.6, Math.sin(th) * rad]); }
+  if (!street && !shp) { /* 長い直線の途中にシケイン（左右の切り返し） */ const Q = []; P.forEach((p, i) => { const q = P[(i + 1) % P.length], L = Math.hypot(q[0] - p[0], q[1] - p[1]); Q.push(p); if (L > 0.75 && r() < 0.5 - hs * 0.3) { const nx = -(q[1] - p[1]) / L, ny = (q[0] - p[0]) / L, sg = Math.hypot(p[0] + nx, p[1] + ny) < Math.hypot(p[0], p[1]) ? 1 : -1, o = 0.07 * sg, at = 0.35 + r() * 0.3; [[at, 0], [at + 0.06, o], [at + 0.13, o], [at + 0.19, 0]].forEach(([u, k]) => Q.push([p[0] + (q[0] - p[0]) * u + nx * k, p[1] + (q[1] - p[1]) * u + ny * k])); } }); P = Q; }
+  if (street && !shp) { // 市街地：碁盤の目に沿って直角に曲がる
     const gs = 0.16, sn = v => Math.round(v / gs) * gs, Q = [];
     P.forEach((p, i) => { const a = [sn(p[0]), sn(p[1])], q = P[(i + 1) % P.length], b = [sn(q[0]), sn(q[1])], c1 = [a[0], b[1]], c2 = [b[0], a[1]]; Q.push(a); Q.push(Math.hypot(c1[0], c1[1]) > Math.hypot(c2[0], c2[1]) ? c1 : c2); });
     P = Q.filter((p, i) => { const q = Q[(i + 1) % Q.length]; return Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-6; });
     P = P.filter((p, i) => { const a = P[(i + P.length - 1) % P.length], b = P[(i + 1) % P.length]; return Math.abs((p[0] - a[0]) * (b[1] - p[1]) - (p[1] - a[1]) * (b[0] - p[0])) > 1e-6; });
   }
   // 角を丸める（高速コースほど大きな半径）。直線の区間も記録
-  const rad0 = street ? 0.05 : 0.05 + hs * 0.2, D = [], straights = [];
+  const rad0 = shp ? 0.07 : street ? 0.05 : 0.05 + hs * 0.2, D = [], straights = [];
   const M = P.length, fil = P.map((v, i) => { const a = P[(i + M - 1) % M], b = P[(i + 1) % M], da = Math.hypot(a[0] - v[0], a[1] - v[1]), db = Math.hypot(b[0] - v[0], b[1] - v[1]), t = Math.min(rad0, da * 0.45, db * 0.45); return { A: [v[0] + (a[0] - v[0]) / da * t, v[1] + (a[1] - v[1]) / da * t], B: [v[0] + (b[0] - v[0]) / db * t, v[1] + (b[1] - v[1]) / db * t], V: v }; });
   fil.forEach((f, i) => { const nx = fil[(i + 1) % M]; for (let k = 0; k <= 8; k++) { const u = k / 8; D.push([(1 - u) * (1 - u) * f.A[0] + 2 * u * (1 - u) * f.V[0] + u * u * f.B[0], (1 - u) * (1 - u) * f.A[1] + 2 * u * (1 - u) * f.V[1] + u * u * f.B[1]]); } straights.push({ len: Math.hypot(nx.A[0] - f.B[0], nx.A[1] - f.B[1]), mid: [(nx.A[0] + f.B[0]) / 2, (nx.A[1] + f.B[1]) / 2], at: D.length }); });
   // 同じ間隔に並べ直す（360点）。スタートは一番長い直線の真ん中
   const cd = [0]; for (let i = 1; i <= D.length; i++) cd.push(cd[i - 1] + Math.hypot(D[i % D.length][0] - D[i - 1][0], D[i % D.length][1] - D[i - 1][1]));
-  const L0 = cd[D.length], N = 360, ls = straights.slice().sort((a, b) => b.len - a.len)[0], startL = (cd[ls.at - 1] + ls.len / 2) % L0;
+  const L0 = cd[D.length], N = 360, ls = shp ? straights[shp.start] : straights.slice().sort((a, b) => b.len - a.len)[0], startL = (cd[ls.at - 1] + ls.len / 2) % L0;
   const pts = []; let j = 1;
   for (let i = 0; i < N; i++) { const Lx = (startL + i / N * L0) % L0; j = 1; while (j < cd.length - 1 && cd[j] < Lx) j++; const a = D[(j - 1) % D.length], b = D[j % D.length], u = (Lx - cd[j - 1]) / ((cd[j] - cd[j - 1]) || 1); pts.push([a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]); }
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]), mnx = Math.min(...xs), mxx = Math.max(...xs), mny = Math.min(...ys), mxy = Math.max(...ys);
   const norm = pts.map(p => [(p[0] - mnx) / (mxx - mnx), (p[1] - mny) / (mxy - mny)]);
   const cum = [0]; for (let i = 1; i <= N; i++) { const a = norm[i - 1], b = norm[i % N]; cum.push(cum[i - 1] + Math.hypot(a[0] - b[0], a[1] - b[1])); }
-  return { pts: norm, cum, len: cum[N], tr: tr.id };
+  let bridge = null;
+  if (shp) { const X = (a, b, c, d) => { const den = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0]); if (!den) return false; const t = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / den, u = ((c[0] - a[0]) * (b[1] - a[1]) - (c[1] - a[1]) * (b[0] - a[0])) / den; return t > 0 && t < 1 && u > 0 && u < 1; };
+    for (let i = 0; i < N && !bridge; i++) for (let j = i + 3; j < N - 1; j++) if (X(norm[i], norm[i + 1], norm[j], norm[j + 1])) { bridge = [j - 7, j + 8]; break; } }
+  return { pts: norm, cum, len: cum[N], tr: tr.id, bridge };
 }
+// 橋の部分を上から描く（canvas / SVG 共通の点列）
+const bridgePts = g => g.bridge ? g.pts.slice(Math.max(0, g.bridge[0]), Math.min(g.pts.length, g.bridge[1])) : null;
 // 小さなコース図（SVG）
-function trackSvg(tr) { const g = trackGeo(tr), X = p => (8 + p[0] * 134).toFixed(1), Y = p => (8 + p[1] * 80).toFixed(1), d = g.pts.map((p, i) => (i ? "L" : "M") + X(p) + " " + Y(p)).join("") + "Z", s0 = g.pts[0]; return `<svg viewBox="0 0 150 96"><path d="${d}" fill="none" stroke="#e9e9e9" stroke-width="6" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="#3a3f48" stroke-width="4" stroke-linejoin="round"/><circle cx="${X(s0)}" cy="${Y(s0)}" r="3" fill="#e10600"/></svg>`; }
+function trackSvg(tr) { const g = trackGeo(tr), X = p => (8 + p[0] * 134).toFixed(1), Y = p => (8 + p[1] * 80).toFixed(1), d = g.pts.map((p, i) => (i ? "L" : "M") + X(p) + " " + Y(p)).join("") + "Z", s0 = g.pts[0]; return `<svg viewBox="0 0 150 96"><path d="${d}" fill="none" stroke="#e9e9e9" stroke-width="6" stroke-linejoin="round"/><path d="${d}" fill="none" stroke="#3a3f48" stroke-width="4" stroke-linejoin="round"/>${(() => { const b = bridgePts(g); if (!b) return ""; const bd = b.map((p, i) => (i ? "L" : "M") + X(p) + " " + Y(p)).join(""); return `<path d="${bd}" fill="none" stroke="#111" stroke-width="8"/><path d="${bd}" fill="none" stroke="#e9e9e9" stroke-width="6"/><path d="${bd}" fill="none" stroke="#3a3f48" stroke-width="4"/>`; })()}<circle cx="${X(s0)}" cy="${Y(s0)}" r="3" fill="#e10600"/></svg>`; }
 function posAt(g, f) { f = ((f % 1) + 1) % 1; const L = f * g.len; let i = 1; while (i < g.cum.length - 1 && g.cum[i] < L) i++; const a = g.pts[(i - 1) % g.pts.length], b = g.pts[i % g.pts.length], u = (L - g.cum[i - 1]) / ((g.cum[i] - g.cum[i - 1]) || 1); return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]; }
 function vRace() {
   const s = S(), R = s.race;
@@ -1016,6 +1027,7 @@ function drawTrack() {
   ctx.lineJoin = "round"; ctx.lineCap = "round";
   ctx.beginPath(); geo.pts.forEach((p, i) => i ? ctx.lineTo(X(p), Y(p)) : ctx.moveTo(X(p), Y(p))); ctx.closePath();
   ctx.strokeStyle = "#e9e9e9"; ctx.lineWidth = 15; ctx.stroke(); ctx.strokeStyle = "#3a3f48"; ctx.lineWidth = 11; ctx.stroke();
+  const bp = bridgePts(geo); if (bp) { ctx.beginPath(); bp.forEach((p, i) => i ? ctx.lineTo(X(p), Y(p)) : ctx.moveTo(X(p), Y(p))); ctx.lineCap = "butt"; [["#111", 19], ["#e9e9e9", 15], ["#3a3f48", 11]].forEach(([c, w]) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.stroke(); }); ctx.lineCap = "round"; }
   const s0 = geo.pts[0], s1 = geo.pts[2], dx = X(s1) - X(s0), dy = Y(s1) - Y(s0), dl = Math.hypot(dx, dy) || 1, nx = -dy / dl * 9, ny = dx / dl * 9; ctx.strokeStyle = "#fff"; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(X(s0) - nx, Y(s0) - ny); ctx.lineTo(X(s0) + nx, Y(s0) + ny); ctx.stroke();
   const started = !!R.started, live = R.cars.filter(c => !c.out), ord = F1.order(R);
   live.slice().reverse().forEach(c => {
