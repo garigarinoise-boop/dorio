@@ -656,7 +656,7 @@ function vHome() {
 // タイヤの在庫（新品の数／全部）
 const stockN = (c, k) => c.sets && c.sets[k] ? c.sets[k].length : 0;
 const stockTxt = (c, k) => { if (!c.sets || !c.sets[k]) return ""; const a = c.sets[k], n = a.filter(x => x === 0).length; return a.length ? ` <span class="small muted">${a.length}（新${n}）</span>` : ' <span class="small bad">0</span>'; };
-const stockLine = c => c.sets ? `<div class="small muted" style="margin-top:4px">残りのセット：${["S", "M", "H", "I", "W"].map(k => F1.TYRE[k].n + " " + stockN(c, k) + "（新" + c.sets[k].filter(x => x === 0).length + "）").join("・")}</div>` : "";
+const stockLine = c => c.sets ? `<div class="small muted" style="margin-top:4px">残りのセット${S().race && !S().race.started && !c.lockStart ? "（スタートのタイヤ込み）" : ""}：${["S", "M", "H", "I", "W"].map(k => F1.TYRE[k].n + " " + stockN(c, k) + "（新" + c.sets[k].filter(x => x === 0).length + "）").join("・")}</div>` : "";
 function qualiSetup() {
   const t = ME(), tr = F1.track(), opts = ["S", "M", "H"], ch = U.qch = U.qch && U.qch._r === S().round ? U.qch : { _r: S().round };
   t.drivers.forEach(id => { if (!ch[id]) ch[id] = { q1: "S", q2: "S" }; });
