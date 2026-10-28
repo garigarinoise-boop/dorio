@@ -996,14 +996,27 @@ function vRace() {
   <div class="card"><div class="row"><b class="sp">${esc(tr.name)}</b><span class="small muted" id="lapc"></span></div><div id="flag"></div>
     <canvas id="trk" width="640" height="380"></canvas>
     <div class="row" style="margin-top:8px"><button class="b ${U.paused ? "p" : ""}" id="pp">${U.paused ? (started ? "▶ 再開" : "▶ スタート") : "⏸ 一時停止"}</button>${[1, 3, 10].map(k => `<button class="b ${U.speed === k ? "on" : ""}" data-sp="${k}">×${k}</button>`).join("")}<span class="sp"></span><button class="b" id="toEnd">最後まで</button></div><label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="radioStop" ${S().radioStop !== false ? "checked" : ""}> ドライバーの無線で止める（タイヤが限界・前を抜けない・後ろが速い）</label><label class="small" style="display:block"><input type="checkbox" id="rivalStop" ${S().rivalStop !== false ? "checked" : ""}> すぐ前・後ろの車がピットに入ったら止める</label><label class="small" style="display:block"><input type="checkbox" id="pitStop" ${S().pitStop !== false ? "checked" : ""}> 予定のピットの1周前に止める</label></div>
-  <div id="ctls"></div>
-  ${!started ? `<div class="card"><h3>予選結果</h3>${gridTable(R)}</div>` : ""}
-  <div class="card"><h3>タイミング</h3><div style="overflow-x:auto"><table class="tower" id="tower"></table></div></div>
-  <div class="card"><h3>実況</h3><div class="feed" id="feed"></div></div>`;
+  <div id="strip"></div>
+  ${(() => { const sub = U.rsub || (started ? "tower" : "ctls"); return `<div class="seg">${[["tower", "タイミング"], ["ctls", started ? "指示" : "戦略"], ["feed", "実況"]].map(([k, l]) => `<button class="${sub === k ? "on" : ""}" data-rs="${k}">${l}</button>`).join("")}</div>
+  ${sub === "ctls" ? `<div id="ctls"></div>${!started ? `<div class="card"><h3>予選結果</h3>${gridTable(R)}</div>` : ""}` : sub === "tower" ? `<div class="card"><div style="overflow-x:auto"><table class="tower" id="tower"></table></div></div>${!started ? `<div class="card"><h3>予選結果</h3>${gridTable(R)}</div>` : ""}` : `<div class="card"><div class="feed" id="feed"></div></div>`}`; })()}`;
+  document.querySelectorAll("[data-rs]").forEach(b => b.onclick = () => { U.rsub = b.dataset.rs; vRace(); });
   $("#pp").onclick = () => { if (U.paused) resumeRace(); else pauseRace(); };
   document.querySelectorAll("[data-sp]").forEach(b => b.onclick = () => { U.speed = +b.dataset.sp; document.querySelectorAll("[data-sp]").forEach(x => x.classList.toggle("on", x === b)); });
   $("#toEnd").onclick = () => { if (!confirm("最後まで一気に進めますか？（このあとの判断は戦略と「おまかせ」で進みます）")) return; R.cars.forEach(c => { if (c.tm === S().my) c.autoReact = true; }); pauseRace(); let g = 0; while (!R.finished && g++ < 20000) F1.advance(R, 60); raceDone(); };
-  drawCtls(); drawTower(); drawFeed(); drawTrack();
+  drawCtls(); drawTower(); drawFeed(); drawStrip(); drawTrack();
+}
+const lapFmt = t => !t || t > 900 ? "-" : Math.floor(t / 60) + ":" + (t % 60).toFixed(1).padStart(4, "0");
+const shortN = n => { const p = String(n).split(/[・ ]/); return p[p.length - 1]; };
+// 自分の2台：順位・前後との差・直前の1周を前後の車と比べる
+function drawStrip() {
+  const R = S().race, el = $("#strip"); if (!R || !el) return;
+  if (!R.started) { el.innerHTML = ""; return; }
+  const ord = F1.order(R), lead = ord[0], gapTo = (a, b) => a.lap === b.lap ? Math.abs(a.tot - b.tot).toFixed(1) : (Math.abs(a.lap - b.lap)) + "周";
+  el.innerHTML = `<div class="card" style="padding:8px 10px">${R.cars.filter(c => c.tm === S().my).map(c => { const d = F1.drv(c.id), i = ord.indexOf(c), a = ord[i - 1], b = ord[i + 1];
+    if (c.out) return `<div class="small muted">${esc(d.name)}：リタイア（${esc(c.why)}）</div>`;
+    const cmp = o => { if (!o || o.out || !o.lt || !c.lt) return ""; const df = c.lt - o.lt; return ` <span class="${df < -0.05 ? "good" : df > 0.05 ? "bad" : "muted"}">${df > 0 ? "+" : ""}${df.toFixed(1)}</span>`; };
+    return `<div class="row small" style="padding:3px 0;border-bottom:1px solid var(--line);gap:6px;flex-wrap:wrap"><b style="min-width:30px">P${i + 1}</b><b>${esc(shortN(d.name))}</b>${ty(c.comp)}<span class="muted">${c.age}周</span>${c.drs ? '<span class="tag gold">DRS</span>' : ""}<span class="sp"></span><span>前周 <b>${lapFmt(c.lt)}</b></span>
+      <div style="width:100%;display:flex;gap:10px;flex-wrap:wrap">${a && !a.out ? `<span>▲ ${esc(shortN(F1.drv(a.id).name))} ${gapTo(c, a)}秒 ${ty(a.comp)}${a.age}周・前周差${cmp(a)}</span>` : '<span class="muted">▲ トップ</span>'}${b && !b.out ? `<span>▼ ${esc(shortN(F1.drv(b.id).name))} ${gapTo(c, b)}秒 ${ty(b.comp)}${b.age}周・前周差${cmp(b)}</span>` : ""}</div></div>`; }).join("")}<div class="small muted" style="margin-top:3px">前周差：マイナス（緑）＝自分の方が速い</div></div>`;
 }
 function gridTable(R) {
   const q = R.quali || [], f = v => v == null ? "" : v.toFixed(3);
@@ -1064,10 +1077,11 @@ function planAct(s) {
 function drawTower() {
   const R = S().race, el = $("#tower"); if (!R || !el) return;
   const ord = F1.order(R), lead = ord[0];
-  el.innerHTML = `<tr><th>#</th><th>ドライバー</th><th class="n">差</th><th>タイヤ</th><th class="n">P</th></tr>` + ord.map((c, i) => {
+  const fast = Math.min(...ord.filter(c => !c.out && c.lt > 0 && c.lap > 0).map(c => c.lt));
+  el.innerHTML = `<tr><th>#</th><th>ドライバー</th><th class="n">差</th><th class="n">前周</th><th>タイヤ</th><th class="n">P</th></tr>` + ord.map((c, i) => {
     const d = F1.drv(c.id), tm = F1.team(c.tm);
     const gap = c.out ? c.why : i === 0 ? "トップ" : c.lap < lead.lap ? "+" + (lead.lap - c.lap) + "周" : "+" + (c.tot - lead.tot).toFixed(1);
-    return `<tr class="${c.tm === S().my ? "me" : ""}"><td>${c.out ? "R" : i + 1}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n">${gap}${c.drs && !c.out ? ' <span class="small" style="color:#2bb24c">DRS</span>' : ""}</td><td>${c.out ? "" : ty(c.comp) + ' <span class="small muted">' + c.age + "</span>"}</td><td class="n small">${c.pits}</td></tr>`;
+    return `<tr class="${c.tm === S().my ? "me" : ""}"><td>${c.out ? "R" : i + 1}</td><td>${tbar(tm)}${esc(shortN(d.name))}</td><td class="n">${gap}${c.drs && !c.out ? ' <span class="small" style="color:#2bb24c">DRS</span>' : ""}</td><td class="n small" style="${!c.out && c.lt === fast ? "color:#b04cff;font-weight:700" : ""}">${c.out || !c.lap ? "" : lapFmt(c.lt)}</td><td>${c.out ? "" : ty(c.comp) + ' <span class="small muted">' + c.age + "</span>"}</td><td class="n small">${c.pits}</td></tr>`;
   }).join("");
 }
 function drawFeed() { const R = S().race, el = $("#feed"); if (!R || !el) return; el.innerHTML = R.feed.slice(0, 40).map(f => `<div class="${f.mine ? "m" : ""}">${esc(f.t)}</div>`).join("") || '<div class="muted">スタートを待っています</div>'; }
@@ -1092,7 +1106,7 @@ function drawTrack() {
   const lapEl = $("#lapc"); if (lapEl) lapEl.textContent = R.finished ? "終了" : started ? "L" + Math.min(R.laps, R.lap + 1) + " / " + R.laps : "スタート前";
   const fl = $("#flag"); if (fl) fl.innerHTML = R.finished ? '<div class="flag fin">🏁 チェッカー</div>' : R.sc ? '<div class="flag sc">🟡 セーフティカー（ピットの損失が半分）</div>' : R.wet > 0.15 ? `<div class="flag rain">🌧 路面がウェット（${Math.round(R.wet * 100)}%）</div>` : "";
 }
-function resumeRace() { const R0 = S().race; if (R0 && !R0.started) { F1.advance(R0, 0); U.paused = false; vRace(); } U.paused = false; U.last = 0; const pp = $("#pp"); if (pp) { pp.textContent = "⏸ 一時停止"; pp.classList.remove("p"); } cancelAnimationFrame(U.raf); U.raf = requestAnimationFrame(tick); }
+function resumeRace() { const R0 = S().race; if (R0 && !R0.started) { U.rsub = null; F1.advance(R0, 0); U.paused = false; vRace(); } U.paused = false; U.last = 0; const pp = $("#pp"); if (pp) { pp.textContent = "⏸ 一時停止"; pp.classList.remove("p"); } cancelAnimationFrame(U.raf); U.raf = requestAnimationFrame(tick); }
 function pauseRace() { U.paused = true; cancelAnimationFrame(U.raf); const pp = $("#pp"); if (pp) { pp.textContent = "▶ 再開"; pp.classList.add("p"); } if (S().race) F1.save(); }
 let lastUi = 0;
 document.addEventListener("change", e => { if (e.target && e.target.id === "radioStop") { S().radioStop = e.target.checked; F1.save(); } if (e.target && e.target.id === "rivalStop") { S().rivalStop = e.target.checked; F1.save(); } if (e.target && e.target.id === "pitStop") { S().pitStop = e.target.checked; F1.save(); } });
@@ -1101,8 +1115,8 @@ function tick(now) {
   const dt = U.last ? Math.min(0.1, (now - U.last) / 1000) : 0; U.last = now;
   const al = F1.advance(R, dt * SPEEDS[U.speed]);
   drawTrack();
-  if (now - lastUi > 400) { lastUi = now; drawTower(); drawFeed(); if (!document.activeElement || document.activeElement.tagName !== "INPUT") drawCtls(); }
-  if (al) { if (al.k === "end") { raceDone(); return; } pauseRace(); drawTower(); drawFeed(); drawCtls(); alertBox(al); return; }
+  if (now - lastUi > 400) { lastUi = now; drawTower(); drawFeed(); drawStrip(); if (!document.activeElement || document.activeElement.tagName !== "INPUT") drawCtls(); }
+  if (al) { if (al.k === "end") { raceDone(); return; } pauseRace(); drawTower(); drawFeed(); drawStrip(); drawCtls(); alertBox(al); return; }
   U.raf = requestAnimationFrame(tick);
 }
 // アンダーカット：前の車に勝てそうか、ピット後どこに戻るか
