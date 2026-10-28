@@ -422,6 +422,8 @@ const F1 = (() => {
     const pFail = (d.nat === tr.c && d.calm < 50 ? 0.0008 : 0) + (100 - tm.car.rel) / 100 * 0.007 + (100 - d.cons) / 100 * 0.0018 * (c.pace === "push" ? 2 : 1) + R.wet * 0.0015 + hot;
     if (rnd() < pFail) { const crash = rnd() < (hot > 0.002 ? 0.65 : 0.4); if (crash || rnd() < 0.6) { c.out = true; c.why = crash ? "クラッシュ" : "マシントラブル"; say(R, "❌ " + d.name + " リタイア（" + c.why + "）", c.tm === S.my); if (crash && !R.sc && rnd() < 0.6) startSC(R); if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; } c.spin = ri(4, 9); say(R, "🌀 L" + c.lap + " " + d.name + " がスピン（" + c.spin + "秒ロス）", c.tm === S.my); }
     if (c.tm === S.my && S.radioStop !== false) radio(R, c, d, tr);
+    // 予定のピットの1周前：自分の車なら止めて確認する
+    if (c.tm === S.my && S.pitStop !== false && !c.pitReq) { const nx = c.plan.stops[c.stopsDone]; if (nx && nx.lap - 1 === c.lap && c.warnedStop !== c.stopsDone + ":" + nx.lap) { c.warnedStop = c.stopsDone + ":" + nx.lap; R.alerts.push({ k: "pitsoon", id: c.id }); } }
     // ピット
     let pitTo = null;
     if (c.pitReq) { pitTo = c.pitReq; c.pitReq = null; }
@@ -765,7 +767,7 @@ const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&a
 const U = { tab: "home", sub: {}, speed: 1, paused: true, raf: 0, last: 0, pickSel: [] };
 const TABS = [["home", "🏠", "ホーム"], ["race", "🏁", "レース"], ["car", "🔧", "マシン"], ["team", "👤", "チーム"], ["table", "🏆", "順位"]];
 const S = () => F1.S, ME = () => F1.me(), money = F1.money;
-const SPEEDS = { 1: 20, 3: 60, 10: 200 };
+const SPEEDS = { 1: 10, 3: 30, 10: 100 };
 function toast(t) { const d = document.createElement("div"); d.className = "toast"; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 2400); }
 const ty = c => { const T = F1.TYRE[c]; return `<span class="ty" style="border-color:${T.col}">${c}</span>`; };
 const tbar = tm => `<span class="tbar" style="background:${esc(tm.color)}"></span>`;
@@ -991,7 +993,7 @@ function vRace() {
   $("#main").innerHTML = `
   <div class="card"><div class="row"><b class="sp">${esc(tr.name)}</b><span class="small muted" id="lapc"></span></div><div id="flag"></div>
     <canvas id="trk" width="640" height="380"></canvas>
-    <div class="row" style="margin-top:8px"><button class="b ${U.paused ? "p" : ""}" id="pp">${U.paused ? (started ? "▶ 再開" : "▶ スタート") : "⏸ 一時停止"}</button>${[1, 3, 10].map(k => `<button class="b ${U.speed === k ? "on" : ""}" data-sp="${k}">×${k}</button>`).join("")}<span class="sp"></span><button class="b" id="toEnd">最後まで</button></div><label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="radioStop" ${S().radioStop !== false ? "checked" : ""}> ドライバーの無線で止める（タイヤが限界・前を抜けない・後ろが速い）</label></div>
+    <div class="row" style="margin-top:8px"><button class="b ${U.paused ? "p" : ""}" id="pp">${U.paused ? (started ? "▶ 再開" : "▶ スタート") : "⏸ 一時停止"}</button>${[1, 3, 10].map(k => `<button class="b ${U.speed === k ? "on" : ""}" data-sp="${k}">×${k}</button>`).join("")}<span class="sp"></span><button class="b" id="toEnd">最後まで</button></div><label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="radioStop" ${S().radioStop !== false ? "checked" : ""}> ドライバーの無線で止める（タイヤが限界・前を抜けない・後ろが速い）</label><label class="small" style="display:block"><input type="checkbox" id="pitStop" ${S().pitStop !== false ? "checked" : ""}> 予定のピットの1周前に止める</label></div>
   <div id="ctls"></div>
   ${!started ? `<div class="card"><h3>予選結果</h3>${gridTable(R)}</div>` : ""}
   <div class="card"><h3>タイミング</h3><div style="overflow-x:auto"><table class="tower" id="tower"></table></div></div>
@@ -1089,7 +1091,7 @@ function drawTrack() {
 function resumeRace() { const R0 = S().race; if (R0 && !R0.started) { F1.advance(R0, 0); U.paused = false; vRace(); } U.paused = false; U.last = 0; const pp = $("#pp"); if (pp) { pp.textContent = "⏸ 一時停止"; pp.classList.remove("p"); } cancelAnimationFrame(U.raf); U.raf = requestAnimationFrame(tick); }
 function pauseRace() { U.paused = true; cancelAnimationFrame(U.raf); const pp = $("#pp"); if (pp) { pp.textContent = "▶ 再開"; pp.classList.add("p"); } if (S().race) F1.save(); }
 let lastUi = 0;
-document.addEventListener("change", e => { if (e.target && e.target.id === "radioStop") { S().radioStop = e.target.checked; F1.save(); } });
+document.addEventListener("change", e => { if (e.target && e.target.id === "radioStop") { S().radioStop = e.target.checked; F1.save(); } if (e.target && e.target.id === "pitStop") { S().pitStop = e.target.checked; F1.save(); } });
 function tick(now) {
   const R = S().race; if (!R || U.paused) return;
   const dt = U.last ? Math.min(0.1, (now - U.last) / 1000) : 0; U.last = now;
@@ -1107,12 +1109,13 @@ function ucHtml(R, c) {
 }
 function alertBox(al) {
   const R = S().race, tr = F1.TRACKS[R.tr], mine = R.cars.filter(c => c.tm === S().my && !c.out && !c.fin);
-  if (al.k === "radio") { const sp = R.cars.find(c => c.id === al.id); mine.sort((x, y) => (y === sp) - (x === sp)); }
-  const title = { radio: "📻 " + (al.id ? esc(F1.drv(al.id).name) : "") + " から無線", sc: "🟡 セーフティカー出動", rain: "🌧 雨が降ってきた", dry: "☀ 路面が乾いてきた", dnf: "❌ リタイア", fuel: "⛽ 燃料が足りない" }[al.k];
-  const msg = { radio: `「${esc(al.msg || "")}」${al.rk === "tyre" ? "<br>次の周でピットに入れるか、「タイヤを守る」で引っ張るか。" : al.rk === "stuck" ? "<br>このコースは抜きにくい。アンダーカット（先にピット）か、我慢してタイヤを守るか。" : "<br>抑えるなら「攻める」、無理なら先にピットへ。"}${(() => { const c = R.cars.find(x => x.id === al.id); return c ? ucHtml(R, c) : ""; })()}`, sc: `ピットの損失が約${(tr.pit * 0.5).toFixed(0)}秒に減っています。タイヤが古いなら今が入りどき。`, rain: "路面が濡れるとドライタイヤは大きく遅れます。インター（小雨）・ウェット（大雨）への交換を考えてください。", dry: "ドライタイヤに戻すタイミングです。早すぎると滑り、遅すぎるとタイムを失います。", dnf: `${al.id ? esc(F1.drv(al.id).name) : ""} がリタイアしました。`, fuel: `${al.id ? esc(F1.drv(al.id).name) : ""} はこのペースだと最後まで燃料が持ちません。ペースを「燃料セーブ」にしてください（SC中は燃料が減りにくい）。` }[al.k];
+  if (al.k === "radio" || al.k === "pitsoon") { const sp = R.cars.find(c => c.id === al.id); mine.sort((x, y) => (y === sp) - (x === sp)); }
+  const title = { pitsoon: "🔧 " + (al.id ? esc(F1.drv(al.id).name) : "") + "：次の周でピット予定", radio: "📻 " + (al.id ? esc(F1.drv(al.id).name) : "") + " から無線", sc: "🟡 セーフティカー出動", rain: "🌧 雨が降ってきた", dry: "☀ 路面が乾いてきた", dnf: "❌ リタイア", fuel: "⛽ 燃料が足りない" }[al.k];
+  const msg = { pitsoon: (() => { const c = R.cars.find(x => x.id === al.id); if (!c) return ""; const nx = c.plan.stops[c.stopsDone]; return `予定：${nx.lap}周目に${F1.TYRE[nx.comp].n}。予定どおりでよければそのまま再開。タイヤを変えるなら下で選ぶ。<div class="row" style="margin-top:6px"><button class="b" data-delay="${c.id}:3">3周延ばす</button><button class="b" data-delay="${c.id}:x">この予定を消す</button></div>${ucHtml(R, c)}`; })(), radio: `「${esc(al.msg || "")}」${al.rk === "tyre" ? "<br>次の周でピットに入れるか、「タイヤを守る」で引っ張るか。" : al.rk === "stuck" ? "<br>このコースは抜きにくい。アンダーカット（先にピット）か、我慢してタイヤを守るか。" : "<br>抑えるなら「攻める」、無理なら先にピットへ。"}${(() => { const c = R.cars.find(x => x.id === al.id); return c ? ucHtml(R, c) : ""; })()}`, sc: `ピットの損失が約${(tr.pit * 0.5).toFixed(0)}秒に減っています。タイヤが古いなら今が入りどき。`, rain: "路面が濡れるとドライタイヤは大きく遅れます。インター（小雨）・ウェット（大雨）への交換を考えてください。", dry: "ドライタイヤに戻すタイミングです。早すぎると滑り、遅すぎるとタイムを失います。", dnf: `${al.id ? esc(F1.drv(al.id).name) : ""} がリタイアしました。`, fuel: `${al.id ? esc(F1.drv(al.id).name) : ""} はこのペースだと最後まで燃料が持ちません。ペースを「燃料セーブ」にしてください（SC中は燃料が減りにくい）。` }[al.k];
   modal(`<h3>${title}</h3><p class="small">${msg}</p>${mine.map(c => `<div class="ctl"><div class="row"><b class="sp">${esc(F1.drv(c.id).name)}　P${posOf(R, c)}</b>${ty(c.comp)}<span class="small">${c.age}周・燃料${fuelLeft(R, c) < 0 ? "不足" : "OK"}</span></div><div class="row small" style="margin-top:6px">${["S", "M", "H", "I", "W"].map(k => `<button class="b ${c.pitReq === k ? "on" : ""}" data-apit="${c.id}:${k}" ${c.sets && !stockN(c, k) ? "disabled" : ""}>${F1.TYRE[k].n}${stockTxt(c, k)}</button>`).join("")}<button class="b" data-apit="${c.id}:x">入らない</button></div><div class="row small" style="margin-top:6px">${Object.keys(F1.PACE).map(k => `<button class="b ${c.pace === k ? "on" : ""}" data-apace="${c.id}:${k}">${F1.PACE[k].n}</button>`).join("")}</div></div>`).join("")}<button class="b p big" style="margin-top:10px" data-x id="goOn">この指示で再開</button>`, true);
   document.querySelectorAll("[data-apit]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.apit.split(":"); const c = F1.carAt(R, +id); c.pitReq = k === "x" ? null : k; b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b && k !== "x")); });
   document.querySelectorAll("[data-apace]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.apace.split(":"); F1.carAt(R, +id).pace = k; b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); });
+  document.querySelectorAll("[data-delay]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.delay.split(":"), c = F1.carAt(R, +id), nx = c.plan.stops[c.stopsDone]; if (!nx) return; if (k === "x") { c.plan.stops.splice(c.stopsDone, 1); toast("この予定のピットを消しました"); } else { nx.lap = Math.min(R.laps - 1, nx.lap + 3); toast(nx.lap + "周目に延ばしました"); } F1.save(); closeModal(); drawCtls(); resumeRace(); });
   $("#goOn").onclick = () => { closeModal(); drawCtls(); resumeRace(); };
 }
 function raceDone() {
