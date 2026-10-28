@@ -1005,13 +1005,15 @@ function vRace() {
   $("#toEnd").onclick = () => { if (!confirm("最後まで一気に進めますか？（このあとの判断は戦略と「おまかせ」で進みます）")) return; R.cars.forEach(c => { if (c.tm === S().my) c.autoReact = true; }); pauseRace(); let g = 0; while (!R.finished && g++ < 20000) F1.advance(R, 60); raceDone(); };
   drawCtls(); drawTower(); drawFeed(); drawStrip(); drawTrack();
 }
+// 今この瞬間の差（秒）：何周目のどこにいるかで比べる（線を越えた直後でも「+1周」にならない）
+function gapSec(R, a, b) { const p = o => o.lap + Math.max(0, Math.min(1, (R.t - o.lapStart) / ((o.lapEnd - o.lapStart) || 1))), lt = b.lt > 0 ? b.lt : (a.lt || 90); return Math.max(0, (p(a) - p(b)) * lt); }
 const lapFmt = t => !t || t > 900 ? "-" : Math.floor(t / 60) + ":" + (t % 60).toFixed(1).padStart(4, "0");
 const shortN = n => { const p = String(n).split(/[・ ]/); return p[p.length - 1]; };
 // 自分の2台：順位・前後との差・直前の1周を前後の車と比べる
 function drawStrip() {
   const R = S().race, el = $("#strip"); if (!R || !el) return;
   if (!R.started) { el.innerHTML = ""; return; }
-  const ord = F1.order(R), lead = ord[0], gapTo = (a, b) => a.lap === b.lap ? Math.abs(a.tot - b.tot).toFixed(1) : (Math.abs(a.lap - b.lap)) + "周";
+  const ord = F1.order(R), lead = ord[0], gapTo = (a, b) => { const g = Math.abs(gapSec(R, a, b) || gapSec(R, b, a)); return g.toFixed(1); };
   el.innerHTML = `<div class="card" style="padding:8px 10px">${R.cars.filter(c => c.tm === S().my).map(c => { const d = F1.drv(c.id), i = ord.indexOf(c), a = ord[i - 1], b = ord[i + 1];
     if (c.out) return `<div class="small muted">${esc(d.name)}：リタイア（${esc(c.why)}）</div>`;
     const cmp = o => { if (!o || o.out || !o.lt || !c.lt) return ""; const df = c.lt - o.lt; return ` <span class="${df < -0.05 ? "good" : df > 0.05 ? "bad" : "muted"}">${df > 0 ? "+" : ""}${df.toFixed(1)}</span>`; };
@@ -1080,7 +1082,7 @@ function drawTower() {
   const fast = Math.min(...ord.filter(c => !c.out && c.lt > 0 && c.lap > 0).map(c => c.lt));
   el.innerHTML = `<tr><th>#</th><th>ドライバー</th><th class="n">差</th><th class="n">前周</th><th>タイヤ</th><th class="n">P</th></tr>` + ord.map((c, i) => {
     const d = F1.drv(c.id), tm = F1.team(c.tm);
-    const gap = c.out ? c.why : i === 0 ? "トップ" : c.lap < lead.lap ? "+" + (lead.lap - c.lap) + "周" : "+" + (c.tot - lead.tot).toFixed(1);
+    const g = gapSec(R, lead, c), gap = c.out ? c.why : i === 0 ? "トップ" : g >= (lead.lt || 90) ? "+" + Math.floor(g / (lead.lt || 90)) + "周" : "+" + g.toFixed(1);
     return `<tr class="${c.tm === S().my ? "me" : ""}"><td>${c.out ? "R" : i + 1}</td><td>${tbar(tm)}${esc(shortN(d.name))}</td><td class="n">${gap}${c.drs && !c.out ? ' <span class="small" style="color:#2bb24c">DRS</span>' : ""}</td><td class="n small" style="${!c.out && c.lt === fast ? "color:#b04cff;font-weight:700" : ""}">${c.out || !c.lap ? "" : lapFmt(c.lt)}</td><td>${c.out ? "" : ty(c.comp) + ' <span class="small muted">' + c.age + "</span>"}</td><td class="n small">${c.pits}</td></tr>`;
   }).join("");
 }
