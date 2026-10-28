@@ -152,14 +152,14 @@ const F1 = (() => {
     q.sort((a, b) => a.q - b.q);
     q.forEach((x, i) => {
       const d = drv(x.id), plan = x.tm === S.my && S.plans && S.plans[x.id] ? JSON.parse(JSON.stringify(S.plans[x.id])) : aiPlan(tr, d, R.wet);
-      R.cars.push({ id: x.id, tm: x.tm, grid: i + 1, q: x.q, lap: 0, lapStart: 0, lapEnd: 0, lt: 0, tot: 0, comp: plan.start, age: R.wet ? 0 : (i < 10 ? 3 : 0), pace: "norm", plan, stopsDone: 0, pitReq: null, out: false, why: "", pits: 0, best: 999, pos: i + 1, fin: false, finT: 0, used: [plan.start], lastPit: -9 });
+      R.cars.push({ id: x.id, tm: x.tm, grid: i + 1, q: x.q, lap: 0, lapStart: 0, lapEnd: 0, lt: 0, tot: 0, comp: plan.start, age: 0, pace: "norm", plan, stopsDone: 0, pitReq: null, out: false, why: "", pits: 0, best: 999, pos: i + 1, fin: false, finT: 0, used: [plan.start], lastPit: -9 });
     });
     S.race = R; return R;
   }
   function aiPlan(tr, d, wet) { const p = bestPlan(tr, d, wet); if (!wet && rnd() < 0.35 && p.stops.length) { p.stops.forEach(s => s.lap = clamp(s.lap + ri(-3, 3), 5, tr.laps - 5)); } return { start: p.start, stops: p.stops }; }
 
   const carAt = (R, id) => R.cars.find(c => c.id === id);
-  const order = R => R.cars.filter(c => !c.out).sort((a, b) => b.lap - a.lap || a.lapEnd - b.lapEnd).concat(R.cars.filter(c => c.out).sort((a, b) => b.lap - a.lap));
+  const order = R => R.cars.filter(c => !c.out).sort((a, b) => (b.fin - a.fin) || b.lap - a.lap || (a.fin ? a.finT - b.finT : a.tot - b.tot) || a.grid - b.grid).concat(R.cars.filter(c => c.out).sort((a, b) => b.lap - a.lap));
 
   function lapTime(R, c) {
     const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[c.comp], pm = PACE[c.pace];
@@ -419,8 +419,8 @@ function vRace() {
     <div id="flag"></div>
     <canvas id="trk" width="640" height="380"></canvas>
     <div class="row" style="margin-top:8px">${started || !R.finished ? `<button class="b ${U.paused ? "p" : ""}" id="pp">${U.paused ? (started ? "▶ 再開" : "▶ スタート") : "⏸ 一時停止"}</button>` : ""}${[1, 3, 10].map(k => `<button class="b ${U.speed === k ? "on" : ""}" data-sp="${k}">×${k}</button>`).join("")}<span class="sp"></span><button class="b" id="toEnd">最後まで</button></div></div>
-  ${!started ? `<div class="card"><h3>予選結果</h3>${gridTable(R)}</div>` : ""}
   <div id="ctls"></div>
+  ${!started ? `<div class="card"><h3>予選結果</h3>${gridTable(R)}</div>` : ""}
   <div class="card"><h3>タイミング</h3><div style="overflow-x:auto"><table class="tower" id="tower"></table></div></div>
   <div class="card"><h3>実況</h3><div class="feed" id="feed"></div></div>`;
   $("#pp").onclick = () => { if (U.paused) resumeRace(); else pauseRace(); };
@@ -509,7 +509,7 @@ function drawTrack() {
 }
 
 /* 進行 */
-function resumeRace() { U.paused = false; U.last = 0; const pp = $("#pp"); if (pp) { pp.textContent = "⏸ 一時停止"; pp.classList.remove("p"); } cancelAnimationFrame(U.raf); U.raf = requestAnimationFrame(tick); }
+function resumeRace() { const R0 = S().race; if (R0 && !R0.started) { F1.advance(R0, 0); U.paused = false; vRace(); } U.paused = false; U.last = 0; const pp = $("#pp"); if (pp) { pp.textContent = "⏸ 一時停止"; pp.classList.remove("p"); } cancelAnimationFrame(U.raf); U.raf = requestAnimationFrame(tick); }
 function pauseRace() { U.paused = true; cancelAnimationFrame(U.raf); const pp = $("#pp"); if (pp) { pp.textContent = "▶ 再開"; pp.classList.add("p"); } if (S().race) F1.save(); }
 let lastUi = 0;
 function tick(now) {
