@@ -334,7 +334,7 @@ const GM = (() => {
     if (S.my != null && me().players.includes(p)) return { lo: p.pot, hi: p.pot, exact: true };
     const lvl = S.my != null ? me().fac.scout : 1, sc = S.scouted[p.id] ? 2 : 0, err = Math.max(1, 12 - lvl * 2 - sc * 3);
     const seed = (p.id * 9301 + 49297) % 233280 / 233280, mid = clamp(Math.round(p.pot + (seed - 0.5) * err), ovr(p), 99);
-    return { lo: clamp(mid - err, ovr(p), 99), hi: clamp(mid + err, ovr(p), 99), exact: false };
+    const cap = Math.min(99, ovr(p) + (p.age >= 29 ? 1 : (29 - p.age) * 3 + 3)); /* 年齢でこれ以上は伸びない上限 */ return { lo: clamp(mid - err, ovr(p), cap), hi: clamp(mid + err, ovr(p), cap), exact: false };
   }
   function scout(pid) { const c = me(), cost = 60; if (c.budget < cost) return { ok: false, msg: "予算が足りません" }; c.budget -= cost; S.scouted[pid] = 1; save(); return { ok: true, msg: "スカウトを派遣しました（潜在能力が詳しく見えます）" }; }
 
