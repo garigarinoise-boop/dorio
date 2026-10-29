@@ -589,7 +589,7 @@ const F1 = (() => {
     const res = R.cars.slice().sort((a, b) => (a.out - b.out) || b.lap - a.lap || a.finT - b.finT || a.lapEnd - b.lapEnd);
     res.forEach((c, i) => { c.pos = i + 1; });
     const fl = res.filter(c => !c.out && c.pos <= 10).sort((a, b) => a.best - b.best)[0];
-    res.forEach(c => { const d = drv(c.id), tm = team(c.tm); d.career.starts++; c.got = 0; if (!c.out && c.pos <= 10) { c.got = POINTS[c.pos - 1] + (fl === c ? 1 : 0); d.pts += c.got; tm.pts += c.got; } if (c.pos === 1 && !c.out) { d.wins++; d.career.wins++; } if (c.pos <= 3 && !c.out) d.podiums++; });
+    res.forEach(c => { const d = drv(c.id), tm = team(c.tm); d.career.starts++; c.got = 0; if (!c.out && c.pos <= 10) { c.got = POINTS[c.pos - 1]; /* ファステストラップの1点は2025年に廃止（記録だけ残す） */ d.pts += c.got; tm.pts += c.got; } if (c.pos === 1 && !c.out) { d.wins++; d.career.wins++; } if (c.pos <= 3 && !c.out) d.podiums++; });
     const w = res[0];
     const rec = { passes: R.passes || 0, round: S.round + 1, name: tr.name, winner: drv(w.id).name, wteam: team(w.tm).name, fl: fl ? drv(fl.id).name : "-", res: res.map(c => ({ id: c.id, tm: c.tm, pos: c.pos, out: c.out, why: c.why, gap: c.out ? null : c.finT - res[0].finT, lapsDown: res[0].lap - c.lap, pits: c.pits, got: c.got, grid: c.grid })) };
     S.last = rec; S.results = (S.results || []).concat([rec]);
@@ -1251,7 +1251,7 @@ function alertBox(al) {
 }
 function raceDone() {
   const rec = S().last; U.paused = true; cancelAnimationFrame(U.raf); render();
-  if (rec) { const mine = rec.res.filter(r => r.tm === S().my); modal(`<h3>🏁 ${esc(rec.name)}</h3><p>優勝：<b>${esc(rec.winner)}</b>（${esc(rec.wteam)}）・ファステスト ${esc(rec.fl)}</p>${mine.map(r => `<p>${esc(F1.drv(r.id).name)}：<b>${r.out ? "リタイア（" + esc(r.why) + "）" : r.pos + "位"}</b>（${r.grid}番手から）${r.got ? "・" + r.got + "点" : ""}</p>`).join("")}<button class="b p big" data-x>閉じる</button>`); }
+  if (rec) { const mine = rec.res.filter(r => r.tm === S().my); modal(`<h3>🏁 ${esc(rec.name)}</h3><p>優勝：<b>${esc(rec.winner)}</b>（${esc(rec.wteam)}）・ファステストラップ ${esc(rec.fl)}（点はなし）</p>${mine.map(r => `<p>${esc(F1.drv(r.id).name)}：<b>${r.out ? "リタイア（" + esc(r.why) + "）" : r.pos + "位"}</b>（${r.grid}番手から）${r.got ? "・" + r.got + "点" : ""}</p>`).join("")}<button class="b p big" data-x>閉じる</button>`); }
 }
 
 /* ---------- マシン ---------- */
