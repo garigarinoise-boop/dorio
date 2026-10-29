@@ -469,12 +469,32 @@ const F1 = (() => {
     const useQ = (x, k) => { if (R.wet) { const a = takeSet(x.sets, "I"); x.sets.I.push((a || 0) + QTYRE_LAPS); return "I"; } if (!setsLeft(x.sets, k)) k = ["S", "M", "H"].find(z => setsLeft(x.sets, z)); const a = takeSet(x.sets, k); x.qAge = (a || 0) + QTYRE_LAPS; x.sets[k].push(x.qAge); return k; };
     const lap = (x, comp, evo) => x.base + (R.wet ? 0 : (TYRE[comp].off + trueOff(comp)) * 0.6) - evo + gauss() * x.noise; // 予選1周ではタイヤの差は決勝より小さい
     const n = all.length, cut1 = Math.max(10, n - 6), cut2 = 10;
-    all.forEach(x => { x.ch.q1 = useQ(x, x.ch.q1); x.t1 = lap(x, R.wet ? "S" : x.ch.q1, 0); }); all.sort((a, b) => a.t1 - b.t1);
-    const q2 = all.slice(0, cut1); q2.forEach(x => { x.ch.q2 = useQ(x, x.ch.q2); x.q2Age = x.qAge; x.t2 = lap(x, R.wet ? "S" : x.ch.q2, 0.15); }); q2.sort((a, b) => a.t2 - b.t2);
-    const q3 = q2.slice(0, cut2); q3.forEach(x => { x.ch.q3 = useQ(x, x.ch.q3 || "S"); x.t3 = lap(x, R.wet ? "S" : x.ch.q3, 0.3); }); q3.sort((a, b) => a.t3 - b.t3);
-    const grid = q3.concat(q2.slice(cut2), all.slice(cut1));
+    // 予選中のクラッシュ・マシントラブル。安定感が低い・雨・市街地ほどクラッシュしやすく、信頼性が低いほど壊れやすい
+    // クラッシュ：6割はタイムを残せず、残せても最後のアタックは無し。車が壊れるのでその後のセッションは走れない。3割はギアボックス交換で5グリッド降格
+    // トラブル：半分はコース上で止まってタイムなし（その後も走れない）、半分は遅いタイムで走り切る
+    R.qEvents = []; const qName = ["Q1", "Q2", "Q3"];
+    const qTrouble = (x, si) => {
+      const d = drv(x.id), tm = team(x.tm), mine = x.tm === S.my, nm = d.name;
+      if (x.dead) { x.note[si] = "出走できず"; return null; }
+      const pC = (0.004 + (100 - d.cons) / 100 * 0.01 + Math.max(0, 60 - d.calm) / 100 * 0.01 + R.wet * 0.025) * (tr.street ? 1.6 : 1), pM = (100 - tm.car.rel) / 100 * 0.015;
+      if (rnd() < pC) { x.dead = true; const keep = rnd() < 0.4, gb = rnd() < 0.3; if (gb) x.pen = 5; x.note[si] = "💥クラッシュ"; R.qEvents.push({ si, id: x.id, tm: x.tm, mine, t: "💥 " + qName[si] + "：" + nm + " がクラッシュ（赤旗）" + (keep ? "。それまでのタイムは残る" : "。タイムなし") + "。この後のセッションは走れない" + (gb ? "。ギアボックス交換で5グリッド降格" : "") }); x.red = si; return keep ? 0.45 : null; }
+      if (rnd() < pM) { const stop = rnd() < 0.5; if (stop) x.dead = true; x.note[si] = "🔧トラブル"; R.qEvents.push({ si, id: x.id, tm: x.tm, mine, t: "🔧 " + qName[si] + "：" + nm + (stop ? " がマシントラブルでコース上にストップ。タイムなし。この後のセッションは走れない" : " にマシントラブル（パワーが落ちたまま走り切る）") }); return stop ? null : 0.6 + rnd() * 1.2; }
+      return 0;
+    };
+    // 赤旗：同じセッションの最後のアタックが乱れる（ほかの車のタイムが少しぶれる）
+    const session = (list, si, comp, evo) => { list.forEach(x => { const k = ["t1", "t2", "t3"][si], tb = qTrouble(x, si); x[k] = tb == null ? null : lap(x, comp(x), evo) + tb; });
+      if (list.some(x => x.red === si)) list.forEach(x => { const k = ["t1", "t2", "t3"][si]; if (x.red !== si && x[k] != null) x[k] += Math.abs(gauss()) * 0.15; });
+      list.sort((a, b) => (a[["t1", "t2", "t3"][si]] ?? 1e9) - (b[["t1", "t2", "t3"][si]] ?? 1e9)); };
+    all.forEach(x => x.note = ["", "", ""]);
+    all.forEach(x => { x.ch.q1 = useQ(x, x.ch.q1); }); session(all, 0, x => R.wet ? "S" : x.ch.q1, 0);
+    const q2 = all.slice(0, cut1); q2.forEach(x => { if (x.dead) return; x.ch.q2 = useQ(x, x.ch.q2); x.q2Age = x.qAge; }); session(q2, 1, x => R.wet ? "S" : x.ch.q2, 0.15);
+    const q3 = q2.slice(0, cut2); q3.forEach(x => { if (x.dead) return; x.ch.q3 = useQ(x, x.ch.q3 || "S"); }); session(q3, 2, x => R.wet ? "S" : x.ch.q3, 0.3);
+    let grid = q3.concat(q2.slice(cut2), all.slice(cut1));
+    // グリッド降格（後ろへ5つ。降格した車どうしは予選の順）
+    if (grid.some(x => x.pen)) grid = grid.map((x, i) => ({ x, k: i + (x.pen || 0) + (x.pen ? 0.5 : 0) })).sort((a, b) => a.k - b.k).map(o => o.x);
+    R.qEvents.forEach(e => say(R, e.t, e.mine));
     { const base = tr.rain * 100, p = R.wet ? 90 : willRain ? clamp(base * 1.6 + 20 + gauss() * 10, 25, 90) : clamp(base * 0.6 + gauss() * 8, 0, 60); R.fc = { p: Math.round(p / 5) * 5, from: willRain ? clamp(R.rainAt + ri(-8, 8), 3, R.laps - 3) : ri(Math.round(R.laps * 0.2), Math.round(R.laps * 0.7)) }; }
-    R.quali = grid.map((x, i) => ({ id: x.id, tm: x.tm, pos: i + 1, t1: x.t1, t2: x.t2 == null ? null : x.t2, t3: x.t3 == null ? null : x.t3, q2t: x.ch.q2, q1t: x.ch.q1, q3t: x.ch.q3 }));
+    R.quali = grid.map((x, i) => ({ id: x.id, tm: x.tm, pos: i + 1, note: x.note, pen: x.pen || 0, t1: x.t1, t2: x.t2 == null ? null : x.t2, t3: x.t3 == null ? null : x.t3, q2t: x.ch.q2, q1t: x.ch.q1, q3t: x.ch.q3 }));
     grid.forEach((x, i) => {
       const d = drv(x.id), tm = team(x.tm), top10 = false, opt = top10 ? { start: x.ch.q2, age: x.q2Age || QTYRE_LAPS, sets: x.sets, est: x.est, grid: i + 1 } : { sets: x.sets, est: x.est, grid: i + 1 };
       const plan = x.tm === S.my ? recPlan(tr, d, R.wet, stratSk(tm), opt) : aiPlan(tr, d, R.wet, tm, opt);
@@ -1487,8 +1507,8 @@ function drawStrip() {
       <div style="width:100%;display:flex;gap:10px;flex-wrap:wrap">${a && !a.out ? `<span>▲ ${esc(shortN(F1.drv(a.id).name))} ${gapTo(c, a)}秒 ${ty(a.comp)}${a.age}周・前周差${cmp(a)}</span>` : '<span class="muted">▲ トップ</span>'}${b && !b.out ? `<span>▼ ${esc(shortN(F1.drv(b.id).name))} ${gapTo(c, b)}秒 ${ty(b.comp)}${b.age}周・前周差${cmp(b)}</span>` : ""}</div></div>`; }).join("")}<div class="small muted" style="margin-top:3px">前周差：マイナス（緑）＝自分の方が速い</div></div>`;
 }
 function gridTable(R) {
-  const q = R.quali || [], f = v => v == null ? "" : v.toFixed(3);
-  return `<div style="overflow-x:auto"><table><tr><th>#</th><th>ドライバー</th><th class="n">Q1</th><th class="n">Q2</th><th class="n">Q3</th><th>スタート</th></tr>${R.cars.slice().sort((a, b) => a.grid - b.grid).map(c => { const d = F1.drv(c.id), tm = F1.team(c.tm), x = q.find(z => z.id === c.id) || {}; return `<tr class="${c.tm === S().my ? "me" : ""}"><td>${c.grid}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${f(x.t1)}${x.q1t ? " " + x.q1t : ""}</td><td class="n small">${f(x.t2)}${x.t2 != null ? " " + x.q2t : ""}</td><td class="n small">${f(x.t3)}${x.t3 != null && x.q3t ? " " + x.q3t : ""}</td><td>${ty(c.comp)}${c.lockStart ? '<span class="small muted"> ' + c.age + '周</span>' : ""}</td></tr>`; }).join("")}</table></div><p class="hint">タイムの横の字は使ったタイヤ。スタートのタイヤは予選と関係なく選べる。</p>`;
+  const q = R.quali || [], f = v => v == null ? "" : v.toFixed(3), nt = (x, i) => x.note && x.note[i] ? ` <span class="small">${x.note[i]}</span>` : "";
+  return `${(R.qEvents || []).length ? `<div class="small" style="margin-bottom:6px">${R.qEvents.map(e => `<div${e.mine ? ' style="font-weight:bold"' : ""}>${esc(e.t)}</div>`).join("")}</div>` : ""}<div style="overflow-x:auto"><table><tr><th>#</th><th>ドライバー</th><th class="n">Q1</th><th class="n">Q2</th><th class="n">Q3</th><th>スタート</th></tr>${R.cars.slice().sort((a, b) => a.grid - b.grid).map(c => { const d = F1.drv(c.id), tm = F1.team(c.tm), x = q.find(z => z.id === c.id) || {}; return `<tr class="${c.tm === S().my ? "me" : ""}"><td>${c.grid}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${f(x.t1)}${x.t1 != null && x.q1t ? " " + x.q1t : ""}${nt(x, 0)}</td><td class="n small">${f(x.t2)}${x.t2 != null ? " " + x.q2t : ""}${nt(x, 1)}</td><td class="n small">${f(x.t3)}${x.t3 != null && x.q3t ? " " + x.q3t : ""}${nt(x, 2)}${x.pen ? ` <span class="small">⬇${x.pen}降格</span>` : ""}</td><td>${ty(c.comp)}${c.lockStart ? '<span class="small muted"> ' + c.age + '周</span>' : ""}</td></tr>`; }).join("")}</table></div><p class="hint">タイムの横の字は使ったタイヤ。スタートのタイヤは予選と関係なく選べる。</p>`;
 }
 const posOf = (R, c) => F1.order(R).indexOf(c) + 1;
 function fuelLeft(R, c) { const tr = F1.TRACKS[R.tr]; return c.fuel - (R.laps - c.lap) * tr.fuel * S().regs.fuel; }
