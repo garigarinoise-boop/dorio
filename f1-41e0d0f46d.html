@@ -289,7 +289,9 @@ const F1 = (() => {
   // ピットで後ろに下がると抜き返すのに時間がかかる：抜きにくいコースほどピット1回の損が大きい
   const stopPen = tr => (1 - tr.ovt) * 5;
   let EST = null; // 計画を立てるときの見積もり { wf: 減りの倍率, off: ペース差のずれ }
-  function stintCost(comp, laps, tr, tmF, age0) { age0 = age0 || 0; const T = TYRE[comp], w = tr.wear * S.regs.wear * (tmF || 1) * (EST && EST.wf[comp] || 1); let c = (T.off + (EST && EST.off[comp] || 0)) * laps + T.deg * w * (laps * (laps - 1) / 2 + age0 * laps); const life = T.life / w, end = age0 + laps; if (end > life) { const from = Math.max(age0, life); c += (end - from) * (end - from + 1) / 2 * 0.25; } return c; }
+  // 崖：寿命の手前からなだらかに落ちる追加のロス（秒/周）
+  const cliffT = (age, life) => { const x = age - life * 0.92; return x > 0 ? 0.08 * x + 0.006 * x * x : 0; };
+  function stintCost(comp, laps, tr, tmF, age0) { age0 = age0 || 0; const T = TYRE[comp], w = tr.wear * S.regs.wear * (tmF || 1) * (EST && EST.wf[comp] || 1); let c = (T.off + (EST && EST.off[comp] || 0)) * laps + T.deg * w * (laps * (laps - 1) / 2 + age0 * laps); const life = T.life / w; for (let a = age0 + 1; a <= age0 + laps; a++) c += cliffT(a, life); return c; }
   // opt.start＝スタートのタイヤが決まっているとき、opt.age＝そのタイヤの使用済み周回
   function bestPlan(tr, d, wet, opt) { const p = EST; EST = opt && opt.est || null; try { return bestPlan0(tr, d, wet, opt); } finally { EST = p; } }
   function bestPlan0(tr, d, wet, opt) {
@@ -429,7 +431,7 @@ const F1 = (() => {
     const wearMul = tr.wear * S.regs.wear * pm.w * (1.12 - d.tm / 250) * carWear(tm) * (c.comp === "I" || c.comp === "W" ? (R.wet < 0.25 ? 3 : 1) : 1);
     const wfc = trueWf(c.comp);
     let t = tr.base + perfDelta(tm, d, tr) - (c.tm === S.my ? setupB(c.id) : 0.02) + T.off + trueOff(c.comp) + T.deg * c.age * wearMul * wfc + pm.t;
-    const life = T.life / (tr.wear * S.regs.wear * pm.w * wfc); if (c.age > life) t += (c.age - life) * 0.3;
+    const life = T.life / (tr.wear * S.regs.wear * pm.w * wfc); t += cliffT(c.age, life);
     t += Math.max(0, c.fuel) * 0.055; // 燃料の重さ
     const w = R.wet; t += w * 7 * (1.25 - d.wet / 160);
     if (c.comp === "S" || c.comp === "M" || c.comp === "H") t += Math.max(0, w - 0.15) * 16;
@@ -535,7 +537,7 @@ const F1 = (() => {
   function startVSC(R) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => c.drs = false); R.vsc = { left: ri(1, 3) }; R.vscCount = (R.vscCount || 0) + 1; say(R, "🟡 L" + R.lap + " バーチャルセーフティカー（全車ペースダウン・差はそのまま）", true); R.alerts.push({ k: "vsc" }); }
   function startSC(R) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => c.drs = false); R.drsFrom = 999; R.sc = { left: ri(3, 5) }; R.scCount++; say(R, "🟡 L" + R.lap + " セーフティカー出動（ピットの損失が半分）", true); R.alerts.push({ k: "sc" }); }
   // タイヤだけのタイム（新品との比較用）
-  function tyreTime(R, c, comp, age) { const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[comp], wf = trueWf(comp), w = tr.wear * S.regs.wear * (1.12 - d.tm / 250) * carWear(tm) * wf; let t = T.off + trueOff(comp) + T.deg * age * w; const life = T.life / (tr.wear * S.regs.wear * wf); if (age > life) t += (age - life) * 0.3; return t; }
+  function tyreTime(R, c, comp, age) { const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[comp], wf = trueWf(comp), w = tr.wear * S.regs.wear * (1.12 - d.tm / 250) * carWear(tm) * wf; let t = T.off + trueOff(comp) + T.deg * age * w; const life = T.life / (tr.wear * S.regs.wear * wf); return t + cliffT(age, life); }
   const nextComp = c => { const nx = c.plan.stops[c.stopsDone]; if (nx) return nx.comp; return c.comp === "S" ? "M" : c.comp === "M" ? "H" : "M"; };
   // 前の車に対してアンダーカットが効くか・ピット後に何位で戻るか
   // 前の車に対してアンダーカットが効くか・ピット後に何位で戻るか（今の時点の「何周目のどこにいるか」で比べる）
