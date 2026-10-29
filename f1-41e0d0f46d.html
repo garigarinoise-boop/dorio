@@ -227,8 +227,9 @@ const F1 = (() => {
   // レース数に合わせてカレンダーを増減（増やすときはF1熱の高い国から、減らすときは熱の低い国から。自分の国のGPは残す）
   const RACE_OPTS = [16, 20, 24];
   const perRace = () => 16 / Math.max(1, S.calendar.length);
-  function fitCal() {
-    const n = S.nRaces || 24, N = S.nations || {}, fev = c => N[c] ? N[c].fever : 50, my = S.my != null ? S.teams.find(x => x.id === S.my) : null, added = [], cut = [];
+  const calRange = () => { const t = S.nRaces || 24; return [Math.max(12, t - 3), Math.min(25, t + 2)]; };
+  function fitCal(nArg) {
+    const n = nArg || S.nRaces || 24, N = S.nations || {}, fev = c => N[c] ? N[c].fever : 50, my = S.my != null ? S.teams.find(x => x.id === S.my) : null, added = [], cut = [];
     while (S.calendar.length < n) { const host = new Set(S.calendar.map(id => TRACKS[id].c)), c = TRACKS.filter(t => !S.calendar.includes(t.id)).map(t => ({ t, sc: fev(t.c) + gauss() * 6 + (host.has(t.c) ? -15 : 0) })).sort((a, b) => b.sc - a.sc)[0]; if (!c) break; S.calendar.push(c.t.id); S.gp[c.t.id] = { left: ri(3, 5), isNew: true }; added.push(c.t.name); }
     while (S.calendar.length > n) { const low = S.calendar.slice().sort((a, b) => ((my && TRACKS[a].c === my.nat) - (my && TRACKS[b].c === my.nat)) || fev(TRACKS[a].c) - fev(TRACKS[b].c))[0]; S.calendar = S.calendar.filter(x => x !== low); delete S.gp[low]; cut.push(TRACKS[low].name); }
     S.calendar = sortCal(S.calendar);
@@ -236,7 +237,7 @@ const F1 = (() => {
     return { added, cut };
   }
   // シーズンの前（オフ中か、第1戦の前）ならすぐ反映。シーズン中なら来季から
-  function setRaces(n) { if (!RACE_OPTS.includes(n)) return { ok: false, msg: "選べません" }; S.nRaces = n; const now = S.phase === "off" || (S.round === 0 && !S.race); if (now) fitCal(); save(); return { ok: true, msg: now ? "今季から全" + n + "戦にしました" : "来季から全" + n + "戦になります" }; }
+  function setRaces(n) { if (!RACE_OPTS.includes(n)) return { ok: false, msg: "選べません" }; S.nRaces = n; const now = S.phase === "off" || (S.round === 0 && !S.race); if (now) fitCal(); save(); return { ok: true, msg: now ? "今季は全" + n + "戦にしました。来季からは契約しだいで増減します" : "目安を" + n + "戦にしました。来季から契約しだいでそこへ寄っていきます" }; }
   const sortCal = ids => ids.slice().sort((a, b) => TRACKS[a].month - TRACKS[b].month || a - b);
   // ---- マシン：空力（ダウンフォース・ストレートの伸び）・シャシー（低速・高速コーナー・タイヤへの優しさ）・信頼性。空力とシャシーはスペック（パーツの版）を選んで使う ----
   const AERO_K = ["df", "drag"], CHAS_K = ["low", "high", "tyre"];
@@ -281,8 +282,7 @@ const F1 = (() => {
     S.teams.forEach((tm, i) => { if (!tm.nat) { const t0 = TEAM0[i]; tm.nat = t0 ? t0.nat : "jpn"; tm.fac = t0 ? t0.fac : tm.nat; } if (!tm.specs) { const a = tm.car.aero, c = tm.car.chassis; tm.specs = { aero: [newSpec("aero", { df: a, drag: a }, "第" + S.season + "期 標準")], chassis: [newSpec("chassis", { low: c, high: c, tyre: c }, "第" + S.season + "期 標準")] }; tm.use = { aero: tm.specs.aero[0].id, chassis: tm.specs.chassis[0].id }; tm.proj = []; applyUse(tm); } });
     Object.values(S.drivers).forEach(d => { if (!d.nat) d.nat = JP.includes(d.name) ? "jpn" : pickNat(); });
     if (!S.gp) { S.gp = {}; S.calendar.forEach(id => S.gp[id] = { left: ri(1, 5) }); }
-    if (S.nRaces == null) S.nRaces = 24;
-    if ((S.phase === "off" || (S.round === 0 && !S.race)) && S.calendar.length !== S.nRaces) fitCal();
+    if (S.nRaces == null) { S.nRaces = 24; if (S.phase === "off" || (S.round === 0 && !S.race)) fitCal(); }
   }
   // 既存チームで始める／新規参入
   function chooseTeam(id) { S.teams.forEach(initFac); S.my = id; S.phase = "drivers"; news("あなたは " + me().name + " の代表に就任しました。"); save(); }
@@ -675,8 +675,8 @@ const F1 = (() => {
     { const tm = me(), ev = []; tm.firsts = tm.firsts || {}; tm.milestones = tm.milestones || [];
       const lab = tm.entrant ? "チーム初" : "就任後初", mark = (k, text) => { const was = tm.firsts[k]; if (k === "win") tm.firsts.podium = tm.firsts.points = true; if (k === "podium") tm.firsts.points = true; if (was) return false; tm.firsts[k] = true; tm.milestones.unshift({ season: S.season, round: S.round + 1, gp: tr.name, text }); return true; };
       res.filter(c => c.tm === tm.id && !c.out).sort((a, b) => a.pos - b.pos).forEach(c => { const d = drv(c.id);
-        if (c.pos === 1) { const first = mark("win", d.name + " が" + lab + "優勝"), dFirst = d.career.wins === 1, bonus = 3 + (first ? 5 : 0); tm.budget += bonus; tm.sponsor = clamp(tm.sponsor + 1, 30, 140); ev.push({ k: "win", id: c.id, pos: 1, grid: c.grid, teamFirst: first, drvFirst: dFirst, bonus }); if (dFirst && !first) tm.milestones.unshift({ season: S.season, round: S.round + 1, gp: tr.name, text: d.name + " が初優勝" }); }
-        else if (c.pos <= 3) { const first = mark("podium", d.name + " が" + lab + "表彰台（" + c.pos + "位）"), bonus = 1.5 + (first ? 2 : 0); tm.budget += bonus; ev.push({ k: "podium", id: c.id, pos: c.pos, grid: c.grid, teamFirst: first, bonus }); }
+        if (c.pos === 1) { const first = mark("win", d.name + " が" + lab + "優勝"), dFirst = d.career.wins === 1, bonus = r1(3 * perRace()) + (first ? 5 : 0); tm.budget += bonus; tm.sponsor = clamp(tm.sponsor + 1, 30, 140); ev.push({ k: "win", id: c.id, pos: 1, grid: c.grid, teamFirst: first, drvFirst: dFirst, bonus }); if (dFirst && !first) tm.milestones.unshift({ season: S.season, round: S.round + 1, gp: tr.name, text: d.name + " が初優勝" }); }
+        else if (c.pos <= 3) { const first = mark("podium", d.name + " が" + lab + "表彰台（" + c.pos + "位）"), bonus = r1(1.5 * perRace()) + (first ? 2 : 0); tm.budget += bonus; ev.push({ k: "podium", id: c.id, pos: c.pos, grid: c.grid, teamFirst: first, bonus }); }
         else if (c.got > 0) { const first = mark("points", d.name + " が" + lab + "入賞（" + c.pos + "位）"); if (first) tm.budget += 1; ev.push({ k: "points", id: c.id, pos: c.pos, grid: c.grid, teamFirst: first, bonus: first ? 1 : 0 }); } });
       // ドライバーの成長：勝つと自信がつく（速さは伸びしろの範囲で）
       ev.forEach(e => { const d = drv(e.id), g = {}; const up = (k, n) => { const v = clamp(d[k] + n, 35, 98); if (v !== d[k]) { g[k] = v - d[k]; d[k] = v; } };
@@ -685,7 +685,7 @@ const F1 = (() => {
         else if (e.teamFirst || rnd() < 0.15 * perRace()) up(pick(["cons", "calm"]), 1);
         e.grow = g; d.salary = salaryOf(d); });
       // 入賞の賞金（1点につき $0.2M）
-      const pts = ev.reduce((a, e) => a + (POINTS[e.pos - 1] || 0), 0); if (pts) { tm.budget += r1(pts * 0.2); rec.myPrize = r1(pts * 0.2); }
+      const pts = ev.reduce((a, e) => a + (POINTS[e.pos - 1] || 0), 0); if (pts) { tm.budget += r1(pts * 0.2 * perRace()); rec.myPrize = r1(pts * 0.2 * perRace()); }
       // 士気：優勝 +10、表彰台 +5、入賞 +2、ノーポイント −2、リタイア −4。平常(60)へ少し戻る
       const m0 = moraleOf(tm), why = [], myCars = res.filter(c => c.tm === tm.id), add = (v, t) => { if (Math.abs(v) >= 0.5) why.push(t + (v > 0 ? " +" : " ") + Math.round(v)); return v; };
       let dm = 0;
@@ -698,7 +698,7 @@ const F1 = (() => {
     S.teams.forEach(t => { if (t.id === S.my) return; const cs = res.filter(c => c.tm === t.id); let dm = 0; cs.forEach(c => { dm += gainM(c); if (c.out) dm -= 4; else if (c.pos === 1) dm += 10; else if (c.pos <= 3) dm += 5; else if (c.got) dm += 2; }); t.morale = moraleStep(moraleOf(t), dm, t); });
     rec.train = []; S.teams.forEach(t => { const p = (fl(t, "sim") - 1) * 0.03 * perRace(); t.drivers.forEach(id => { if (rnd() >= p) return; const d = drv(id), k = d.pace < d.pot && rnd() < 0.25 ? "pace" : pick(["craft", "cons", "tm", "wet", "calm"]); if (d[k] >= 98) return; d[k]++; d.salary = salaryOf(d); if (t.id === S.my) rec.train.push({ id, k }); }); });
     S.last = rec; S.results = (S.results || []).concat([rec]);
-    S.teams.forEach(tm => { const got = res.filter(c => c.tm === tm.id).reduce((t, c) => t + c.got, 0); tm.budget += perRace() + got * 0.3; });
+    S.teams.forEach(tm => { const got = res.filter(c => c.tm === tm.id).reduce((t, c) => t + c.got, 0); tm.budget += (1 + got * 0.3) * perRace(); });
     news("第" + rec.round + "戦 " + tr.name + "：優勝 " + rec.winner + "（" + rec.wteam + "）");
     f2Round(tr);
     ["aero", "chassis"].forEach(k => { const sp = specOf(me(), k); if (!sp.known) { sp.known = true; news(sp.label + " の実測：" + (k === "aero" ? AERO_K : CHAS_K).map(x => STAT_N[x] + sp[x]).join("・")); } });
@@ -811,15 +811,15 @@ const F1 = (() => {
     const g = devRoll(tm, tm.car[k]); tm.car[k] = Math.min(99, tm.car[k] + g); news(PARTS[k][0] + " のアップデート" + (g ? "：+" + g : "は不発でした")); save(); return { ok: true, msg: g ? PARTS[k][0] + " +" + g : "アップデートは不発でした" };
   }
   function aiDevelop(tm) {
-    initFac(tm); if ((tm.build || []).length < 2 && tm.budget > 45 && rnd() < 0.12) { const ks = Object.keys(FACS).filter(k => fl(tm, k) < 10 && !tm.build.some(b => b.k === k)).sort((a, b) => fl(tm, a) - fl(tm, b)); if (ks.length) buildFac(ks[Math.min(ks.length - 1, ri(0, 2))], tm); }
+    initFac(tm); if ((tm.build || []).length < 2 && tm.budget > 45 && rnd() < 0.12 * perRace()) { const ks = Object.keys(FACS).filter(k => fl(tm, k) < 10 && !tm.build.some(b => b.k === k)).sort((a, b) => fl(tm, a) - fl(tm, b)); if (ks.length) buildFac(ks[Math.min(ks.length - 1, ri(0, 2))], tm); }
     const big = S.nextReg && REG_TYPES[S.nextReg.type].big && S.nextReg.season === S.season + 1;
     for (let n = 0; n < 2; n++) {
-      if (rnd() > 0.45 + tm.budget / 700) continue;
+      if (rnd() > (0.45 + tm.budget / 700) * perRace()) continue;
       const k = tm.works && rnd() < 0.2 ? "pu" : pick(["aero", "chassis", "rel", "aero", "chassis", "aero"]), size = rnd() < 0.3 ? "b" : "s", cost = projQuote(tm, k, size).cost;
       if (tm.budget < cost + 15 || capLeft(tm) < cost) continue;
-      if (!(big && rnd() < 0.35 + S.round / 40)) { if ((tm.proj || []).length < projCap(tm)) orderPart(k, pick(Object.keys(FOCUS[k])), size, tm); continue; }
+      if (!(big && rnd() < 0.35 + S.round * perRace() / 40)) { if ((tm.proj || []).length < projCap(tm)) orderPart(k, pick(Object.keys(FOCUS[k])), size, tm); continue; }
       tm.budget -= cost; S.spent[tm.id] = spent(tm) + cost;
-      if (big && rnd() < 0.35 + S.round / 40) { S.nextInv[tm.id] = S.nextInv[tm.id] || { car: 0, pu: 0 }; if (S.nextReg.type === "pu" && tm.works) { S.nextInv[tm.id].pu += cost; pu(tm.pu).nextInv += cost; } else S.nextInv[tm.id].car += cost; continue; }
+      if (big && rnd() < 0.35 + S.round * perRace() / 40) { S.nextInv[tm.id] = S.nextInv[tm.id] || { car: 0, pu: 0 }; if (S.nextReg.type === "pu" && tm.works) { S.nextInv[tm.id].pu += cost; pu(tm.pu).nextInv += cost; } else S.nextInv[tm.id].car += cost; continue; }
     }
   }
 
@@ -841,7 +841,7 @@ const F1 = (() => {
     applyReg(reg); rec.reg = reg ? REG_TYPES[reg.type].n : null;
     // 毎年の小さな変化：マシンは少し平均に寄る
     S.teams.forEach(tm => { ["aero", "chassis"].forEach(part => { const sp = specOf(tm, part); (part === "aero" ? AERO_K : CHAS_K).forEach(k => { sp[k] = clamp(Math.round(sp[k] * 0.9 + 74 * 0.1 + gauss() * 1.2), 45, 99); sp.e[k] = sp[k]; }); sp.known = true; sp.label = "第" + (S.season + 1) + "期 持ち越し"; tm.specs[part] = [sp]; }); tm.car.rel = Math.round(tm.car.rel * 0.9 + 74 * 0.1 + gauss() * 1.2); applyUse(tm); (tm.proj || []).forEach(p => p.due -= S.calendar.length); });
-    worldYear(tt, dt, rec); fitCal();
+    worldYear(tt, dt, rec);
     Object.values(S.pus).forEach(p => { p.lvl = r1(p.lvl * 0.92 + 80 * 0.08); });
     // ドライバー：年齢・成長・引退
     const myIds = me().drivers.slice(), before = {}; myIds.forEach(id => before[id] = Object.assign({}, drv(id)));
@@ -909,11 +909,17 @@ const F1 = (() => {
     // スポンサー：チームの国の熱が高いと集まりやすい
     S.teams.forEach(tm => { tm.sponsor = clamp(Math.round(tm.sponsor + (feverF(tm.nat) - 1) * 6), 30, 140); });
     // 契約：切れたGPは熱しだいで更新。更新されなければ、熱の高い国が新しく入る
-    const changes = [];
+    const changes = [], tgt = S.nRaces || 24, [lo, hi] = calRange(), n0 = S.calendar.length, gone = [];
     S.calendar.slice().forEach(id => { const g = S.gp[id] || (S.gp[id] = { left: 2 }); g.left--; if (g.left > 0) return; const c = TRACKS[id].c, f = N[c].fever;
-      if (changes.length < 2 && f < 58 && rnd() > (f - 25) / 45) { const cand = TRACKS.filter(t => !S.calendar.includes(t.id) && t.id !== id).map(t => ({ t, sc: N[t.c].fever + gauss() * 8 + (host.has(t.c) ? -15 : 0) })).sort((a, b) => b.sc - a.sc)[0];
-        if (cand && N[cand.t.c].fever >= 45) { S.calendar = sortCal(S.calendar.filter(x => x !== id).concat([cand.t.id])); delete S.gp[id]; S.gp[cand.t.id] = { left: ri(3, 5), isNew: true }; changes.push({ out: TRACKS[id].name, outC: c, inn: cand.t.name, innC: cand.t.c }); news(TRACKS[id].name + "（" + natName(c) + "）は契約が更新されず開催終了。新たに " + cand.t.name + "（" + natName(cand.t.c) + "）が加わる"); return; } }
+      if (gone.length < 3 && S.calendar.length > lo && f < 58 && rnd() > (f - 25) / 45) { S.calendar = S.calendar.filter(x => x !== id); delete S.gp[id]; gone.push(id); changes.push({ out: TRACKS[id].name, outC: c }); news(TRACKS[id].name + "（" + natName(c) + "）は契約が更新されず開催終了"); return; }
       g.left = ri(2, 5); g.isNew = false; news(TRACKS[id].name + " が " + g.left + " 年の契約を更新"); });
+    // 新しく開催したい国：熱が高いほど入りやすい。目安より少なければ入りやすく、多ければ入りにくい（年に2つまで）
+    const host2 = new Set(S.calendar.map(id => TRACKS[id].c)); let added = 0;
+    TRACKS.filter(t => !S.calendar.includes(t.id) && !gone.includes(t.id) && N[t.c].fever >= 45).map(t => ({ t, sc: N[t.c].fever + gauss() * 8 + (host2.has(t.c) ? -15 : 0) })).sort((a, b) => b.sc - a.sc).forEach(x => {
+      const len = S.calendar.length; if (added >= 2 || len >= hi) return; const p = len < lo ? 1 : clamp(0.25 + (tgt - len) * 0.2 + (x.sc - 60) * 0.01, 0.03, 0.9); if (rnd() > p) return;
+      S.calendar.push(x.t.id); S.gp[x.t.id] = { left: ri(3, 5), isNew: true }; added++; changes.push({ inn: x.t.name, innC: x.t.c }); news(x.t.name + "（" + natName(x.t.c) + "）が新たに開催契約"); });
+    S.calendar = sortCal(S.calendar);
+    if (S.calendar.length !== n0) news("来季は全" + S.calendar.length + "戦（今季は" + n0 + "戦）"); rec.nCal = [n0, S.calendar.length];
     Object.values(S.gp).forEach(g => { if (g.isNew && g.left < 3) g.isNew = false; });
     rec.calChange = changes;
   }
@@ -959,7 +965,7 @@ const F1 = (() => {
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
   const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * 0.55, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.016 : 0.0095)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
-  return { RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -1025,7 +1031,7 @@ function guide(key) {
 function helpPage() {
   if (F1.S && F1.S.race && !U.paused) pauseRace();
   const sec = (t, li) => `<h4 style="margin:12px 0 4px">${t}</h4><ul class="small" style="margin:0;padding-left:1.2em">${li.map(x => `<li>${x}</li>`).join("")}</ul>`;
-  modal(`<h3>遊び方</h3><p class="small muted">F1チームの代表として、レースの戦略・マシン開発・お金とドライバーのやりくりで、何シーズンもかけて頂点を目指す。1シーズンは現実と同じ全24戦（チーム画面の「名前・セーブ」で16戦・20戦にもできる）。</p>
+  modal(`<h3>遊び方</h3><p class="small muted">F1チームの代表として、レースの戦略・マシン開発・お金とドライバーのやりくりで、何シーズンもかけて頂点を目指す。1シーズンは現実と同じ24戦前後。GPの契約しだいで毎年増えたり減ったりする（チーム画面の「名前・セーブ」で目安を16戦・20戦にもできる）。</p>
     ${sec("1. 始め方", ["既存の11チームから選ぶか、12チーム目として新規参入する。", "チームは「マシンの速さ」「開発力」「予算」がばらばら。初めてなら中位〜上位のチームが遊びやすい。", "ドライバーを2人選ぶ。速さが一番効くが、タイヤ管理・冷静さ・雨の強さも結果に出る。"])}
     ${sec("2. 1戦の流れ（🏠 ホーム）", ["<b>フリー走行</b>（飛ばしてもよい）：ロングランでタイヤの減り方を測ると、その週末の戦略の見積もりが正確になる。使ったタイヤは中古として残る。", "<b>予選</b>：Q1・Q2・Q3 のタイヤを選ぶ。上位ほど前からスタート。", "<b>決勝</b>（🏁 レース）：スタート前に「戦略」でスタートのタイヤとピットの予定を決めて「▶ スタート」。"])}
     ${sec("3. レース中", ["「指示」でペースを変える：攻める（速いがタイヤが減る）／普通／タイヤを守る／燃料セーブ。", "「次の周でピット」で予定外のピットもできる。セーフティカー中はピットの損失が半分。", "タイヤには「崖」がある。寿命を越えるとどんどん遅くなるので、その前に替えるのが基本。", "ドライバーの無線や、すぐ前後の車のピットで自動で一時停止する（設定で切れる）。", "「最後まで」で残りを一気に進められる（判断は戦略とおまかせになる）。"])}
@@ -1076,7 +1082,7 @@ function savePage() {
 function boot() { if (F1.load()) { const p = S().phase; if (S().my == null) chooseMode(); else if (p === "drivers") pickDrivers(); else render(); } else startScreen(); }
 function startScreen() {
   $("#hd").innerHTML = `<div class="t"><b>BOX, BOX</b><small>F1チーム代表 — 戦略と開発で頂点へ</small></div>`; $("#tabs").innerHTML = "";
-  $("#main").innerHTML = `<div class="card"><h3>新しく始める</h3><p class="small muted">実在のF1に寄せた11チームのシリーズ（標準は現実と同じ全24戦。16戦・20戦にも変えられる）。既存チームを率いるか、新規参入チームを作るかを選び、ドライバーを選んで、何シーズンも戦います。時代ごとに規則が変わり、勢力図が動きます。</p><button class="b p big" id="ng">シリーズを作る</button></div>
+  $("#main").innerHTML = `<div class="card"><h3>新しく始める</h3><p class="small muted">実在のF1に寄せた11チームのシリーズ（標準は現実と同じ24戦前後で、GPの契約しだいで毎年増減する）。既存チームを率いるか、新規参入チームを作るかを選び、ドライバーを選んで、何シーズンも戦います。時代ごとに規則が変わり、勢力図が動きます。</p><button class="b p big" id="ng">シリーズを作る</button></div>
   <div class="card"><h3>セーブ枠</h3><p class="small muted">いま選んでいるのは枠${F1.slotNo()}（空き）。ほかの枠の続きもここから遊べる。</p>${slotCards(true)}</div>
   <div class="card"><h3>セーブを読み込む</h3><p class="small muted">書き出したファイルを選ぶと、枠${F1.slotNo()}に読み込む。</p><label class="b" style="display:inline-block;cursor:pointer">📥 ファイルから読み込む<input type="file" id="impf" accept=".json,application/json,text/plain" style="display:none"></label>
   <details class="small" style="margin-top:8px"><summary class="muted">文字を貼り付けて読み込む</summary><textarea id="imp" style="width:100%;height:70px" placeholder="書き出したセーブデータを貼り付け"></textarea><button class="b" id="impb">読み込む</button></details></div>`;
@@ -1144,7 +1150,7 @@ function offseason() {
   if (st === 0) {
     body = `<div class="card"><h3>第${r.season}シーズンの振り返り</h3><p>ドライバーズチャンピオン：<b>${esc(r.champ)}</b>（${esc(r.champTeam)}）</p><p>コンストラクターズ：<b>${esc(r.cons)}</b></p><p>${esc(r.my)}：<b>${r.myRank}位</b>（${r.myPts}点）</p>${r.f2champ ? `<p class="small">F2 チャンピオン：<b>${esc(r.f2champ)}</b></p>` : ""}</div>
       <div class="card"><h3>ドライバーの成長（オフ）</h3>${growthHtml(r)}</div>
-      ${r.reg || (r.calChange || []).length || (r.puMoves || []).length ? `<div class="card"><h3>来季の変化</h3>${r.reg ? `<p class="bad"><b>規則変更：${esc(r.reg)}</b></p>` : ""}${(r.puMoves || []).map(m => `<p class="small">PU の乗り換え：${esc(m.tm)}　${esc(m.from)} → <b>${esc(m.to)}</b></p>`).join("")}${(r.calChange || []).map(c => `<p class="small">GPの入れ替え：${esc(c.out)}（${esc(F1.natName(c.outC))}）が終了 → ${esc(c.inn)}（${esc(F1.natName(c.innC))}）が新たに開催</p>`).join("")}</div>` : ""}`;
+      ${r.reg || (r.calChange || []).length || (r.nCal && r.nCal[0] !== r.nCal[1]) || (r.puMoves || []).length ? `<div class="card"><h3>来季の変化</h3>${r.reg ? `<p class="bad"><b>規則変更：${esc(r.reg)}</b></p>` : ""}${(r.puMoves || []).map(m => `<p class="small">PU の乗り換え：${esc(m.tm)}　${esc(m.from)} → <b>${esc(m.to)}</b></p>`).join("")}${(r.calChange || []).map(c => `<p class="small">${c.out ? `GP終了：${esc(c.out)}（${esc(F1.natName(c.outC))}）` : ""}${c.out && c.inn ? " → " : ""}${c.inn ? `新規開催：${esc(c.inn)}（${esc(F1.natName(c.innC))}）` : ""}</p>`).join("") + (r.nCal && r.nCal[0] !== r.nCal[1] ? `<p class="small"><b>今季は全${r.nCal[1]}戦</b>（昨季は${r.nCal[0]}戦）</p>` : "").join("")}</div>` : ""}`;
   } else if (st === 1) {
     const gone = (o.before || []).filter(id => !t.drivers.includes(id) && F1.drv(id));
     const mine = t.drivers.map(id => { const d = F1.drv(id), sal = F1.salaryOf(d);
@@ -1671,7 +1677,7 @@ function vTeam() {
   } else {
     body = `<div class="card"><h3>チーム名・カラー</h3><div class="row"><input type="text" id="tn" value="${esc(t.name)}" class="sp"><button class="b" id="tnb">変える</button></div><div class="row" style="margin-top:8px"><span class="small">メイン</span><input type="color" id="c1" value="${esc(t.color)}"><span class="small">サブ</span><input type="color" id="c2" value="${esc(t.color2)}"><button class="b" id="cb">色を変える</button></div>
       <p class="hint">ドライバー・ほかのチームの名前も変えられます：</p><div class="row"><select id="rnsel">${s.teams.map(x => `<option value="t${x.id}">${esc(x.name)}（チーム）</option>`).join("")}${Object.values(s.drivers).filter(d => F1.teamOf(d.id) || s.free.includes(d.id)).map(d => `<option value="d${d.id}">${esc(d.name)}</option>`).join("")}</select><input type="text" id="rnv" placeholder="新しい名前" class="sp"><button class="b" id="rnb">変える</button></div></div>
-      <div class="card"><h3>レース数</h3><p class="small muted">1シーズンのレース数。今は全${s.calendar.length}戦。シーズンの途中で変えると来季から。1戦ごとのドライバーの成長や賞金は、戦数が変わっても1シーズンの合計がだいたい同じになるよう調整してある。</p><div class="row">${F1.RACE_OPTS.map(n => `<button class="b ${(s.nRaces || 24) === n ? "on" : ""}" data-nr="${n}">${n}戦${n === 24 ? "（現実と同じ）" : ""}</button>`).join("")}</div></div>
+      <div class="card"><h3>レース数の目安</h3><p class="small muted">今季は全${s.calendar.length}戦。現実と同じく、GPの契約が切れて終わったり新しい国が加わったりして、毎年増えたり減ったりする（目安の −3〜+2 戦、最大25戦）。目安を変えると、オフ中か第1戦の前なら今季からその戦数に、シーズン中なら来季からそこへ寄っていく。1戦ごとのドライバーの成長や賞金は、戦数が変わっても1シーズンの合計がだいたい同じになるよう調整してある。</p><div class="row">${F1.RACE_OPTS.map(n => `<button class="b ${(s.nRaces || 24) === n ? "on" : ""}" data-nr="${n}">${n}戦前後${n === 24 ? "（現実と同じ）" : ""}</button>`).join("")}</div></div>
       <div class="card"><h3>セーブ</h3><p class="small muted">枠${F1.slotNo()}に自動で保存中。枠の切り替え・巻き戻し・ファイルへの書き出しは、上の 💾 からもできる。</p><button class="b p" id="svOpen">💾 セーブを開く</button></div>
       <div class="card"><h3>コツ</h3><ul class="small muted" style="margin:0;padding-left:1.2em"><li>ソフトは速いが減りが早い。崖の前に替えるのが基本。セーフティカー中はピットの損失が半分。</li><li>燃料「少なめ」は序盤が速いぶん、後半に燃料セーブが要る。SC 中は燃料が減りにくいので取り返せることも。</li><li>冷静さの低いドライバーは、詰まったり抜かれたりした後にミスしやすい。「攻める」を長く続けない。</li><li>大きな規則変更が予告されたら、どの時点で来年の車に開発を振るかが勝負。</li></ul></div>`;
   }
