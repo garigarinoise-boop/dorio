@@ -19,6 +19,7 @@ header { position:sticky; top:0; z-index:5; background:var(--head); color:#fff; 
 header .crest { width:10px; height:30px; border-radius:3px; flex:none; }
 header .t { flex:1; min-width:0; } header .t b { display:block; font-size:16px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } header .t small { opacity:.75; font-size:12px; }
 header .money { font-size:13px; text-align:right; }
+header .hb + .hb { margin-left:-4px; }
 header .hb { flex:none; width:30px; height:30px; border-radius:50%; border:1px solid rgba(255,255,255,.45); background:none; color:#fff; font-size:15px; font-weight:700; font-family:inherit; padding:0; }
 .guide { border-left:4px solid var(--acc); }
 main { max-width:760px; margin:0 auto; padding:12px 12px calc(env(safe-area-inset-bottom) + 84px); }
@@ -259,7 +260,7 @@ const F1 = (() => {
     tm.budget += old.fee - p.fee; tm.pu = id; news("来季から " + p.name + " の PU を使う（年間 " + money(p.fee) + "）"); save(); return { ok: true, msg: p.name + " と契約しました" }; }
   function offStep(dir) { const o = S.off; if (!o) return { ok: false }; if (dir > 0 && o.step === 1) { const tm = me(); if (tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "契約が切れるドライバーを、延長か放出か決めてくれ" }; if (tm.drivers.length < 2) return { ok: false, msg: "ドライバーを2人そろえてくれ" }; }
     o.step = clamp(o.step + dir, 0, 6); save(); return { ok: true }; }
-  function startSeason() { const tm = me(); if (tm.drivers.length < 2 || tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "ドライバーが決まっていません" }; S.off = null; S.phase = "season"; save(); return { ok: true }; }
+  function startSeason() { const tm = me(); if (tm.drivers.length < 2 || tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "ドライバーが決まっていません" }; backup("第" + S.season + "シーズン 開幕直前（オフの準備のあと）"); S.off = null; S.phase = "season"; save(); return { ok: true }; }
   function migrate() {
     if (!S.nations) initWorld();
     S.teams.forEach(initFac);
@@ -814,7 +815,7 @@ const F1 = (() => {
   const driverTable = () => Object.values(S.drivers).filter(d => S.teams.some(t => t.drivers.includes(d.id))).sort((a, b) => b.pts - a.pts || b.wins - a.wins);
   const teamTable = () => S.teams.slice().sort((a, b) => b.pts - a.pts);
   const teamOf = id => S.teams.find(t => t.drivers.includes(id));
-  function endSeason() {
+  function endSeason() { backup("第" + S.season + "シーズン 全戦終了時");
     const dt = driverTable(), tt = teamTable(), myDevp0 = me().devp, myStaff0 = { strat: me().staff.strat.skill, crew: me().staff.crew.skill }, rec = { season: S.season, champ: dt[0].name, champTeam: teamOf(dt[0].id).name, cons: tt[0].name, myRank: tt.indexOf(me()) + 1, myPts: me().pts, my: me().name, reg: null };
     S.history.push(rec); dt[0].career.titles++;
     // お金：スポンサー＋賞金＋ペイドライバー − 給料 − PU代
@@ -914,10 +915,24 @@ const F1 = (() => {
 
   const news = t => { S.news.unshift({ s: S.season, r: S.round, t }); S.news = S.news.slice(0, 80); };
   const money = m => "$" + r1(m) + "M";
-  const KEY = "f1_manager_save_v2";
-  function save() { if (!S) return; S.rs = RS; S.uid = uid; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } }
-  function load(txt) { try { const d = JSON.parse(txt != null ? txt : localStorage.getItem(KEY) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d; RS = d.rs; uid = d.uid; if (!S.f2) { S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {}; S.teams.forEach(tm => S.academy[tm.id] = []); for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id); } migrate(); retroEvents(); save(); return true; } catch (e) { return false; } }
-  function wipe() { try { localStorage.removeItem(KEY); localStorage.removeItem("f1_manager_save_v1"); } catch (e) { } S = null; }
+  // 枠1は旧来のキーのまま（今までのセーブがそのまま枠1になる）
+  const KEY = "f1_manager_save_v2", SLOTS = 3, BK_MAX = 4;
+  const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } }, del: k => { try { localStorage.removeItem(k); } catch (e) { } } };
+  let slot = clamp(+(ls.get("f1_slot") || 1) || 1, 1, SLOTS);
+  const slotKey = n => n === 1 ? KEY : KEY + "_s" + n, bkKey = n => slotKey(n) + "_bk";
+  const bkList = n => { try { return JSON.parse(ls.get(bkKey(n)) || "[]"); } catch (e) { return []; } };
+  function save() { if (!S) return; S.rs = RS; S.uid = uid; ls.set(slotKey(slot), JSON.stringify(S)); }
+  // 枠の中身の見出し（チーム名・シーズン・何戦目）
+  function slotInfo(n) { const raw = ls.get(slotKey(n)); if (!raw) return null; try { const d = JSON.parse(raw), tm = d.my != null ? d.teams.find(x => x.id === d.my) : null; return { team: tm ? tm.name : "（チーム未選択）", color: tm ? tm.color : "#888", season: d.season, round: d.round, phase: d.phase, kb: Math.round(raw.length / 1024) }; } catch (e) { return { team: "（読めないデータ）", season: 0, round: 0 }; } }
+  function useSlot(n) { save(); slot = clamp(n, 1, SLOTS); ls.set("f1_slot", String(slot)); S = null; return load(); }
+  // シーズンの区切りで自動バックアップ（各枠 新しい順に4つまで。容量が足りなければ古いものから捨てる）
+  function backup(label) { if (!S) return; save(); const list = bkList(slot); list.unshift({ t: Date.now(), label, data: ls.get(slotKey(slot)) }); let l = list.slice(0, BK_MAX); while (l.length && !ls.set(bkKey(slot), JSON.stringify(l))) l = l.slice(0, -1); }
+  const backups = () => bkList(slot).map(b => ({ t: b.t, label: b.label }));
+  function restoreBackup(i) { const b = bkList(slot)[i]; if (!b) return { ok: false, msg: "ありません" }; const cur = S ? JSON.stringify(S) : null; if (!load(b.data)) return { ok: false, msg: "読み込めませんでした" }; if (cur) { const list = bkList(slot); list.unshift({ t: Date.now(), label: "巻き戻す前の状態", data: cur }); let l = list.slice(0, BK_MAX); while (l.length && !ls.set(bkKey(slot), JSON.stringify(l))) l = l.slice(0, -1); } return { ok: true, msg: "「" + b.label + "」に戻しました" }; }
+  // 書き出し・読み込み（読み込む前に今の状態をバックアップに残す）
+  function importSave(txt) { const cur = S ? JSON.stringify(S) : null; if (!load(txt)) { if (cur) load(cur); return { ok: false, msg: "読み込めませんでした（このゲームのセーブではないか、旧版のセーブです）" }; } if (cur) { const list = bkList(slot); list.unshift({ t: Date.now(), label: "読み込む前の状態", data: cur }); let l = list.slice(0, BK_MAX); while (l.length && !ls.set(bkKey(slot), JSON.stringify(l))) l = l.slice(0, -1); } return { ok: true, msg: "読み込みました" }; }
+  function load(txt) { try { const d = JSON.parse(txt != null ? txt : ls.get(slotKey(slot)) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d; RS = d.rs; uid = d.uid; if (!S.f2) { S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {}; S.teams.forEach(tm => S.academy[tm.id] = []); for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id); } migrate(); retroEvents(); save(); return true; } catch (e) { return false; } }
+  function wipe() { if (S) { const list = bkList(slot); list.unshift({ t: Date.now(), label: "やり直す前の状態", data: JSON.stringify(S) }); let l = list.slice(0, BK_MAX); while (l.length && !ls.set(bkKey(slot), JSON.stringify(l))) l = l.slice(0, -1); } ls.del(slotKey(slot)); if (slot === 1) ls.del("f1_manager_save_v1"); S = null; }
   const exportSave = () => { save(); return JSON.stringify(S); };
 
   const estLife = (comp, tr, est, paceW) => Math.round(TYRE[comp].life / (tr.wear * S.regs.wear * (paceW || 1) * (est && est.wf[comp] || 1)));
@@ -928,7 +943,7 @@ const F1 = (() => {
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
   const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * 0.55, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.016 : 0.0095)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
-  return { NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -983,7 +998,7 @@ const GUIDE = {
   off6: ["開幕", "顔ぶれとカレンダーを確認して、新しいシーズンを始める。"]
 };
 function guide(key) {
-  const hd = $("#hd"); if (hd && !hd.querySelector(".hb")) { hd.insertAdjacentHTML("beforeend", `<button class="hb" aria-label="遊び方">？</button>`); hd.querySelector(".hb").onclick = helpPage; }
+  const hd = $("#hd"); if (hd && !hd.querySelector(".hb")) { hd.insertAdjacentHTML("beforeend", `<button class="hb" id="hbSave" aria-label="セーブ">💾</button><button class="hb" id="hbHelp" aria-label="遊び方">？</button>`); $("#hbHelp").onclick = helpPage; $("#hbSave").onclick = savePage; }
   const g = GUIDE[key], box = $("#main"); if (!g || GSEEN.off || GSEEN[key] || !box || box.querySelector(".guide")) return;
   const d = document.createElement("div"); d.className = "card guide";
   d.innerHTML = `<b>💡 ${g[0]}</b><div class="small" style="margin:4px 0 8px">${g[1]}</div><div class="row"><button class="b p" data-gok>分かった</button><span class="sp"></span><button class="b" data-ghelp>遊び方を見る</button></div>`;
@@ -1001,19 +1016,57 @@ function helpPage() {
     ${sec("4. マシン開発（🔧 マシン）", ["「開発の発注」で空力・シャシーのパーツを作る。届いたら「使うパーツ」で選ぶ。コースに合わせて付け替えられる。", "新しいパーツの数値は予測値。走らせると本当の値が分かる（外れることもある）。", "開発はお金に加えて、シーズンの<b>予算上限</b>（使える額の上限）も消費する。", "大きな規則変更が予告されたら、来年の車の開発にいつ切り替えるかが勝負どころ。"])}
     ${sec("5. チーム運営（👤 チーム）", ["ドライバーの契約・育成（F2のジュニア）・スタッフの引き抜き・お金の確認。", "<b>施設</b>：風洞・工場・シミュレーター・ピット練習場などをレベル10まで上げられる。予算上限の外なので、余ったお金の使い道になる。", "<b>士気</b>：勝つ・順位を大きく上げると上がり、リタイアで下がる。高いとピットが速く、開発が伸び、ミスが減る。"])}
     ${sec("6. シーズンオフ", ["全16戦が終わったら「シーズンを終える」。振り返り → ドライバー → PU → 新車 → スタッフ → 予算・施設 → 開幕 の順に1つずつ決める。", "契約が切れるドライバーは延長か放出を決めるまで先へ進めない。", "新車はコンセプトと力の入れ具合を選ぶ。お金を足せば同じ部品を2種類（例：ダウンフォース型とストレート型）作れる。"])}
+    ${sec("7. セーブ（💾）", ["進み具合は自動で保存される。セーブ枠は3つ。別のチームを並行して遊べる。", "シーズンが終わったときと開幕の直前に、自動でバックアップが残る。失敗したらその時点に戻せる。", "スマホとPCで続きを遊ぶときは「ファイルに書き出す」→ もう一方で「ファイルから読み込む」。", "ブラウザのデータを消すと枠もバックアップも消える。大事なところでファイルに書き出しておく。"])}
     ${sec("コツ", ["ソフトは速いが減りが早い。予選で使うと決勝用の新品が減る。", "冷静さの低いドライバーに「攻める」を長く続けさせない。", "お金が余ったら施設へ。予算上限に余裕があればパーツ開発へ。"])}
     <h4 style="margin:12px 0 4px">画面ごとのガイド</h4><div class="row"><button class="b" id="gReset">もう一度最初から出す</button><button class="b" id="gOff">${GSEEN.off ? "出すようにする" : "すべて出さない"}</button></div>
     <button class="b p big" data-x style="margin-top:12px">閉じる</button>`);
   $("#gReset").onclick = () => { GSEEN = {}; gSave(); closeModal(); toast("ガイドを最初から出します"); boot(); };
   $("#gOff").onclick = () => { if (GSEEN.off) delete GSEEN.off; else GSEEN.off = 1; gSave(); closeModal(); document.querySelectorAll(".guide").forEach(x => x.remove()); toast(GSEEN.off ? "ガイドを出さないようにしました" : "ガイドを出します"); if (!GSEEN.off) boot(); };
 }
+/* ---------- セーブ管理（3枠・自動バックアップ・ファイル） ---------- */
+const phaseTxt = i => !i ? "" : i.phase === "off" ? "オフシーズン" : i.phase === "drivers" ? "ドライバー選び" : i.round >= 16 ? "全戦終了" : "第" + (i.round + 1) + "戦の前";
+const dateTxt = t => { const d = new Date(t); return (d.getMonth() + 1) + "/" + d.getDate() + " " + d.getHours() + ":" + String(d.getMinutes()).padStart(2, "0"); };
+function downloadSave() {
+  const txt = F1.exportSave(), t = ME(), d = new Date(), ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, "0") + String(d.getDate()).padStart(2, "0");
+  const name = ("BOXBOX_" + (t ? t.name : "save") + "_第" + S().season + "シーズン_" + ymd + ".json").replace(/[\\/:*?"<>|\s]/g, "_");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([txt], { type: "application/json" })); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast("ファイルに書き出しました");
+}
+function afterLoad(r) { toast(r.msg); if (r.ok) { closeModal(); U.tab = "home"; U.paused = true; cancelAnimationFrame(U.raf); boot(); window.scrollTo(0, 0); } }
+function readFile(input) { const f = input.files && input.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { if (S() && !confirm("今の枠のデータを、このファイルの中身で置き換えますか？（今の状態はバックアップに残ります）")) return; afterLoad(F1.importSave(String(rd.result).trim())); }; rd.readAsText(f); input.value = ""; }
+const slotCards = (inStart) => Array.from({ length: F1.SLOTS }, (_, k) => { const n = k + 1, i = F1.slotInfo(n), cur = n === F1.slotNo();
+  return `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="sp small"><b>枠${n}</b>　${i ? `<span class="tbar" style="background:${esc(i.color)}"></span>${esc(i.team)}・第${i.season}シーズン・${phaseTxt(i)}` : '<span class="muted">空き</span>'}${cur ? ' <span class="tag gold">選択中</span>' : ""}</span>${cur ? "" : `<button class="b ${i ? "p" : ""}" data-slot="${n}">${i ? "続きから" : "ここで始める"}</button>`}</div>`; }).join("");
+function bindSlots() { document.querySelectorAll("[data-slot]").forEach(b => b.onclick = () => { if (F1.S && F1.S.race && !U.paused) pauseRace(); const ok = F1.useSlot(+b.dataset.slot); closeModal(); U.tab = "home"; U.paused = true; cancelAnimationFrame(U.raf); if (ok) { toast("枠" + b.dataset.slot + "に切り替えました"); boot(); } else startScreen(); window.scrollTo(0, 0); }); }
+function savePage() {
+  if (F1.S && F1.S.race && !U.paused) pauseRace();
+  const bk = S() ? F1.backups() : [];
+  modal(`<h3>セーブ</h3><p class="small muted">進み具合は自動で保存される。ここでは枠の切り替え、前の時点への巻き戻し、別の端末への持ち出しができる。</p>
+    <h4 style="margin:12px 0 4px">セーブ枠</h4><p class="small muted" style="margin:0 0 4px">別のチーム・別のシリーズを並行して遊べる。</p>${slotCards(false)}
+    <h4 style="margin:14px 0 4px">自動バックアップ（この枠）</h4><p class="small muted" style="margin:0 0 4px">シーズンが終わったときと、開幕の直前に自動で残る（新しい順に4つ）。戻しても、戻す前の状態がここに残る。</p>
+    ${bk.length ? bk.map((b, i) => `<div class="row" style="padding:6px 0;border-bottom:1px solid var(--line)"><span class="sp small">${esc(b.label)}<br><span class="muted">${dateTxt(b.t)}</span></span><button class="b" data-bk="${i}">この時点に戻す</button></div>`).join("") : '<p class="small muted">まだありません（最初のシーズンが終わると作られる）</p>'}
+    <h4 style="margin:14px 0 4px">別の端末へ・保管</h4><p class="small muted" style="margin:0 0 6px">枠とバックアップはこのブラウザの中にしかない。ブラウザのデータを消すと消えるので、大事なところでファイルに書き出しておくと安心。</p>
+    <div class="row" style="flex-wrap:wrap;gap:6px"><button class="b p" id="svDl" ${S() ? "" : "disabled"}>📤 ファイルに書き出す</button><label class="b" style="display:inline-block;cursor:pointer">📥 ファイルから読み込む<input type="file" id="svFile" accept=".json,application/json,text/plain" style="display:none"></label></div>
+    <details class="small" style="margin-top:8px"><summary class="muted">文字でやり取りする（LINE などに貼る）</summary><div class="row" style="margin-top:6px;gap:6px"><button class="b" id="svCopy" ${S() ? "" : "disabled"}>文字をコピー</button></div><textarea id="svTxt" style="width:100%;height:70px;margin-top:6px" placeholder="ここに貼り付けて「読み込む」"></textarea><button class="b" id="svPaste">貼り付けた文字を読み込む</button></details>
+    ${S() ? `<h4 style="margin:14px 0 4px">この枠を最初から</h4><button class="b" id="svWipe">最初からやり直す</button><span class="small muted">（今の状態はバックアップに残る）</span>` : ""}
+    <button class="b p big" data-x style="margin-top:14px">閉じる</button>`);
+  bindSlots();
+  document.querySelectorAll("[data-bk]").forEach(b => b.onclick = () => { const x = bk[+b.dataset.bk]; if (confirm("「" + x.label + "」の時点に戻しますか？（今の状態はバックアップに残ります）")) afterLoad(F1.restoreBackup(+b.dataset.bk)); });
+  if ($("#svDl")) $("#svDl").onclick = downloadSave;
+  $("#svFile").onchange = e => readFile(e.target);
+  if ($("#svCopy")) $("#svCopy").onclick = () => { const x = $("#svTxt"); x.value = F1.exportSave(); x.select(); try { navigator.clipboard.writeText(x.value).then(() => toast("コピーしました"), () => toast("文字を選んだので、長押しでコピーしてくれ")); } catch (e) { toast("文字を選んだので、長押しでコピーしてくれ"); } };
+  $("#svPaste").onclick = () => { const v = $("#svTxt").value.trim(); if (!v) { toast("貼り付けてくれ"); return; } if (S() && !confirm("今の枠のデータを、貼り付けた中身で置き換えますか？（今の状態はバックアップに残ります）")) return; afterLoad(F1.importSave(v)); };
+  if ($("#svWipe")) $("#svWipe").onclick = () => { if (confirm("この枠を最初からやり直しますか？（今の状態はバックアップに残ります）")) { F1.wipe(); closeModal(); startScreen(); } };
+}
 function boot() { if (F1.load()) { const p = S().phase; if (S().my == null) chooseMode(); else if (p === "drivers") pickDrivers(); else render(); } else startScreen(); }
 function startScreen() {
   $("#hd").innerHTML = `<div class="t"><b>BOX, BOX</b><small>F1チーム代表 — 戦略と開発で頂点へ</small></div>`; $("#tabs").innerHTML = "";
   $("#main").innerHTML = `<div class="card"><h3>新しく始める</h3><p class="small muted">実在のF1に寄せた11チームのシリーズ（全16戦）。既存チームを率いるか、新規参入チームを作るかを選び、ドライバーを選んで、何シーズンも戦います。時代ごとに規則が変わり、勢力図が動きます。</p><button class="b p big" id="ng">シリーズを作る</button></div>
-  <div class="card"><h3>セーブデータを読み込む</h3><textarea id="imp" style="width:100%;height:70px" placeholder="書き出したセーブデータを貼り付け"></textarea><button class="b" id="impb">読み込む</button></div>`;
+  <div class="card"><h3>セーブ枠</h3><p class="small muted">いま選んでいるのは枠${F1.slotNo()}（空き）。ほかの枠の続きもここから遊べる。</p>${slotCards(true)}</div>
+  <div class="card"><h3>セーブを読み込む</h3><p class="small muted">書き出したファイルを選ぶと、枠${F1.slotNo()}に読み込む。</p><label class="b" style="display:inline-block;cursor:pointer">📥 ファイルから読み込む<input type="file" id="impf" accept=".json,application/json,text/plain" style="display:none"></label>
+  <details class="small" style="margin-top:8px"><summary class="muted">文字を貼り付けて読み込む</summary><textarea id="imp" style="width:100%;height:70px" placeholder="書き出したセーブデータを貼り付け"></textarea><button class="b" id="impb">読み込む</button></details></div>`;
+  bindSlots(); $("#impf").onchange = e => readFile(e.target);
   $("#ng").onclick = () => { F1.newGame(); chooseMode(); };
-  $("#impb").onclick = () => { if (F1.load($("#imp").value.trim())) { F1.save(); boot(); toast("読み込みました"); } else toast("読み込めませんでした（旧版のセーブは使えません）"); };
+  $("#impb").onclick = () => afterLoad(F1.importSave($("#imp").value.trim()));
   guide("start");
 }
 function chooseMode() {
@@ -1602,7 +1655,7 @@ function vTeam() {
   } else {
     body = `<div class="card"><h3>チーム名・カラー</h3><div class="row"><input type="text" id="tn" value="${esc(t.name)}" class="sp"><button class="b" id="tnb">変える</button></div><div class="row" style="margin-top:8px"><span class="small">メイン</span><input type="color" id="c1" value="${esc(t.color)}"><span class="small">サブ</span><input type="color" id="c2" value="${esc(t.color2)}"><button class="b" id="cb">色を変える</button></div>
       <p class="hint">ドライバー・ほかのチームの名前も変えられます：</p><div class="row"><select id="rnsel">${s.teams.map(x => `<option value="t${x.id}">${esc(x.name)}（チーム）</option>`).join("")}${Object.values(s.drivers).filter(d => F1.teamOf(d.id) || s.free.includes(d.id)).map(d => `<option value="d${d.id}">${esc(d.name)}</option>`).join("")}</select><input type="text" id="rnv" placeholder="新しい名前" class="sp"><button class="b" id="rnb">変える</button></div></div>
-      <div class="card"><h3>セーブ</h3><p class="small muted">進み具合はこの端末のブラウザに自動で保存されます。別の端末に移すときは書き出してください。</p><div class="row"><button class="b" id="ex">セーブデータを書き出す</button><button class="b" id="restart">最初からやり直す</button></div><textarea id="exo" style="width:100%;height:70px;margin-top:8px;display:none" readonly></textarea></div>
+      <div class="card"><h3>セーブ</h3><p class="small muted">枠${F1.slotNo()}に自動で保存中。枠の切り替え・巻き戻し・ファイルへの書き出しは、上の 💾 からもできる。</p><button class="b p" id="svOpen">💾 セーブを開く</button></div>
       <div class="card"><h3>コツ</h3><ul class="small muted" style="margin:0;padding-left:1.2em"><li>ソフトは速いが減りが早い。崖の前に替えるのが基本。セーフティカー中はピットの損失が半分。</li><li>燃料「少なめ」は序盤が速いぶん、後半に燃料セーブが要る。SC 中は燃料が減りにくいので取り返せることも。</li><li>冷静さの低いドライバーは、詰まったり抜かれたりした後にミスしやすい。「攻める」を長く続けない。</li><li>大きな規則変更が予告されたら、どの時点で来年の車に開発を振るかが勝負。</li></ul></div>`;
   }
   $("#main").innerHTML = seg + body;
@@ -1617,8 +1670,7 @@ function vTeam() {
   on("tnb", () => { const v = $("#tn").value.trim(); if (v) { t.name = v.slice(0, 24); F1.save(); render(); } });
   on("cb", () => { t.color = $("#c1").value; t.color2 = $("#c2").value; F1.save(); render(); });
   on("rnb", () => { const v = $("#rnv").value.trim(), k = $("#rnsel").value; if (!v) return; if (k[0] === "t") F1.team(+k.slice(1)).name = v.slice(0, 24); else F1.drv(+k.slice(1)).name = v.slice(0, 24); F1.save(); render(); toast("名前を変えました"); });
-  on("ex", () => { const x = $("#exo"); x.style.display = ""; x.value = F1.exportSave(); x.select(); try { navigator.clipboard.writeText(x.value); toast("コピーしました"); } catch (e) { } });
-  on("restart", () => { if (confirm("今のセーブを消して最初からやり直しますか？（元に戻せません）")) { F1.wipe(); startScreen(); } });
+  on("svOpen", savePage);
 }
 
 /* ---------- 順位 ---------- */
