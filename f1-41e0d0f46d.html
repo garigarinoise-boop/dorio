@@ -496,8 +496,8 @@ const F1 = (() => {
       else if (R.lap >= R.rainAt + R.rainLen && R.wet > 0) { const was = R.wet; R.wet = Math.max(0, R.wet - 0.05); dry(was); }
     } else if (R.wet > 0) { const was = R.wet; R.wet = Math.max(0, R.wet - 0.04); dry(was); }
   }
-  function startVSC(R) { R.vsc = { left: ri(1, 3) }; R.vscCount = (R.vscCount || 0) + 1; say(R, "🟡 L" + R.lap + " バーチャルセーフティカー（全車ペースダウン・差はそのまま）", true); R.alerts.push({ k: "vsc" }); }
-  function startSC(R) { R.drsFrom = 999; R.sc = { left: ri(3, 5) }; R.scCount++; say(R, "🟡 L" + R.lap + " セーフティカー出動（ピットの損失が半分）", true); R.alerts.push({ k: "sc" }); }
+  function startVSC(R) { R.cars.forEach(c => c.drs = false); R.vsc = { left: ri(1, 3) }; R.vscCount = (R.vscCount || 0) + 1; say(R, "🟡 L" + R.lap + " バーチャルセーフティカー（全車ペースダウン・差はそのまま）", true); R.alerts.push({ k: "vsc" }); }
+  function startSC(R) { R.cars.forEach(c => c.drs = false); R.drsFrom = 999; R.sc = { left: ri(3, 5) }; R.scCount++; say(R, "🟡 L" + R.lap + " セーフティカー出動（ピットの損失が半分）", true); R.alerts.push({ k: "sc" }); }
   // タイヤだけのタイム（新品との比較用）
   function tyreTime(R, c, comp, age) { const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[comp], wf = trueWf(comp), w = tr.wear * S.regs.wear * (1.12 - d.tm / 250) * carWear(tm) * wf; let t = T.off + trueOff(comp) + T.deg * age * w; const life = T.life / (tr.wear * S.regs.wear * wf); if (age > life) t += (age - life) * 0.3; return t; }
   const nextComp = c => { const nx = c.plan.stops[c.stopsDone]; if (nx) return nx.comp; return c.comp === "S" ? "M" : c.comp === "M" ? "H" : "M"; };
