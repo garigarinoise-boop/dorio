@@ -256,7 +256,7 @@ const F1 = (() => {
   function setPU(id) { const tm = me(), p = S.pus[id], old = pu(tm.pu); if (!p) return { ok: false, msg: "ありません" }; if (tm.works) return { ok: false, msg: "ワークスチームは自社の PU です" }; if (id === tm.pu) return { ok: true, msg: "そのままです" }; if (puUsers(id).length >= PU_MAX) return { ok: false, msg: p.name + " は供給先がいっぱいです（" + PU_MAX + "チームまで）" };
     tm.budget += old.fee - p.fee; tm.pu = id; news("来季から " + p.name + " の PU を使う（年間 " + money(p.fee) + "）"); save(); return { ok: true, msg: p.name + " と契約しました" }; }
   function offStep(dir) { const o = S.off; if (!o) return { ok: false }; if (dir > 0 && o.step === 1) { const tm = me(); if (tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "契約が切れるドライバーを、延長か放出か決めてくれ" }; if (tm.drivers.length < 2) return { ok: false, msg: "ドライバーを2人そろえてくれ" }; }
-    o.step = clamp(o.step + dir, 0, 5); save(); return { ok: true }; }
+    o.step = clamp(o.step + dir, 0, 6); save(); return { ok: true }; }
   function startSeason() { const tm = me(); if (tm.drivers.length < 2 || tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "ドライバーが決まっていません" }; S.off = null; S.phase = "season"; save(); return { ok: true }; }
   function migrate() {
     if (!S.nations) initWorld();
@@ -729,6 +729,31 @@ const F1 = (() => {
   const dueName = r => r >= S.calendar.length ? "来季" : "第" + (r + 1) + "戦 " + TRACKS[S.calendar[r]].name;
   // 開発の伸び：開発力とドライバーのフィードバック、上の方ほど伸びにくい。マイナスもある
   function rollGain(tm, base, size) { const Z = SIZE[size], skill = (tm.devp * 0.7 + driverDev(tm) * 0.3) * (1 + moraleB(tm) * 0.06) * (1 + (fl(tm, "wt") - 1) * 0.02), room = clamp((99 - base) / 22, 0.25, 1.2); return (Z.gain * (0.55 + skill / 110) * room) + gauss() * Z.sd - 0.25; }
+  // ---- 新車（オフ）：空力・シャシー・信頼性ごとに力の入れ具合を選ぶ。費用は新しいシーズンの予算上限に数える ----
+  const NC = [{ n: "作らない", cost: 0, m: 0 }, { n: "控えめ", cost: 12, m: 0.8 }, { n: "標準", cost: 25, m: 1.5 }, { n: "攻め", cost: 40, m: 2.2 }];
+  const NC_REL = [0, 6, 12, 20];
+  const ncCost = ch => ["aero", "chassis"].reduce((a, k) => a + NC[(ch[k] || {}).size || 0].cost, 0) + NC_REL[(ch.rel || {}).size || 0];
+  function newCarSpec(tm, part, focus, m, mine) {
+    const cur = specOf(tm, part), keys = part === "aero" ? AERO_K : CHAS_K, base = projBase(tm, part), v = {};
+    keys.forEach(k => { const g = rollGain(tm, base, "b") * m; let d; if (focus === "bal") d = g * 0.6 + gauss() * 0.6; else if (k === focus) d = g * 1.3 + gauss() * 0.5; else if (part === "aero") d = -g * 0.3 + gauss() * 0.7; else d = g * 0.2 + gauss() * 0.7; v[k] = cur[k] + d; });
+    const sp = newSpec(part, v, "第" + S.season + "期 新車（" + FOCUS[part][focus] + "）"); sp.from = "第" + S.season + "期 開幕前";
+    if (mine) { sp.known = false; keys.forEach(k => sp.e[k] = clamp(Math.round(sp[k] + gauss() * 2), 45, 99)); }
+    tm.specs[part].unshift(sp); tm.use[part] = sp.id; return { part, from: cur, to: sp };
+  }
+  function buildNewCar(ch, tmArg) {
+    const tm = tmArg || me(), mine = !tmArg, cost = ncCost(ch);
+    if (mine && S.off && S.off.newCar) return { ok: false, msg: "新車はもう作りました" };
+    if (!cost) return { ok: false, msg: "何も選ばれていません" };
+    if (tm.budget < cost) return { ok: false, msg: "予算が足りません（" + money(cost) + "）" }; if (capLeft(tm) < cost) return { ok: false, msg: "予算上限に届きます" };
+    tm.budget -= cost; S.spent[tm.id] = spent(tm) + cost; const res = [];
+    ["aero", "chassis"].forEach(k => { const c = ch[k] || {}; if (c.size) res.push(newCarSpec(tm, k, c.focus || "bal", NC[c.size].m, mine)); });
+    let rel = 0; if (ch.rel && ch.rel.size) { rel = Math.round(rollGain(tm, tm.car.rel, "b") * [0, 0.6, 1.1, 1.6][ch.rel.size] * 1.3); tm.car.rel = clamp(tm.car.rel + rel, 50, 99); }
+    applyUse(tm);
+    if (mine) { S.off.newCar = { cost, rel: ch.rel && ch.rel.size ? rel : null, res: res.map(r => ({ part: r.part, from: r.from.id, to: r.to.id })) }; news("第" + S.season + "期の新車が完成（" + money(cost) + "）"); save(); }
+    return { ok: true, msg: "新車ができました" };
+  }
+  // CPU：お金に合わせた力の入れ具合、コンセプトはおまかせ
+  function aiNewCar(tm) { const sz = tm.budget > 160 ? 3 : tm.budget > 110 ? 2 : 1, fa = pick(["df", "drag", "bal", "bal"]), fc = pick(["low", "high", "tyre", "bal", "bal"]); const ch = { aero: { size: sz, focus: fa }, chassis: { size: sz, focus: fc }, rel: { size: Math.max(1, sz - 1) } }; if (tm.budget < ncCost(ch) + 30) { ch.aero.size = ch.chassis.size = 1; ch.rel.size = 1; } if (tm.budget >= ncCost(ch)) buildNewCar(ch, tm); }
   function arrive(tm, p) {
     const mine = tm.id === S.my, base = projBase(tm, p.part), g = rollGain(tm, base, p.size);
     if (p.part === "rel") { const v = Math.round(g * 1.3); tm.car.rel = clamp(tm.car.rel + v, 50, 99); if (mine) news("信頼性の対策が入った：" + (v >= 0 ? "+" : "") + v); return; }
@@ -846,6 +871,7 @@ const F1 = (() => {
       const best = Object.values(S.pus).filter(p => p.id !== tm.pu && S.teams.filter(t => t.pu === p.id).length < 4).sort((a, b) => val(b) - val(a))[0];
       if (best && val(best) > val(cur) + 2) { tm.budget += cur.fee - best.fee; tm.pu = best.id; rec.puMoves.push({ tm: tm.name, from: cur.name, to: best.name }); news(tm.name + " が来季から " + best.name + " の PU に乗り換え（" + cur.name + " から）"); } });
     S.season++; S.round = 0; S.results = []; S.last = null; S.spent = {}; S.nextInv = {}; Object.values(S.pus).forEach(p => p.nextInv = 0);
+    S.teams.forEach(tm => { if (tm.id !== S.my) aiNewCar(tm); });
     if (!S.nextReg || S.nextReg.season <= S.season) S.nextReg = planReg();
     news("第" + S.season + "シーズン開幕。" + (S.nextReg ? "来季（第" + S.nextReg.season + "シーズン）に「" + REG_TYPES[S.nextReg.type].n + "」が予告されています。" : ""));
     rec.teamChange = { devp: me().devp - myDevp0, strat: me().staff.strat.skill - myStaff0.strat, crew: me().staff.crew.skill - myStaff0.crew };
@@ -898,7 +924,7 @@ const F1 = (() => {
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
   const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * 0.55, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.016 : 0.0095)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
-  return { renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -983,7 +1009,7 @@ function pickDrivers() {
 }
 
 /* ---------- オフシーズン ---------- */
-const OFF_STEPS = ["振り返り", "ドライバー", "PU", "スタッフ", "予算・施設", "開幕"];
+const OFF_STEPS = ["振り返り", "ドライバー", "PU", "新車", "スタッフ", "予算・施設", "開幕"];
 function offseason() {
   const t = ME(), s = S(), o = s.off, r = o.rec, st = o.step, ly = t.lastYear;
   $("#hd").innerHTML = `<span class="crest" style="background:${esc(t.color)}"></span><div class="t"><b>${esc(t.name)}</b><small>オフシーズン（第${s.season}シーズンの準備）</small></div><div class="money">予算<br><b>${money(t.budget)}</b></div>`; $("#tabs").innerHTML = "";
@@ -1012,10 +1038,26 @@ function offseason() {
         return `<div class="card ${on ? "selc" : ""}"><div class="row"><b class="sp">${esc(p.name)}</b>${on ? '<span class="tag gold">契約中</span>' : ""}</div><div class="small">性能 ${rk(Math.round(p.lvl))}・開発力 ${rk(Math.round(p.dev))}・年間 ${money(p.fee)}${!on && !t.works ? `<span class="${p.fee > cur.fee ? "bad" : "good"}">（今より ${p.fee > cur.fee ? "+" : ""}${money(p.fee - cur.fee)}）</span>` : ""}</div><div class="small muted">使っているチーム：${us.map(x => esc(x.short)).join("・") || "なし"}（${us.length}/${F1.PU_MAX}）</div>
         ${!t.works && !on ? `<button class="b" style="margin-top:6px" data-pu="${p.id}" ${full ? "disabled" : ""}>${full ? "供給先がいっぱい" : "これに乗り換える"}</button>` : ""}</div>`; }).join("")}`;
   } else if (st === 3) {
+    const nc = o.newCar, K = { aero: ["df", "drag"], chassis: ["low", "high", "tyre"] }, SN = { df: "ダウンフォース", drag: "ストレート", low: "低速", high: "高速", tyre: "タイヤ" };
+    if (nc) {
+      body = `<div class="card"><h3>第${s.season}期の新車</h3><p class="small muted">数値は工場の予測。フリー走行かレースで走らせると本当の値が分かる（外れることもある）。マシン画面で持ち越しの車に戻すこともできる。</p>
+        ${nc.res.map(x => { const sp = t.specs[x.part].find(z => z.id === x.to), fr = t.specs[x.part].find(z => z.id === x.from); return `<h4 style="margin:8px 0 4px">${x.part === "aero" ? "空力" : "シャシー"}：${esc(sp.label)}</h4>${K[x.part].map(k => { const d = sp.e[k] - fr[k]; return `<div class="small">${SN[k]}　${fr[k]} → <b>${rk(sp.e[k])}?</b><span class="${d >= 0 ? "good" : "bad"}">（${d >= 0 ? "+" : ""}${d}）</span></div>`; }).join("")}`; }).join("")}
+        ${nc.rel != null ? `<p class="small">信頼性 ${nc.rel >= 0 ? "+" : ""}${nc.rel}（今 ${t.car.rel}）</p>` : ""}<p class="small muted">費用 ${money(nc.cost)}（今季の予算上限に数える）</p></div>`;
+    } else {
+      const opt = (part, cur) => `<select data-ncf="${part}">${Object.entries(F1.FOCUS[part]).map(([k, n]) => `<option value="${k}" ${k === cur ? "selected" : ""}>${n}</option>`).join("")}</select>`;
+      const sz = (part, list) => `<select data-ncs="${part}">${list.map((x, i) => `<option value="${i}" ${i === 2 ? "selected" : ""}>${x}</option>`).join("")}</select>`;
+      const cur = p => F1.specOf(t, p);
+      body = `<div class="card"><h3>新車の開発（第${s.season}期）</h3><p class="small muted">冬のあいだに今年の車を作る。コンセプト（何を伸ばすか）と力の入れ具合を選ぶ。攻めるほど伸びが大きいが、ブレも大きく、遅くなることもある。費用は今季の予算上限に数える。作らなければ持ち越しの車で戦う。ライバルも作っている。</p></div>
+        <div class="card"><h3>空力</h3><div class="small muted">今：ダウンフォース ${cur("aero").df}・ストレート ${cur("aero").drag}</div><div class="row" style="margin-top:6px">${opt("aero", "bal")}${sz("aero", F1.NC.map(x => x.n + (x.cost ? " " + money(x.cost) : "")))}</div></div>
+        <div class="card"><h3>シャシー</h3><div class="small muted">今：低速 ${cur("chassis").low}・高速 ${cur("chassis").high}・タイヤ ${cur("chassis").tyre}</div><div class="row" style="margin-top:6px">${opt("chassis", "bal")}${sz("chassis", F1.NC.map(x => x.n + (x.cost ? " " + money(x.cost) : "")))}</div></div>
+        <div class="card"><h3>信頼性</h3><div class="small muted">今：${t.car.rel}</div><div class="row" style="margin-top:6px">${sz("rel", F1.NC.map((x, i) => x.n + (i ? " " + money(F1.NC_REL[i]) : "")))}</div></div>
+        <div class="card"><div class="row"><b class="sp" id="ncc"></b><button class="b p" id="ncb">新車を作る</button></div><p class="small muted">予算 ${money(t.budget)}・予算上限の残り ${money(s.regs.cap - F1.spent(t))}</p></div>`;
+    }
+  } else if (st === 4) {
     const tc = r.teamChange || {}, sg = v => v ? `<span class="${v > 0 ? "good" : "bad"}">（${v > 0 ? "+" : ""}${v}）</span>` : "";
     body = `<div class="card"><h3>スタッフ</h3><p>戦略担当 <b>${esc(t.staff.strat.name)}</b>：腕 ${t.staff.strat.skill}${sg(tc.strat)}・年俸${money(t.staff.strat.salary)}</p><p>ピットクルー責任者 <b>${esc(t.staff.crew.name)}</b>：腕 ${t.staff.crew.skill}${sg(tc.crew)}・年俸${money(t.staff.crew.salary)}</p><p class="small">開発力 ${t.devp}${sg(tc.devp)}</p><p class="small muted">入れ替えるなら下から（契約金＝年俸2年分）。そのままでよければ次へ。</p></div>
       <div class="card"><h3>引き抜ける人</h3>${s.staffPool.slice().sort((a, b) => b.skill - a.skill).map(x => { const now = t.staff[x.kind].skill; return `<div class="pick"><div class="sp"><b>${esc(x.name)}</b><div class="small muted">${x.kind === "strat" ? "戦略担当" : "ピットクルー"}・腕 ${x.skill}<span class="${x.skill > now ? "good" : "bad"}">（今の人 ${now}）</span>・年俸${money(x.salary)}</div></div><button class="b" data-hire="${x.id}">${money(x.salary * 2)} で雇う</button></div>`; }).join("")}</div>`;
-  } else if (st === 4) {
+  } else if (st === 5) {
     body = `<div class="card"><h3>今季の予算 ${money(t.budget)}</h3>${ly ? `<div class="small">オーナー ${money(ly.owner)}＋スポンサー ${money(ly.sponsor)}＋賞金 ${money(ly.prize)}${ly.pay ? "＋持ち込み " + money(ly.pay) : ""}＋繰り越し ${money(ly.carry)}−給料 ${money(ly.sal)}${ly.fee ? "−PU代 " + money(ly.fee) : ""}</div>` : ""}<p class="small muted">開発の予算上限は ${money(s.regs.cap)}。施設は上限の外。オフのうちに工事を始めると、序盤のうちに完成する。</p></div>
       ${Object.entries(F1.FACS).map(([k, f]) => { const L = F1.fl(t, k), b = (t.build || []).find(x => x.k === k), c = F1.facCost(L); return `<div class="pick"><div class="sp"><b>${f.i} ${f.n} Lv${L}</b><div class="small muted">${f.e(L)}${L < 10 ? " → " + f.e(L + 1) : ""}</div></div>${b ? `<span class="tag">🏗 Lv${b.to}へ工事中</span>` : L >= 10 ? '<span class="tag gold">最大</span>' : `<button class="b" data-fac="${k}" ${(t.build || []).length >= 2 || t.budget < c ? "disabled" : ""}>${money(c)}・${F1.facTime(L)}戦</button>`}</div>`; }).join("")}`;
   } else {
@@ -1033,6 +1075,10 @@ function offseason() {
   document.querySelectorAll("[data-pu]").forEach(b => b.onclick = () => go(() => F1.setPU(b.dataset.pu)));
   document.querySelectorAll("[data-hire]").forEach(b => b.onclick = () => go(() => F1.hireStaff(+b.dataset.hire)));
   document.querySelectorAll("[data-fac]").forEach(b => b.onclick = () => go(() => F1.buildFac(b.dataset.fac)));
+  const ncChoice = () => { const ch = {}; ["aero", "chassis", "rel"].forEach(p => { const f = document.querySelector(`[data-ncf="${p}"]`), z = document.querySelector(`[data-ncs="${p}"]`); ch[p] = { focus: f ? f.value : "bal", size: z ? +z.value : 0 }; }); return ch; };
+  const ncShow = () => { if ($("#ncc")) $("#ncc").textContent = "合計 " + money(F1.ncCost(ncChoice())); };
+  document.querySelectorAll("[data-ncs],[data-ncf]").forEach(el => el.onchange = ncShow); ncShow();
+  if ($("#ncb")) $("#ncb").onclick = () => go(() => F1.buildNewCar(ncChoice()));
   if ($("#ob")) $("#ob").onclick = () => { F1.offStep(-1); offseason(); window.scrollTo(0, 0); };
   $("#on").onclick = () => { if (last) { const x = F1.startSeason(); if (!x.ok) { toast(x.msg); return; } U.tab = "home"; render(); window.scrollTo(0, 0); return; } const x = F1.offStep(1); if (!x.ok) { toast(x.msg); return; } offseason(); window.scrollTo(0, 0); };
 }
