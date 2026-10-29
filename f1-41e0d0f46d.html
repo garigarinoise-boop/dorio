@@ -327,6 +327,8 @@ const F1 = (() => {
   }
   const r2 = v => Math.round(v * 100) / 100;
   const moraleOf = tm => tm.morale == null ? 60 : tm.morale;
+  const gainM = c => c.out ? 0 : clamp(c.grid - c.pos > 0 ? (c.grid - c.pos) * 0.4 : (c.grid - c.pos) * 0.3, -3, 4);
+  const moraleStep = (m, dm) => clamp(Math.round(m + (60 - m) * 0.1 + (dm > 0 ? dm * Math.min(1, (100 - m) / 40) : dm)), 20, 100);
   const moraleB = tm => (moraleOf(tm) - 60) / 40; // −1.5〜+1
   const STAT_N = { df: "ダウンフォース", drag: "ストレート", low: "低速", high: "高速", tyre: "タイヤ", rel: "信頼性", pu: "PU" };
   const wkNow = () => S.wk && S.wk.round === S.round && S.wk.season === S.season;
@@ -627,10 +629,15 @@ const F1 = (() => {
       // 入賞の賞金（1点につき $0.2M）
       const pts = ev.reduce((a, e) => a + (POINTS[e.pos - 1] || 0), 0); if (pts) { tm.budget += r1(pts * 0.2); rec.myPrize = r1(pts * 0.2); }
       // 士気：優勝 +10、表彰台 +5、入賞 +2、ノーポイント −2、リタイア −4。平常(60)へ少し戻る
-      const m0 = moraleOf(tm); let dm = (60 - m0) * 0.1; ev.forEach(e => dm += e.k === "win" ? 10 : e.k === "podium" ? 5 : 2); const myCars = res.filter(c => c.tm === tm.id); dm -= myCars.filter(c => c.out).length * 4; if (!ev.length) dm -= 2;
-      tm.morale = clamp(Math.round(m0 + dm), 20, 100); rec.morale = { from: m0, to: tm.morale };
+      const m0 = moraleOf(tm), why = [], myCars = res.filter(c => c.tm === tm.id), add = (v, t) => { if (Math.abs(v) >= 0.5) why.push(t + (v > 0 ? " +" : " ") + Math.round(v)); return v; };
+      let dm = 0;
+      dm += add(ev.reduce((a, e) => a + (e.k === "win" ? 10 : e.k === "podium" ? 5 : 2), 0), ev.some(e => e.k === "win") ? "優勝" : ev.some(e => e.k === "podium") ? "表彰台" : "入賞");
+      dm += add(myCars.reduce((a, c) => a + gainM(c), 0), "スタートからの順位");
+      dm += add(-myCars.filter(c => c.out).length * 4, "リタイア");
+      if (!ev.length) dm += add(-1, "ノーポイント");
+      tm.morale = moraleStep(m0, dm); rec.morale = { from: m0, to: tm.morale, why };
       if (tm.milestones.length > 40) tm.milestones.length = 40; rec.myEv = ev; rec.podium = res.filter(c => !c.out).slice(0, 3).map(c => ({ id: c.id, tm: c.tm })); }
-    S.teams.forEach(t => { if (t.id === S.my) return; const cs = res.filter(c => c.tm === t.id); let dm = (60 - moraleOf(t)) * 0.1; cs.forEach(c => { if (c.out) dm -= 4; else if (c.pos === 1) dm += 10; else if (c.pos <= 3) dm += 5; else if (c.got) dm += 2; }); t.morale = clamp(Math.round(moraleOf(t) + dm), 20, 100); });
+    S.teams.forEach(t => { if (t.id === S.my) return; const cs = res.filter(c => c.tm === t.id); let dm = 0; cs.forEach(c => { dm += gainM(c); if (c.out) dm -= 4; else if (c.pos === 1) dm += 10; else if (c.pos <= 3) dm += 5; else if (c.got) dm += 2; }); t.morale = moraleStep(moraleOf(t), dm); });
     S.last = rec; S.results = (S.results || []).concat([rec]);
     S.teams.forEach(tm => { const got = res.filter(c => c.tm === tm.id).reduce((t, c) => t + c.got, 0); tm.budget += 1 + got * 0.3; });
     news("第" + rec.round + "戦 " + tr.name + "：優勝 " + rec.winner + "（" + rec.wteam + "）");
@@ -1317,7 +1324,7 @@ function celebrate(rec, after) {
 }
 function raceDone() {
   const rec = S().last; U.paused = true; cancelAnimationFrame(U.raf); render();
-  if (rec) celebrate(rec, () => { const mine = rec.res.filter(r => r.tm === S().my); modal(`<h3>🏁 ${esc(rec.name)}</h3><p>優勝：<b>${esc(rec.winner)}</b>（${esc(rec.wteam)}）・ファステストラップ ${esc(rec.fl)}（点はなし）</p>${mine.map(r => `<p>${esc(F1.drv(r.id).name)}：<b>${r.out ? "リタイア（" + esc(r.why) + "）" : r.pos + "位"}</b>（${r.grid}番手から）${r.got ? "・" + r.got + "点" : ""}</p>`).join("")}${rec.morale ? `<p class="small">💪 チームの士気 ${rec.morale.from} → ${rec.morale.to}</p>` : ""}<button class="b p big" data-x>閉じる</button>`); });
+  if (rec) celebrate(rec, () => { const mine = rec.res.filter(r => r.tm === S().my); modal(`<h3>🏁 ${esc(rec.name)}</h3><p>優勝：<b>${esc(rec.winner)}</b>（${esc(rec.wteam)}）・ファステストラップ ${esc(rec.fl)}（点はなし）</p>${mine.map(r => `<p>${esc(F1.drv(r.id).name)}：<b>${r.out ? "リタイア（" + esc(r.why) + "）" : r.pos + "位"}</b>（${r.grid}番手から）${r.got ? "・" + r.got + "点" : ""}</p>`).join("")}${rec.morale ? `<p class="small">💪 チームの士気 ${rec.morale.from} → ${rec.morale.to}${rec.morale.why && rec.morale.why.length ? `<span class="muted">（${rec.morale.why.join("・")}）</span>` : ""}</p>` : ""}<button class="b p big" data-x>閉じる</button>`); });
 }
 
 /* ---------- マシン ---------- */
