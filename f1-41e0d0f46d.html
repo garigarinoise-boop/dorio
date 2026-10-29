@@ -496,6 +496,25 @@ const F1 = (() => {
       else if (R.lap >= R.rainAt + R.rainLen && R.wet > 0) { const was = R.wet; R.wet = Math.max(0, R.wet - 0.05); dry(was); }
     } else if (R.wet > 0) { const was = R.wet; R.wet = Math.max(0, R.wet - 0.04); dry(was); }
   }
+  // 濡れ具合 w のときのタイヤごとの損（秒/周、新品同士で比べる）
+  const wetPen = (comp, w) => comp === "I" ? Math.abs(w - 0.45) * 5 + (w < 0.2 ? (0.2 - w) * 12 : 0) : comp === "W" ? (1 - w) * 5.5 : Math.max(0, w - 0.15) * 16 + TYRE[comp].off;
+  function bestTyres(w) { return ["S", "M", "H", "I", "W"].map(k => ({ comp: k, t: wetPen(k, w) })).sort((a, b) => a.t - b.t); }
+  const wetLabel = w => w < 0.05 ? "ドライ" : w < 0.2 ? "湿っている" : w < 0.45 ? "小雨" : w < 0.7 ? "本降り" : "大雨";
+  // この先の見込み（雨の筋書きどおりに先読み。予報なので周回は数周ずれる）
+  function weatherOutlook(R) {
+    if (R.fcErr == null) R.fcErr = ri(-2, 2);
+    let w = R.wet; const tl = [], end = Math.min(R.laps, R.lap + 25);
+    for (let L = R.lap + 1; L <= end; L++) {
+      if (R.rainAt > 0) { if (L >= R.rainAt && L < R.rainAt + R.rainLen) w = Math.min(R.rainTo, w + 0.07); else if (L >= R.rainAt + R.rainLen && w > 0) w = Math.max(0, w - 0.05); }
+      else if (w > 0) w = Math.max(0, w - 0.04);
+      tl.push({ lap: L, w: Math.round(w * 100) / 100 });
+    }
+    const e = R.fcErr, find = f => { const x = tl.find(f); return x ? Math.max(R.lap + 1, x.lap + e) : null; };
+    const peak = tl.reduce((m, x) => Math.max(m, x.w), R.wet);
+    const comingRain = R.rainAt > R.lap && R.rainAt - R.lap <= 6 ? Math.max(1, R.rainAt - R.lap + e) : null;
+    const rainStops = R.rainAt > 0 && R.lap < R.rainAt + R.rainLen ? Math.max(R.lap + 1, R.rainAt + R.rainLen + e) : null;
+    return { now: R.wet, label: wetLabel(R.wet), best: bestTyres(R.wet), peak, comingRain, rainStops, interFrom: find(x => x.w >= 0.22 && R.wet < 0.22), wetFrom: find(x => x.w >= 0.74 && R.wet < 0.74), backToInter: R.wet >= 0.74 ? find(x => x.w < 0.74) : null, dryFrom: R.wet >= 0.22 ? find(x => x.w < 0.22) : null, steps: [3, 6, 10].map(k => tl[k - 1]).filter(Boolean).map(x => ({ lap: x.lap + e, w: x.w, best: bestTyres(x.w)[0].comp })) };
+  }
   function startVSC(R) { R.cars.forEach(c => c.drs = false); R.vsc = { left: ri(1, 3) }; R.vscCount = (R.vscCount || 0) + 1; say(R, "🟡 L" + R.lap + " バーチャルセーフティカー（全車ペースダウン・差はそのまま）", true); R.alerts.push({ k: "vsc" }); }
   function startSC(R) { R.cars.forEach(c => c.drs = false); R.drsFrom = 999; R.sc = { left: ri(3, 5) }; R.scCount++; say(R, "🟡 L" + R.lap + " セーフティカー出動（ピットの損失が半分）", true); R.alerts.push({ k: "sc" }); }
   // タイヤだけのタイム（新品との比較用）
@@ -785,7 +804,7 @@ const F1 = (() => {
   const drsGain = tr => r1(0.1 + drsZones(tr) * 0.08 + tr.pw * 0.3);
   const drsOK = R => R.lap >= 2 && !R.sc && !R.vsc && R.wet < 0.2 && R.lap >= (R.drsFrom || 0);
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
-  return { planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -1068,11 +1087,22 @@ const lapFmt = t => !t || t > 900 ? "-" : Math.floor(t / 60) + ":" + (t % 60).to
 // 短い名前：名の頭1文字＋姓（同じ姓が2人いても見分けられる）。日本人名（空白区切り）は姓だけ
 const shortN = n => { n = String(n); if (n.includes(" ")) return n.split(" ")[0]; const p = n.split("・"); return p.length > 1 ? p[0][0] + "." + p[p.length - 1] : n; };
 // 自分の2台：順位・前後との差・直前の1周を前後の車と比べる
+// 天気レーダー（雨が近い・降っているときだけ）
+function weatherHtml(R, full) {
+  const o = F1.weatherOutlook(R); if (o.now < 0.05 && !o.comingRain) return "";
+  const T = k => F1.TYRE[k].n, pct = w => Math.round(w * 100) + "%", b = o.best, gap = (b[1].t - b[0].t).toFixed(1);
+  const dryNow = b.find(x => ["S", "M", "H"].includes(x.comp)), inter = b.find(x => x.comp === "I"), wet = b.find(x => x.comp === "W");
+  const next = []; if (o.comingRain) next.push(`約${o.comingRain}周後に雨が降り出す見込み`); if (o.interFrom) next.push(`L${o.interFrom}ごろからインターの方が速くなる`); if (o.wetFrom) next.push(`L${o.wetFrom}ごろからウェットの方が速くなる`); if (o.rainStops) next.push(`雨はL${o.rainStops}ごろ止む見込み（いちばん強いと濡れ${pct(o.peak)}）`); if (o.backToInter) next.push(`L${o.backToInter}ごろインターに戻せる`); if (o.dryFrom) next.push(`L${o.dryFrom}ごろドライタイヤに戻せる`);
+  return `<div class="small" style="margin-top:4px;padding:6px 8px;border-radius:6px;background:var(--chip)">🌧 <b>路面 ${o.label}（濡れ ${pct(o.now)}）</b>${o.now >= 0.05 ? `・今いちばん速いのは <b>${T(b[0].comp)}</b>（次の${T(b[1].comp)}より約${gap}秒/周速い）` : ""}
+    ${full && o.now >= 0.05 ? `<div style="margin-top:3px">今の差：ドライ（${T(dryNow.comp)}）${(dryNow.t - b[0].t).toFixed(1)}秒遅い・インター ${(inter.t - b[0].t).toFixed(1)}秒・ウェット ${(wet.t - b[0].t).toFixed(1)}秒（いちばん速いタイヤとの差、1周あたり）</div>` : ""}
+    ${next.length ? `<div style="margin-top:3px">📡 見込み：${next.join("・")}</div>` : ""}
+    ${full ? `<div style="margin-top:3px">${o.steps.map(x => `L${x.lap}：濡れ${pct(x.w)}→${T(x.best)}`).join("　")}</div><div class="muted" style="margin-top:3px">目安：濡れ22%くらいからインター、74%くらいからウェットが速い。見込みは予報なので数周ずれることがある。</div>` : ""}</div>`;
+}
 function drawStrip() {
   const R = S().race, el = $("#strip"); if (!R || !el) return;
   if (!R.started) { el.innerHTML = ""; return; }
   const ord = F1.order(R), lead = ord[0], gapTo = (a, b) => { const g = Math.abs(gapSec(R, a, b) || gapSec(R, b, a)); return g.toFixed(1); };
-  el.innerHTML = `<div class="card" style="padding:8px 10px">${R.cars.filter(c => c.tm === S().my).map(c => { const d = F1.drv(c.id), i = ord.indexOf(c), a = ord[i - 1], b = ord[i + 1];
+  el.innerHTML = `<div class="card" style="padding:8px 10px">${weatherHtml(R, false)}${R.cars.filter(c => c.tm === S().my).map(c => { const d = F1.drv(c.id), i = ord.indexOf(c), a = ord[i - 1], b = ord[i + 1];
     if (c.out) return `<div class="small muted">${esc(d.name)}：リタイア（${esc(c.why)}）</div>`;
     const cmp = o => { if (!o || o.out || !o.lt || !c.lt) return ""; const df = c.lt - o.lt; return ` <span class="${df < -0.05 ? "good" : df > 0.05 ? "bad" : "muted"}">${df > 0 ? "+" : ""}${df.toFixed(1)}</span>`; };
     return `<div class="row small" style="padding:3px 0;border-bottom:1px solid var(--line);gap:6px;flex-wrap:wrap"><b style="min-width:30px">P${i + 1}</b><b>${esc(shortN(d.name))}</b>${ty(c.comp)}<span class="muted">${c.age}周</span>${c.drs ? '<span class="tag gold">DRS</span>' : ""}<span class="sp"></span><span>前周 <b>${lapFmt(c.lt)}</b></span>
@@ -1210,7 +1240,7 @@ function alertBox(al) {
   const R = S().race, tr = F1.TRACKS[R.tr], mine = R.cars.filter(c => c.tm === S().my && !c.out && !c.fin);
   if (al.k === "radio" || al.k === "pitsoon" || al.k === "rivalpit") { const sp = R.cars.find(c => c.id === al.id); mine.sort((x, y) => (y === sp) - (x === sp)); }
   const title = { rivalpit: "🔁 " + (al.rel || "") + "の " + (al.who ? esc(F1.drv(al.who).name) : "") + " がピットに入った", pitsoon: "🔧 " + (al.id ? esc(F1.drv(al.id).name) : "") + "：次の周でピット予定", radio: "📻 " + (al.id ? esc(F1.drv(al.id).name) : "") + " から無線", vsc: "🟡 バーチャルセーフティカー", sc: "🟡 セーフティカー出動", rain: "🌧 雨が降ってきた", dry: "☀ 路面が乾いてきた", dnf: "❌ リタイア", fuel: "⛽ 燃料が足りない" }[al.k];
-  const msg = { vsc: `全車がペースを落とし、前後の差はそのまま。ピットの損失が約${(tr.pit * 0.6).toFixed(0)}秒（普段の6割）に減っています。SC ほどではないが、タイヤが古いなら入りどき。1〜3周で終わります。`, rivalpit: (() => { const c = R.cars.find(x => x.id === al.id); if (!c) return ""; return `${esc(F1.drv(c.id).name)} はどうする？　すぐ入れば${al.rel === "前" ? "アンダーカットを防げる" : "相手の前を守れるか勝負"}。入るなら下でタイヤを選んで再開（次に線を越えたときに入る）。${ucHtml(R, c)}`; })(), pitsoon: (() => { const c = R.cars.find(x => x.id === al.id); if (!c) return ""; const nx = c.plan.stops[c.stopsDone]; return `予定：${nx.lap}周目に${F1.TYRE[nx.comp].n}。予定どおりでよければそのまま再開。タイヤを変えるなら下で選ぶ。<div class="row" style="margin-top:6px"><button class="b" data-delay="${c.id}:3">3周延ばす</button><button class="b" data-delay="${c.id}:x">この予定を消す</button></div>${ucHtml(R, c)}`; })(), radio: `「${esc(al.msg || "")}」${al.rk === "tyre" ? "<br>次の周でピットに入れるか、「タイヤを守る」で引っ張るか。" : al.rk === "stuck" ? "<br>このコースは抜きにくい。アンダーカット（先にピット）か、我慢してタイヤを守るか。" : "<br>抑えるなら「攻める」、無理なら先にピットへ。"}${(() => { const c = R.cars.find(x => x.id === al.id); return c ? ucHtml(R, c) : ""; })()}`, sc: `ピットの損失が約${(tr.pit * 0.5).toFixed(0)}秒に減っています。全車が SC の後ろに整列するので、前との差は詰まり、後ろとの差もなくなります。タイヤが古いなら今が入りどき。`, rain: "路面が濡れるとドライタイヤは大きく遅れます。インター（小雨）・ウェット（大雨）への交換を考えてください。", dry: "ドライタイヤに戻すタイミングです。早すぎると滑り、遅すぎるとタイムを失います。", dnf: `${al.id ? esc(F1.drv(al.id).name) : ""} がリタイアしました。`, fuel: `${al.id ? esc(F1.drv(al.id).name) : ""} はこのペースだと最後まで燃料が持ちません。ペースを「燃料セーブ」にしてください（SC中は燃料が減りにくい）。` }[al.k];
+  const msg = { vsc: `全車がペースを落とし、前後の差はそのまま。ピットの損失が約${(tr.pit * 0.6).toFixed(0)}秒（普段の6割）に減っています。SC ほどではないが、タイヤが古いなら入りどき。1〜3周で終わります。`, rivalpit: (() => { const c = R.cars.find(x => x.id === al.id); if (!c) return ""; return `${esc(F1.drv(c.id).name)} はどうする？　すぐ入れば${al.rel === "前" ? "アンダーカットを防げる" : "相手の前を守れるか勝負"}。入るなら下でタイヤを選んで再開（次に線を越えたときに入る）。${ucHtml(R, c)}`; })(), pitsoon: (() => { const c = R.cars.find(x => x.id === al.id); if (!c) return ""; const nx = c.plan.stops[c.stopsDone]; return `予定：${nx.lap}周目に${F1.TYRE[nx.comp].n}。予定どおりでよければそのまま再開。タイヤを変えるなら下で選ぶ。<div class="row" style="margin-top:6px"><button class="b" data-delay="${c.id}:3">3周延ばす</button><button class="b" data-delay="${c.id}:x">この予定を消す</button></div>${ucHtml(R, c)}`; })(), radio: `「${esc(al.msg || "")}」${al.rk === "tyre" ? "<br>次の周でピットに入れるか、「タイヤを守る」で引っ張るか。" : al.rk === "stuck" ? "<br>このコースは抜きにくい。アンダーカット（先にピット）か、我慢してタイヤを守るか。" : "<br>抑えるなら「攻める」、無理なら先にピットへ。"}${(() => { const c = R.cars.find(x => x.id === al.id); return c ? ucHtml(R, c) : ""; })()}`, sc: `ピットの損失が約${(tr.pit * 0.5).toFixed(0)}秒に減っています。全車が SC の後ろに整列するので、前との差は詰まり、後ろとの差もなくなります。タイヤが古いなら今が入りどき。`, rain: "路面が濡れるとドライタイヤは大きく遅れます。" + weatherHtml(R, true), dry: "ドライタイヤに戻すタイミングです。早すぎると滑り、遅すぎるとタイムを失います。" + weatherHtml(R, true), dnf: `${al.id ? esc(F1.drv(al.id).name) : ""} がリタイアしました。`, fuel: `${al.id ? esc(F1.drv(al.id).name) : ""} はこのペースだと最後まで燃料が持ちません。ペースを「燃料セーブ」にしてください（SC中は燃料が減りにくい）。` }[al.k];
   modal(`<h3>${title}</h3><p class="small">${msg}</p>${mine.map(c => `<div class="ctl"><div class="row"><b class="sp">${esc(F1.drv(c.id).name)}　P${posOf(R, c)}</b>${ty(c.comp)}<span class="small">${c.age}周・燃料${fuelLeft(R, c) < 0 ? "不足" : "OK"}</span></div><div class="row small" style="margin-top:6px">${["S", "M", "H", "I", "W"].map(k => `<button class="b ${c.pitReq === k ? "on" : ""}" data-apit="${c.id}:${k}" ${c.sets && !stockN(c, k) ? "disabled" : ""}>${F1.TYRE[k].n}${stockTxt(c, k)}</button>`).join("")}<button class="b" data-apit="${c.id}:x">入らない</button></div><div class="row small" style="margin-top:6px">${Object.keys(F1.PACE).map(k => `<button class="b ${c.pace === k ? "on" : ""}" data-apace="${c.id}:${k}">${F1.PACE[k].n}</button>`).join("")}</div></div>`).join("")}<button class="b p big" style="margin-top:10px" data-x id="goOn">この指示で再開</button>`, true);
   document.querySelectorAll("[data-apit]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.apit.split(":"); const c = F1.carAt(R, +id); c.pitReq = k === "x" ? null : k; b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b && k !== "x")); });
   document.querySelectorAll("[data-apace]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.apace.split(":"); F1.carAt(R, +id).pace = k; b.parentNode.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b)); });
