@@ -883,7 +883,7 @@ function gpCard(tr, round) {
   const home = []; if (t.nat === tr.c) home.push("ホームGP：チーム全体に気合い（ピット作業も速い）"); if (t.fac === tr.c) home.push("工場が近い：届く予定の新パーツが1戦早く間に合う");
   t.drivers.forEach(id => { const d = F1.drv(id); if (d.nat === tr.c) home.push(`地元ドライバー ${esc(d.name)}：大声援で速くなる${d.calm < 50 ? "（冷静さが低いので重圧でミスも増える）" : ""}`); });
   return `<div class="row"><h3 class="sp">第${round + 1}戦　${esc(tr.name)}</h3>${nb(tr.c)}</div>
-    <div class="gp">${trackSvg(tr)}<div class="small">${esc(F1.natName(tr.c))}・${tr.month}月（${seasonOf(tr.month, tr.c)}）・気温 約${tr.temp}℃<br>${tr.street ? "市街地コース" : "常設サーキット"}・${g.isNew ? "<b>新規開催</b>" : "契約 あと" + (g.left || "?") + "年"}<br>${esc(F1.natName(tr.c))}のF1熱 ${rk(fv)}</div></div>
+    <div class="gp">${trackSvg(tr)}<div class="small">${esc(F1.natName(tr.c))}・${tr.month}月（${seasonOf(tr.month, tr.c)}）・気温 約${tr.temp}℃<br>${tr.street ? "市街地コース" : "常設サーキット"}${SHAPES[tr.id] && SHAPES[tr.id].real ? "（モデル：" + esc(SHAPES[tr.id].real) + "）" : ""}・${g.isNew ? "<b>新規開催</b>" : "契約 あと" + (g.left || "?") + "年"}<br>${esc(F1.natName(tr.c))}のF1熱 ${rk(fv)}</div></div>
     <div style="margin-top:6px">${trackFeat(tr)}</div>${home.map(x => `<div class="small"><span class="tag gold">ホーム</span>${x}</div>`).join("")}${trackInfo(tr)}`;
 }
 function trackInfo(tr) {
