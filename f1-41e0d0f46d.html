@@ -1115,7 +1115,7 @@ ${coverHtml(R, c)}
 function raceData(R) {
   const tr = F1.TRACKS[R.tr], w = S().wk, has = w && w.done && w.round === S().round && w.season === S().season, est = has ? w.est : null, fc = R.fc || { p: Math.round(tr.rain * 100), from: Math.round(R.laps / 2) };
   const rows = ["S", "M", "H"].map(k => { const measured = has && w.meas.some(m => m.comp === k), gap = F1.TYRE[k].off + (est ? est.off[k] : 0); return `<tr><td>${ty(k)} ${F1.TYRE[k].n}</td><td class="n">${est ? (est.wf[k] >= 1 ? "+" : "") + Math.round((est.wf[k] - 1) * 100) + "%" : "?"}</td><td class="n">${k === "M" ? "基準" : (gap > 0 ? "+" : "") + gap.toFixed(2) + "秒"}</td><td class="n">約${F1.estLife(k, tr, est)}周</td><td class="small">${measured ? "実測" : est ? "推定" : "想定"}</td></tr>`; }).join("");
-  return `<div class="card"><h3>このレースのデータ</h3>
+  return `<div class="card"><h3>このレースのデータ</h3><div style="font-size:15px;margin-bottom:4px"><b>全${R.laps}周</b>・ピットロス約${tr.pit}秒・抜くには1周あたり約${F1.passNeed(tr)}秒の差が要る</div>
     <div class="small">${R.wet ? "🌧 <b>雨のスタート</b>" : `☁ 天気予報：雨の確率 <b>${fc.p}%</b>${fc.p >= 30 ? `（降るなら${fc.from}周目ごろから）` : ""}`}・気温 約${tr.temp}℃${S().regs.wear !== 1 ? "・今の規則はタイヤが" + (S().regs.wear > 1 ? "減りやすい" : "減りにくい") : ""}</div>
     <div style="overflow-x:auto;margin-top:6px"><table><tr><th>タイヤ</th><th class="n">減り（想定比）</th><th class="n">ペース差</th><th class="n">崖</th><th></th></tr>${rows}</table></div>
     <p class="hint">${has ? "フリー走行で測った値。「推定」は測ったタイヤからの推測。" : "フリー走行のデータなし（いつもの想定の値）。"}崖は新品から数えた周回。予報は当たるとは限らない。</p></div>`;
@@ -1123,7 +1123,7 @@ function raceData(R) {
 function planEditor(c, tr) {
   const d = F1.drv(c.id), R = S().race, po = { age: c.age, lock: c.lockStart, sets: c.sets, est: c.est }, opt = c.lockStart ? { start: c.comp, age: c.age, sets: c.sets, est: c.est } : { sets: c.sets, est: c.est }, cost = F1.planCost(c.plan, tr, d, po), best = F1.bestPlan(tr, d, R.wet, opt), bc = F1.planCost(best, tr, d, po), sk = ME().staff.strat.skill;
   const sel = (v, attr) => `<select ${attr}>${(R.wet ? ["I", "W", "S", "M", "H"] : ["S", "M", "H", "I", "W"]).map(k => `<option value="${k}" ${v === k ? "selected" : ""}>${F1.TYRE[k].n}</option>`).join("")}</select>`;
-  return `<div class="card"><h3>${esc(d.name)} の戦略（${c.grid}番手）</h3>
+  return `<div class="card"><h3>${esc(d.name)} の戦略（${c.grid}番手・全${tr.laps}周）</h3>
     <div class="stop"><span class="small" style="width:64px">スタート</span>${c.lockStart ? ty(c.comp) + ` <span class="small">${F1.TYRE[c.comp].n}（Q2で${c.age}周使用済み・Q3進出のため固定）</span>` : sel(c.plan.start, `data-plan="${c.id}:start"`)}</div>
     ${c.plan.stops.map((s, i) => `<div class="stop"><span class="small" style="width:64px">ピット${i + 1}</span><button class="b" data-lp="${c.id}:${i}:-1" style="padding:4px 10px">−</button><input type="number" min="2" max="${tr.laps - 1}" value="${s.lap}" data-plan="${c.id}:lap:${i}" style="width:52px;text-align:center"><button class="b" data-lp="${c.id}:${i}:1" style="padding:4px 10px">＋</button><span class="small">周目に</span>${sel(s.comp, `data-plan="${c.id}:comp:${i}"`)}<button class="b" data-pa="${c.id}:del:${i}">×</button></div>`).join("")}
     <div class="stop"><span class="small" style="width:64px">燃料</span><select data-plan="${c.id}:fuel">${Object.keys(F1.FUEL).map(k => `<option value="${k}" ${(c.plan.fuel || "std") === k ? "selected" : ""}>${F1.FUEL[k].n}</option>`).join("")}</select><span class="small muted">少なめは軽くて速いが、途中で燃料セーブが要る</span></div>
