@@ -570,6 +570,9 @@ const F1 = (() => {
     else if (!R.vsc && R.lap > 1 && R.lap < R.laps - 2 && rnd() < tr.sc * 0.55) startSC(R);
     const dry = (was) => { if (was >= 0.2 && R.wet < 0.2) { say(R, "☀ L" + R.lap + " 路面が乾いてきた", true); R.alerts.push({ k: "dry" }); } };
     if (R.rainAt > 0) {
+      // 実際の天気は筋書きどおりにいかない：降り出し・止む時期・強さが途中で変わる
+      if (R.lap < R.rainAt && rnd() < 0.08) R.rainAt = Math.max(R.lap + 1, R.rainAt + ri(-2, 3));
+      else if (R.lap >= R.rainAt && R.lap < R.rainAt + R.rainLen && rnd() < 0.2) { R.rainLen = Math.max(R.lap - R.rainAt + 1, R.rainLen + ri(-4, 5)); if (rnd() < 0.5) R.rainTo = clamp(R.rainTo + (rnd() - 0.45) * 0.2, 0.25, 0.9); }
       if (R.lap === R.rainAt) { say(R, "🌧 L" + R.lap + " 雨が降り始めた", true); R.alerts.push({ k: "rain" }); }
       if (R.lap >= R.rainAt && R.lap < R.rainAt + R.rainLen) R.wet = Math.min(R.rainTo, R.wet + 0.07);
       else if (R.lap >= R.rainAt + R.rainLen && R.wet > 0) { const was = R.wet; R.wet = Math.max(0, R.wet - 0.05); dry(was); }
@@ -580,19 +583,25 @@ const F1 = (() => {
   function bestTyres(w) { return ["S", "M", "H", "I", "W"].map(k => ({ comp: k, t: wetPen(k, w) })).sort((a, b) => a.t - b.t); }
   const wetLabel = w => w < 0.05 ? "ドライ" : w < 0.2 ? "湿っている" : w < 0.45 ? "小雨" : w < 0.7 ? "本降り" : "大雨";
   // この先の見込み（雨の筋書きどおりに先読み。予報なので周回は数周ずれる）
+  // 予報は3周ごとに更新（その間に天気が変わっても次の更新まで分からない）。先のことほど幅が広く、戦略担当の腕とデータ施設で精度が上がる
+  const gm = () => { let a = 0, b = 0; while (!a) a = Math.random(); while (!b) b = Math.random(); return Math.sqrt(-2 * Math.log(a)) * Math.cos(2 * Math.PI * b); };
   function weatherOutlook(R) {
-    if (R.fcErr == null) R.fcErr = ri(-2, 2);
-    let w = R.wet; const tl = [], end = Math.min(R.laps, R.lap + 25);
-    for (let L = R.lap + 1; L <= end; L++) {
-      if (R.rainAt > 0) { if (L >= R.rainAt && L < R.rainAt + R.rainLen) w = Math.min(R.rainTo, w + 0.07); else if (L >= R.rainAt + R.rainLen && w > 0) w = Math.max(0, w - 0.05); }
+    const me = S.my != null ? S.teams.find(x => x.id === S.my) : null, acc = me ? clamp((100 - stratSk(me)) / 40, 0.4, 1.4) : 1;
+    if (!R.fc2 || R.lap - R.fc2.at >= 3 || R.lap < R.fc2.at) R.fc2 = { at: R.lap, wet: R.wet, rainAt: R.rainAt, rainLen: R.rainLen, rainTo: R.rainTo, z: Array.from({ length: 10 }, gm) };
+    const F = R.fc2; let w = F.wet; const tl = [], end = Math.min(R.laps, F.at + 28);
+    for (let L = F.at + 1; L <= end; L++) {
+      if (F.rainAt > 0) { if (L >= F.rainAt && L < F.rainAt + F.rainLen) w = Math.min(F.rainTo, w + 0.07); else if (L >= F.rainAt + F.rainLen && w > 0) w = Math.max(0, w - 0.05); }
       else if (w > 0) w = Math.max(0, w - 0.04);
       tl.push({ lap: L, w: Math.round(w * 100) / 100 });
     }
-    const e = R.fcErr, find = f => { const x = tl.find(f); return x ? Math.max(R.lap + 1, x.lap + e) : null; };
-    const peak = tl.reduce((m, x) => Math.max(m, x.w), R.wet);
-    const comingRain = R.rainAt > R.lap && R.rainAt - R.lap <= 6 ? Math.max(1, R.rainAt - R.lap + e) : null;
-    const rainStops = R.rainAt > 0 && R.lap < R.rainAt + R.rainLen ? Math.max(R.lap + 1, R.rainAt + R.rainLen + e) : null;
-    return { now: R.wet, label: wetLabel(R.wet), best: bestTyres(R.wet), peak, comingRain, rainStops, interFrom: find(x => x.w >= 0.22 && R.wet < 0.22), wetFrom: find(x => x.w >= 0.74 && R.wet < 0.74), backToInter: R.wet >= 0.74 ? find(x => x.w < 0.74) : null, dryFrom: R.wet >= 0.22 ? find(x => x.w < 0.22) : null, steps: [3, 6, 10].map(k => tl[k - 1]).filter(Boolean).map(x => ({ lap: x.lap + e, w: x.w, best: bestTyres(x.w)[0].comp })) };
+    // 予報の周回 → 「a〜b」の幅（今より前は出さない。幅ごと過ぎたら出さない）
+    const span = (lap, i) => { const sd = (0.8 + Math.max(0, lap - F.at) * 0.2) * acc, c = lap + Math.round(F.z[i] * sd), h = Math.max(1, Math.round(sd)), a = Math.max(R.lap + 1, c - h), b = c + h; return b < R.lap + 1 ? null : [a, Math.max(a, b)]; };
+    const txt = r => r ? (r[0] === r[1] ? "" + r[0] : r[0] + "〜" + r[1]) : null;
+    const find = (f, i) => { const x = tl.find(f); return x ? txt(span(x.lap, i)) : null; };
+    const peak = tl.reduce((m, x) => Math.max(m, x.w), F.wet), pc = clamp(peak + F.z[6] * 0.05 * acc, 0, 1), ph = 0.06 * acc, pr = w => Math.round(clamp(w, 0, 1) * 100);
+    const cr = F.rainAt > R.lap && F.rainAt - R.lap <= 6 ? span(F.rainAt, 0) : null;
+    const rainStops = F.rainAt > 0 && R.lap < F.rainAt + F.rainLen ? txt(span(F.rainAt + F.rainLen, 1)) : null;
+    return { now: R.wet, label: wetLabel(R.wet), best: bestTyres(R.wet), peak, peakTxt: pr(pc - ph) + "〜" + pr(pc + ph) + "%", comingRain: cr ? txt(cr.map(x => Math.max(1, x - R.lap))) : null, rainStops, interFrom: find(x => x.w >= 0.22 && F.wet < 0.22, 2), wetFrom: find(x => x.w >= 0.74 && F.wet < 0.74, 3), backToInter: F.wet >= 0.74 ? find(x => x.w < 0.74, 4) : null, dryFrom: F.wet >= 0.22 ? find(x => x.w < 0.22, 5) : null, fcAt: F.at, steps: [3, 6, 10].map((k, j) => tl.find(x => x.lap === R.lap + k)).filter(Boolean).map((x, j) => { const fw = clamp(x.w + F.z[7 + j] * 0.04 * acc * (j + 1), 0, 1); return { lap: x.lap, w: fw, best: bestTyres(fw)[0].comp }; }) };
   }
   function startVSC(R) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => c.drs = false); R.vsc = { left: ri(1, 3) }; R.vscCount = (R.vscCount || 0) + 1; say(R, "🟡 L" + R.lap + " バーチャルセーフティカー（全車ペースダウン・差はそのまま）", true); R.alerts.push({ k: "vsc" }); }
   function startSC(R) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => c.drs = false); R.drsFrom = 999; R.sc = { left: ri(3, 5) }; R.scCount++; say(R, "🟡 L" + R.lap + " セーフティカー出動（ピットの損失が半分）", true); R.alerts.push({ k: "sc" }); }
@@ -1433,11 +1442,11 @@ function weatherHtml(R, full) {
   const o = F1.weatherOutlook(R); if (o.now < 0.05 && !o.comingRain) return "";
   const T = k => F1.TYRE[k].n, pct = w => Math.round(w * 100) + "%", b = o.best, gap = (b[1].t - b[0].t).toFixed(1);
   const dryNow = b.find(x => ["S", "M", "H"].includes(x.comp)), inter = b.find(x => x.comp === "I"), wet = b.find(x => x.comp === "W");
-  const next = []; if (o.comingRain) next.push(`約${o.comingRain}周後に雨が降り出す見込み`); if (o.interFrom) next.push(`L${o.interFrom}ごろからインターの方が速くなる`); if (o.wetFrom) next.push(`L${o.wetFrom}ごろからウェットの方が速くなる`); if (o.rainStops) next.push(`雨はL${o.rainStops}ごろ止む見込み（いちばん強いと濡れ${pct(o.peak)}）`); if (o.backToInter) next.push(`L${o.backToInter}ごろインターに戻せる`); if (o.dryFrom) next.push(`L${o.dryFrom}ごろドライタイヤに戻せる`);
+  const next = []; if (o.comingRain) next.push(`約${o.comingRain}周後に雨が降り出す見込み`); if (o.interFrom) next.push(`L${o.interFrom}ごろからインターの方が速くなる`); if (o.wetFrom) next.push(`L${o.wetFrom}ごろからウェットの方が速くなる`); if (o.rainStops) next.push(`雨はL${o.rainStops}ごろ止む見込み（いちばん強いと濡れ${o.peakTxt}）`); if (o.backToInter) next.push(`L${o.backToInter}ごろインターに戻せる`); if (o.dryFrom) next.push(`L${o.dryFrom}ごろドライタイヤに戻せる`);
   return `<div class="small" style="margin-top:4px;padding:6px 8px;border-radius:6px;background:var(--chip)">🌧 <b>路面 ${o.label}（濡れ ${pct(o.now)}）</b>${o.now >= 0.05 ? `・今いちばん速いのは <b>${T(b[0].comp)}</b>（次の${T(b[1].comp)}より約${gap}秒/周速い）` : ""}
     ${full && o.now >= 0.05 ? `<div style="margin-top:3px">今の差：ドライ（${T(dryNow.comp)}）${(dryNow.t - b[0].t).toFixed(1)}秒遅い・インター ${(inter.t - b[0].t).toFixed(1)}秒・ウェット ${(wet.t - b[0].t).toFixed(1)}秒（いちばん速いタイヤとの差、1周あたり）</div>` : ""}
     ${next.length ? `<div style="margin-top:3px">📡 見込み：${next.join("・")}</div>` : ""}
-    ${full ? `<div style="margin-top:3px">${o.steps.map(x => `L${x.lap}：濡れ${pct(x.w)}→${T(x.best)}`).join("　")}</div><div class="muted" style="margin-top:3px">目安：濡れ22%くらいからインター、74%くらいからウェットが速い。見込みは予報なので数周ずれることがある。</div>` : ""}</div>`;
+    ${full ? `<div style="margin-top:3px">${o.steps.map(x => `L${x.lap}：濡れ${pct(x.w)}→${T(x.best)}`).join("　")}</div><div class="muted" style="margin-top:3px">目安：濡れ22%くらいからインター、74%くらいからウェットが速い。予報はL${o.fcAt}時点のもので3周ごとに更新。先のことほど幅が広く、雨の強さや止む時期が途中で変わって外れることもある（戦略担当の腕とデータ施設で精度が上がる）。</div>` : ""}</div>`;
 }
 function drawStrip() {
   const R = S().race, el = $("#strip"); if (!R || !el) return;
