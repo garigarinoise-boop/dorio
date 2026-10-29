@@ -730,7 +730,7 @@ const F1 = (() => {
   // 開発の伸び：開発力とドライバーのフィードバック、上の方ほど伸びにくい。マイナスもある
   function rollGain(tm, base, size) { const Z = SIZE[size], skill = (tm.devp * 0.7 + driverDev(tm) * 0.3) * (1 + moraleB(tm) * 0.06) * (1 + (fl(tm, "wt") - 1) * 0.02), room = clamp((99 - base) / 22, 0.25, 1.2); return (Z.gain * (0.55 + skill / 110) * room) + gauss() * Z.sd - 0.25; }
   // ---- 新車（オフ）：空力・シャシー・信頼性ごとに力の入れ具合を選ぶ。費用は新しいシーズンの予算上限に数える ----
-  const NC = [{ n: "作らない", cost: 0, m: 0 }, { n: "控えめ", cost: 12, m: 0.8 }, { n: "標準", cost: 25, m: 1.5 }, { n: "攻め", cost: 40, m: 2.2 }];
+  const NC = [{ n: "作らない", cost: 0, m: 0 }, { n: "控えめ", cost: 12, m: 0.6 }, { n: "標準", cost: 25, m: 1.0 }, { n: "攻め", cost: 40, m: 1.45 }];
   const NC_REL = [0, 6, 12, 20];
   const ncCost = ch => ["aero", "chassis"].reduce((a, k) => a + NC[(ch[k] || {}).size || 0].cost, 0) + NC_REL[(ch.rel || {}).size || 0];
   function newCarSpec(tm, part, focus, m, mine) {
@@ -747,7 +747,7 @@ const F1 = (() => {
     if (tm.budget < cost) return { ok: false, msg: "予算が足りません（" + money(cost) + "）" }; if (capLeft(tm) < cost) return { ok: false, msg: "予算上限に届きます" };
     tm.budget -= cost; S.spent[tm.id] = spent(tm) + cost; const res = [];
     ["aero", "chassis"].forEach(k => { const c = ch[k] || {}; if (c.size) res.push(newCarSpec(tm, k, c.focus || "bal", NC[c.size].m, mine)); });
-    let rel = 0; if (ch.rel && ch.rel.size) { rel = Math.round(rollGain(tm, tm.car.rel, "b") * [0, 0.6, 1.1, 1.6][ch.rel.size] * 1.3); tm.car.rel = clamp(tm.car.rel + rel, 50, 99); }
+    let rel = 0; if (ch.rel && ch.rel.size) { rel = Math.round(rollGain(tm, tm.car.rel, "b") * [0, 0.4, 0.7, 1.0][ch.rel.size] * 1.3); tm.car.rel = clamp(tm.car.rel + rel, 50, 99); }
     applyUse(tm);
     if (mine) { S.off.newCar = { cost, rel: ch.rel && ch.rel.size ? rel : null, res: res.map(r => ({ part: r.part, from: r.from.id, to: r.to.id })) }; news("第" + S.season + "期の新車が完成（" + money(cost) + "）"); save(); }
     return { ok: true, msg: "新車ができました" };
