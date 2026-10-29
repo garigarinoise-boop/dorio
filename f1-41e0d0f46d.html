@@ -518,6 +518,7 @@ const F1 = (() => {
     const hot = Math.max(0, 60 - d.calm) / 100 * (1 - moraleB(tm) * 0.15) * (c.stuck > 2 ? 0.02 : 0.004) * (c.pace === "push" ? 2 : 1);
     const pFail = (d.nat === tr.c && d.calm < 50 ? 0.0008 : 0) + (100 - tm.car.rel) / 100 * 0.007 + (100 - d.cons) / 100 * 0.0018 * (c.pace === "push" ? 2 : 1) + R.wet * 0.0015 + hot;
     if (rnd() < pFail) { const crash = rnd() < (hot > 0.002 ? 0.65 : 0.4); if (crash || rnd() < 0.6) { c.out = true; c.why = crash ? "クラッシュ" : "マシントラブル"; say(R, "❌ " + d.name + " リタイア（" + c.why + "）", c.tm === S.my); if (!R.sc && !R.vsc) { if (crash && rnd() < 0.4 + (tr.street ? 0.25 : 0)) startSC(R); else if (rnd() < (crash ? 0.5 : 0.3)) startVSC(R); } if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; } c.spin = ri(4, 9); say(R, "🌀 L" + c.lap + " " + d.name + " がスピン（" + c.spin + "秒ロス）", c.tm === S.my); }
+    if (c.lap === 1 && c.tm === S.my) { const p = R.cars.filter(o => !o.out && o.lap >= 1).length; say(R, "🏁 1周目：" + d.name + " は P" + c.grid + " → P" + p + (p < c.grid ? "（" + (c.grid - p) + "つ上げた）" : p > c.grid ? "（" + (p - c.grid) + "つ落とした）" : ""), true); }
     if (c.tm === S.my && S.radioStop !== false) radio(R, c, d, tr);
     // 予定のピットの1周前：自分の車なら止めて確認する
     if (c.tm === S.my && S.pitStop !== false && !c.pitReq) { const nx = c.plan.stops[c.stopsDone]; if (nx && nx.lap - 1 === c.lap && c.warnedStop !== c.stopsDone + ":" + nx.lap) { c.warnedStop = c.stopsDone + ":" + nx.lap; R.alerts.push({ k: "pitsoon", id: c.id }); } }
@@ -658,13 +659,26 @@ const F1 = (() => {
   }
   const say = (R, t, mine) => { R.feed.unshift({ t, mine: !!mine }); if (R.feed.length > 140) R.feed.length = 140; };
 
+  function startDelta(R, c) {
+    const d = drv(c.id), tr = TRACKS[R.tr], wet = R.wet > 0.2, mine = c.tm === S.my;
+    const pack = c.grid <= 2 ? 0.55 : c.grid <= 6 ? 0.85 : 1.1, skill = 1.25 - (d.cons + d.calm) / 400;
+    let t = gauss() * 0.75 * pack * skill * (wet ? 1.5 : 1) + ({ S: -0.3, M: 0, H: 0.35 }[c.comp] || 0) - (d.craft - 70) / 100;
+    if (rnd() < 0.05 * skill) { t += 1.2 + rnd(); if (mine) say(R, "🐢 " + d.name + "：スタートで出遅れた", true); }
+    else if (t < -0.9 && mine) say(R, "🚀 " + d.name + "：好スタート", true);
+    // 1コーナーの接触（中団ほど起きやすい。抜きにくい市街地は特に）
+    if (rnd() < (c.grid <= 3 ? 0.012 : 0.035) * (tr.street ? 1.4 : 1) * (wet ? 1.6 : 1)) {
+      if (rnd() < 0.22) { c.out = true; c.why = "1周目の接触"; say(R, "💥 " + d.name + "：1周目の接触でリタイア", mine); if (!R.sc && !R.vsc && rnd() < 0.6) startSC(R); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return 0; }
+      const loss = 2 + rnd() * 6; t += loss; say(R, "💥 " + d.name + "：1コーナーで接触（" + loss.toFixed(1) + "秒ロス）", mine);
+    }
+    return t;
+  }
   function advance(R, dt) {
     if (R.finished) return null;
     if (!R.started) {
       R.started = true;
       R.cars.forEach(c => { if (c.lockStart || !c.sets) return; const k = setsLeft(c.sets, c.plan.start) ? c.plan.start : ["S", "M", "H", "I", "W"].find(z => setsLeft(c.sets, z)); const a = takeSet(c.sets, k); c.comp = k; c.age = a || 0; c.used = [k]; });
-      R.cars.forEach((c, i) => { c.lapEnd = i * 0.25; c.tot = c.lapEnd; c.lap = 0; c.fuel = R.laps * TRACKS[R.tr].fuel * S.regs.fuel + FUEL[c.plan.fuel || "std"].extra; c.lapStart = c.lapEnd; c.lt = lapTime(R, c) + 2.5 + Math.abs(gauss()) * 0.6 + (c.grid - 1) * 0.12; c.lapEnd += c.lt; });
       say(R, "🚦 " + TRACKS[R.tr].name + " スタート（" + R.laps + "周）" + (R.wet ? "・ウェット" : ""));
+      R.cars.forEach((c, i) => { c.lapEnd = i * 0.25; c.tot = c.lapEnd; c.lap = 0; c.fuel = R.laps * TRACKS[R.tr].fuel * S.regs.fuel + FUEL[c.plan.fuel || "std"].extra; c.lapStart = c.lapEnd; c.lt = lapTime(R, c) + 2.5 + (c.grid - 1) * 0.12 + startDelta(R, c); c.lapEnd += c.lt; });
     }
     const target = R.t + dt;
     for (let guard = 0; guard < 5000; guard++) {
