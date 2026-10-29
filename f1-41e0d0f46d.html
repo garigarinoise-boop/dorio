@@ -245,6 +245,19 @@ const F1 = (() => {
       rec.myEv = ev; rec.podium = rec.res.filter(c => !c.out).slice(0, 3).map(c => ({ id: c.id, tm: c.tm })); rec.retro = true; });
     tm.milestones.sort((a, b) => b.season - a.season || b.round - a.round);
   }
+  // ---- オフシーズンの手続き ----
+  const PU_MAX = 4; // 1つのメーカーが供給できるのは4チームまで
+  const puUsers = id => S.teams.filter(t => t.pu === id);
+  function renewDriver(id, years) { const tm = me(), d = drv(id); if (!tm.drivers.includes(id)) return { ok: false, msg: "いません" }; d.salary = salaryOf(d); d.contract = clamp(years, 1, 3); d.expiring = false; news(d.name + " と" + d.contract + "年の契約を結んだ（年俸 " + money(d.salary) + "）"); save(); return { ok: true, msg: d.name + " と " + d.contract + "年契約" }; }
+  function releaseDriver(id) { const tm = me(), d = drv(id); if (!tm.drivers.includes(id)) return { ok: false, msg: "いません" }; const fee = d.expiring ? 0 : r1(d.salary * d.contract * 0.5); if (tm.budget < fee) return { ok: false, msg: "違約金が足りません（" + money(fee) + "）" }; tm.budget -= fee; tm.drivers = tm.drivers.filter(x => x !== id); d.expiring = false; d.contract = 0; S.free.unshift(id); news(d.name + " がチームを離れた" + (fee ? "（違約金 " + money(fee) + "）" : "")); save(); return { ok: true, msg: d.name + " を放出しました" + (fee ? "（違約金 " + money(fee) + "）" : "") }; }
+  function signDriver(id, years) { const tm = me(), d = drv(id); if (tm.drivers.length >= 2) return { ok: false, msg: "シートが空いていません" }; const ac = isAcademy(id, tm.id); if (!ac && !S.free.includes(id)) return { ok: false, msg: "契約できません" }; const cost = ac ? 0 : Math.max(0, Math.round(d.salary * 0.5)); if (tm.budget < cost) return { ok: false, msg: "予算が足りません（" + money(cost) + "）" };
+    tm.budget -= cost; if (ac) { S.academy[tm.id] = academyOf(tm.id).filter(x => x !== id); if (S.f2) S.f2.drivers = S.f2.drivers.filter(x => x !== id); d.reserve = false; } else { S.free = S.free.filter(x => x !== id); tm.budget += d.sponsor; }
+    d.salary = salaryOf(d); d.contract = clamp(years || 2, 1, 3); d.expiring = false; tm.drivers.push(id); news(d.name + " と" + d.contract + "年契約" + (ac ? "（ジュニアから昇格）" : "")); save(); return { ok: true, msg: d.name + " と契約しました" }; }
+  function setPU(id) { const tm = me(), p = S.pus[id], old = pu(tm.pu); if (!p) return { ok: false, msg: "ありません" }; if (tm.works) return { ok: false, msg: "ワークスチームは自社の PU です" }; if (id === tm.pu) return { ok: true, msg: "そのままです" }; if (puUsers(id).length >= PU_MAX) return { ok: false, msg: p.name + " は供給先がいっぱいです（" + PU_MAX + "チームまで）" };
+    tm.budget += old.fee - p.fee; tm.pu = id; news("来季から " + p.name + " の PU を使う（年間 " + money(p.fee) + "）"); save(); return { ok: true, msg: p.name + " と契約しました" }; }
+  function offStep(dir) { const o = S.off; if (!o) return { ok: false }; if (dir > 0 && o.step === 1) { const tm = me(); if (tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "契約が切れるドライバーを、延長か放出か決めてくれ" }; if (tm.drivers.length < 2) return { ok: false, msg: "ドライバーを2人そろえてくれ" }; }
+    o.step = clamp(o.step + dir, 0, 5); save(); return { ok: true }; }
+  function startSeason() { const tm = me(); if (tm.drivers.length < 2 || tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "ドライバーが決まっていません" }; S.off = null; S.phase = "season"; save(); return { ok: true }; }
   function migrate() {
     if (!S.nations) initWorld();
     S.teams.forEach(initFac);
@@ -806,7 +819,7 @@ const F1 = (() => {
     const retire = Object.values(S.drivers).filter(d => d.age >= 36 && rnd() < 0.3 + (d.age - 36) * 0.25 || d.age >= 40);
     // CPU：契約切れ・引退の穴埋め（強い人から。お金の少ないチームはペイドライバー）
     const seat = [];
-    S.teams.forEach(tm => { tm.drivers = tm.drivers.filter(id => { const d = drv(id); if (retire.includes(d)) { news(d.name + " が引退"); return false; } if (tm.id !== S.my && d.contract <= 0 && !(d.age < 34 && rnd() < 0.65)) { S.free.push(id); return false; } if (d.contract <= 0) d.contract = ri(1, 3); return true; }); });
+    S.teams.forEach(tm => { tm.drivers = tm.drivers.filter(id => { const d = drv(id); if (retire.includes(d)) { news(d.name + " が引退"); return false; } if (tm.id !== S.my && d.contract <= 0 && !(d.age < 34 && rnd() < 0.65)) { S.free.push(id); return false; } if (d.contract <= 0) { if (tm.id === S.my) d.expiring = true; else d.contract = ri(1, 3); } return true; }); });
     retire.forEach(d => { S.free = S.free.filter(x => x !== d.id); });
     // F2 の締め：チャンピオン・卒業（22歳以上か王者、ジュニア以外は F1 の空き候補へ）・新人
     if (S.f2) {
@@ -832,7 +845,7 @@ const F1 = (() => {
     if (!S.nextReg || S.nextReg.season <= S.season) S.nextReg = planReg();
     news("第" + S.season + "シーズン開幕。" + (S.nextReg ? "来季（第" + S.nextReg.season + "シーズン）に「" + REG_TYPES[S.nextReg.type].n + "」が予告されています。" : ""));
     rec.teamChange = { devp: me().devp - myDevp0, strat: me().staff.strat.skill - myStaff0.strat, crew: me().staff.crew.skill - myStaff0.crew };
-    S.phase = me().drivers.length < 2 ? "drivers" : "season";
+    S.phase = "off"; S.off = { step: 0, rec, before: myIds.slice() };
     save(); return rec;
   }
   // 国のF1熱とGPの契約（毎年）
@@ -881,7 +894,7 @@ const F1 = (() => {
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
   const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * 0.55, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.016 : 0.0095)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
-  return { FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -965,10 +978,66 @@ function pickDrivers() {
   $("#ok").onclick = () => { const r = F1.confirmDrivers(sel.slice()); toast(r.msg); if (r.ok) { U.tab = "home"; render(); } };
 }
 
+/* ---------- オフシーズン ---------- */
+const OFF_STEPS = ["振り返り", "ドライバー", "PU", "スタッフ", "予算・施設", "開幕"];
+function offseason() {
+  const t = ME(), s = S(), o = s.off, r = o.rec, st = o.step, ly = t.lastYear;
+  $("#hd").innerHTML = `<span class="crest" style="background:${esc(t.color)}"></span><div class="t"><b>${esc(t.name)}</b><small>オフシーズン（第${s.season}シーズンの準備）</small></div><div class="money">予算<br><b>${money(t.budget)}</b></div>`; $("#tabs").innerHTML = "";
+  const steps = `<div class="seg" style="flex-wrap:wrap">${OFF_STEPS.map((n, i) => `<button class="${i === st ? "on" : ""}" ${i > st ? "disabled" : ""} data-os="${i}">${i < st ? "✓ " : (i + 1) + ". "}${n}</button>`).join("")}</div>`;
+  let body = "";
+  if (st === 0) {
+    body = `<div class="card"><h3>第${r.season}シーズンの振り返り</h3><p>ドライバーズチャンピオン：<b>${esc(r.champ)}</b>（${esc(r.champTeam)}）</p><p>コンストラクターズ：<b>${esc(r.cons)}</b></p><p>${esc(r.my)}：<b>${r.myRank}位</b>（${r.myPts}点）</p>${r.f2champ ? `<p class="small">F2 チャンピオン：<b>${esc(r.f2champ)}</b></p>` : ""}</div>
+      <div class="card"><h3>ドライバーの成長（オフ）</h3>${growthHtml(r)}</div>
+      ${r.reg || (r.calChange || []).length ? `<div class="card"><h3>来季の変化</h3>${r.reg ? `<p class="bad"><b>規則変更：${esc(r.reg)}</b></p>` : ""}${(r.calChange || []).map(c => `<p class="small">GPの入れ替え：${esc(c.out)}（${esc(F1.natName(c.outC))}）が終了 → ${esc(c.inn)}（${esc(F1.natName(c.innC))}）が新たに開催</p>`).join("")}</div>` : ""}`;
+  } else if (st === 1) {
+    const gone = (o.before || []).filter(id => !t.drivers.includes(id) && F1.drv(id));
+    const mine = t.drivers.map(id => { const d = F1.drv(id), sal = F1.salaryOf(d);
+      return `<div class="card ${d.expiring ? "selc" : ""}"><div class="row"><b class="sp">${nb(d.nat)}${esc(d.name)}</b><span class="small muted">${d.age}歳・${d.expiring ? '<b class="bad">契約切れ</b>' : "契約残り" + d.contract + "年"}・年俸${money(d.salary)}</span></div>${attrGrid(d)}<div style="margin:4px 0">${tags(d)}</div>
+      ${d.expiring ? `<div class="row"><span class="small">延長（年俸 ${money(sal)}）：</span>${[1, 2, 3].map(y => `<button class="b p" data-rn="${id}" data-y="${y}">${y}年</button>`).join("")}<button class="b" data-rl="${id}">放出する</button></div>`
+        : `<div class="row"><span class="small muted sp">そのまま残留</span><button class="b" data-rl="${id}">放出（違約金 ${money(d.salary * d.contract * 0.5)}）</button></div>`}</div>`; }).join("");
+    const empty = 2 - t.drivers.length, ac = F1.academyOf(t.id).map(F1.drv).filter(d => d.age >= 18);
+    const cand = d => `<div class="drvm"><div class="row"><b class="sp">${nb(d.nat)}${esc(d.name)}</b><span class="small muted">${d.age}歳・年俸${money(F1.salaryOf(d))}${d.sponsor ? "・持ち込み " + money(d.sponsor) : ""}</span></div>${attrGrid(d)}<div style="margin:4px 0">${tags(d)}</div>${empty > 0 ? `<div class="row">${[1, 2, 3].map(y => `<button class="b" data-sg="${d.id}" data-y="${y}">${y}年契約</button>`).join("")}<span class="small muted">契約金 ${F1.academyOf(t.id).includes(d.id) ? "なし（ジュニア）" : money(Math.round(d.salary * 0.5))}</span></div>` : ""}</div>`;
+    body = `<div class="card"><h3>ドライバーの契約</h3><p class="small muted">契約が切れるドライバーは、延長するか放出するかを決める。延長の年俸は今の実力で決まる。シートが空いたら、ジュニアか空いているドライバーと契約する。2人そろったら次へ進める。</p>${gone.length ? `<p class="small bad">チームを離れた：${gone.map(id => esc(F1.drv(id).name) + (F1.drv(id).age >= 36 ? "（引退）" : "")).join("・")}</p>` : ""}</div>${mine}
+      ${empty > 0 ? `<div class="card"><h3>空きシート ${empty}つ</h3>${ac.length ? `<h4 style="margin:4px 0">自分のジュニア</h4>${ac.map(cand).join("")}` : ""}<h4 style="margin:8px 0 4px">空いているドライバー</h4>${s.free.map(F1.drv).sort((a, b) => b.pace - a.pace).map(cand).join("")}</div>` : ""}`;
+  } else if (st === 2) {
+    const cur = F1.pu(t.pu);
+    body = `<div class="card"><h3>パワーユニット（PU）</h3>${t.works ? `<p>ワークスチームなので自社の <b>${esc(cur.name)}</b> を使う（性能 ${rk(Math.round(cur.lvl))}）。PU の開発はマシン画面から。</p>`
+      : `<p class="small muted">来季の PU の供給元を選ぶ。性能が高いほど直線の長いコースで速いが、年間の費用も高い。1つのメーカーが供給できるのは${F1.PU_MAX}チームまで。費用の差額はすぐ予算に反映される。</p>`}
+      ${s.nextReg ? `<p class="small">予告：第${s.nextReg.season}シーズンに「${esc(F1.REG_TYPES[s.nextReg.type].n)}」${s.nextReg.type === "pu" ? "（PU の勢力図が変わる。開発力の高いメーカーが有利）" : ""}</p>` : ""}</div>
+      ${Object.values(s.pus).sort((a, b) => b.lvl - a.lvl).map(p => { const us = F1.puUsers(p.id), on = p.id === t.pu, full = !on && us.length >= F1.PU_MAX;
+        return `<div class="card ${on ? "selc" : ""}"><div class="row"><b class="sp">${esc(p.name)}</b>${on ? '<span class="tag gold">契約中</span>' : ""}</div><div class="small">性能 ${rk(Math.round(p.lvl))}・開発力 ${rk(Math.round(p.dev))}・年間 ${money(p.fee)}${!on && !t.works ? `<span class="${p.fee > cur.fee ? "bad" : "good"}">（今より ${p.fee > cur.fee ? "+" : ""}${money(p.fee - cur.fee)}）</span>` : ""}</div><div class="small muted">使っているチーム：${us.map(x => esc(x.short)).join("・") || "なし"}（${us.length}/${F1.PU_MAX}）</div>
+        ${!t.works && !on ? `<button class="b" style="margin-top:6px" data-pu="${p.id}" ${full ? "disabled" : ""}>${full ? "供給先がいっぱい" : "これに乗り換える"}</button>` : ""}</div>`; }).join("")}`;
+  } else if (st === 3) {
+    const tc = r.teamChange || {}, sg = v => v ? `<span class="${v > 0 ? "good" : "bad"}">（${v > 0 ? "+" : ""}${v}）</span>` : "";
+    body = `<div class="card"><h3>スタッフ</h3><p>戦略担当 <b>${esc(t.staff.strat.name)}</b>：腕 ${t.staff.strat.skill}${sg(tc.strat)}・年俸${money(t.staff.strat.salary)}</p><p>ピットクルー責任者 <b>${esc(t.staff.crew.name)}</b>：腕 ${t.staff.crew.skill}${sg(tc.crew)}・年俸${money(t.staff.crew.salary)}</p><p class="small">開発力 ${t.devp}${sg(tc.devp)}</p><p class="small muted">入れ替えるなら下から（契約金＝年俸2年分）。そのままでよければ次へ。</p></div>
+      <div class="card"><h3>引き抜ける人</h3>${s.staffPool.slice().sort((a, b) => b.skill - a.skill).map(x => { const now = t.staff[x.kind].skill; return `<div class="pick"><div class="sp"><b>${esc(x.name)}</b><div class="small muted">${x.kind === "strat" ? "戦略担当" : "ピットクルー"}・腕 ${x.skill}<span class="${x.skill > now ? "good" : "bad"}">（今の人 ${now}）</span>・年俸${money(x.salary)}</div></div><button class="b" data-hire="${x.id}">${money(x.salary * 2)} で雇う</button></div>`; }).join("")}</div>`;
+  } else if (st === 4) {
+    body = `<div class="card"><h3>今季の予算 ${money(t.budget)}</h3>${ly ? `<div class="small">オーナー ${money(ly.owner)}＋スポンサー ${money(ly.sponsor)}＋賞金 ${money(ly.prize)}${ly.pay ? "＋持ち込み " + money(ly.pay) : ""}＋繰り越し ${money(ly.carry)}−給料 ${money(ly.sal)}${ly.fee ? "−PU代 " + money(ly.fee) : ""}</div>` : ""}<p class="small muted">開発の予算上限は ${money(s.regs.cap)}。施設は上限の外。オフのうちに工事を始めると、序盤のうちに完成する。</p></div>
+      ${Object.entries(F1.FACS).map(([k, f]) => { const L = F1.fl(t, k), b = (t.build || []).find(x => x.k === k), c = F1.facCost(L); return `<div class="pick"><div class="sp"><b>${f.i} ${f.n} Lv${L}</b><div class="small muted">${f.e(L)}${L < 10 ? " → " + f.e(L + 1) : ""}</div></div>${b ? `<span class="tag">🏗 Lv${b.to}へ工事中</span>` : L >= 10 ? '<span class="tag gold">最大</span>' : `<button class="b" data-fac="${k}" ${(t.build || []).length >= 2 || t.budget < c ? "disabled" : ""}>${money(c)}・${F1.facTime(L)}戦</button>`}</div>`; }).join("")}`;
+  } else {
+    const cal = s.calendar.map((id, i) => F1.TRACKS[id]);
+    body = `<div class="card"><h3>第${s.season}シーズン 開幕へ</h3><p>ドライバー：${t.drivers.map(id => `<b>${esc(F1.drv(id).name)}</b>`).join("・")}</p><p>PU：${esc(F1.pu(t.pu).name)}　予算：${money(t.budget)}</p>${s.nextReg ? `<p class="small">予告：第${s.nextReg.season}シーズンに「${esc(F1.REG_TYPES[s.nextReg.type].n)}」</p>` : ""}
+      <h4 style="margin:8px 0 4px">カレンダー</h4><div class="small">${cal.map((tr, i) => `${i + 1}. ${nb(tr.c)}${esc(tr.name)}`).join("<br>")}</div></div>`;
+  }
+  const last = st === OFF_STEPS.length - 1;
+  $("#main").innerHTML = steps + body + `<div class="row" style="margin:10px 0 20px">${st > 0 ? '<button class="b" id="ob">← 戻る</button>' : ""}<span class="sp"></span><button class="b p big" id="on">${last ? "🏁 第" + s.season + "シーズン開幕" : "確認した → " + OFF_STEPS[st + 1]}</button></div>`;
+  const go = f => { const x = f(); if (x && x.msg) toast(x.msg); offseason(); };
+  document.querySelectorAll("[data-os]").forEach(b => b.onclick = () => { o.step = +b.dataset.os; F1.save(); offseason(); });
+  document.querySelectorAll("[data-rn]").forEach(b => b.onclick = () => go(() => F1.renewDriver(+b.dataset.rn, +b.dataset.y)));
+  document.querySelectorAll("[data-rl]").forEach(b => b.onclick = () => { const d = F1.drv(+b.dataset.rl); if (d.expiring || confirm(d.name + " を違約金を払って放出しますか？")) go(() => F1.releaseDriver(+b.dataset.rl)); });
+  document.querySelectorAll("[data-sg]").forEach(b => b.onclick = () => go(() => F1.signDriver(+b.dataset.sg, +b.dataset.y)));
+  document.querySelectorAll("[data-pu]").forEach(b => b.onclick = () => go(() => F1.setPU(b.dataset.pu)));
+  document.querySelectorAll("[data-hire]").forEach(b => b.onclick = () => go(() => F1.hireStaff(+b.dataset.hire)));
+  document.querySelectorAll("[data-fac]").forEach(b => b.onclick = () => go(() => F1.buildFac(b.dataset.fac)));
+  if ($("#ob")) $("#ob").onclick = () => { F1.offStep(-1); offseason(); window.scrollTo(0, 0); };
+  $("#on").onclick = () => { if (last) { const x = F1.startSeason(); if (!x.ok) { toast(x.msg); return; } U.tab = "home"; render(); window.scrollTo(0, 0); return; } const x = F1.offStep(1); if (!x.ok) { toast(x.msg); return; } offseason(); window.scrollTo(0, 0); };
+}
+
 /* ---------- 共通 ---------- */
 function render() {
   const t = ME(), s = S(), tt = F1.teamTable();
   if (s.phase === "drivers") { U.pickSel = t.drivers.slice(); pickDrivers(); return; }
+  if (s.phase === "off" && s.off) { offseason(); return; }
   $("#hd").innerHTML = `<span class="crest" style="background:${esc(t.color)}"></span><div class="t"><b>${esc(t.name)}</b><small>第${s.season}シーズン・${s.round >= 16 ? "全戦終了" : "第" + (s.round + 1) + "戦 " + esc(F1.track().name)}・${tt.indexOf(t) + 1}位</small></div><div class="money">予算<br><b>${money(t.budget)}</b></div>`;
   $("#tabs").innerHTML = TABS.map(([k, ic, l]) => `<button class="${U.tab === k ? "on" : ""}" data-tab="${k}"><span class="ic">${ic}</span>${l}</button>`).join("");
   document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { if (U.tab === "race" && b.dataset.tab !== "race") pauseRace(); U.tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
@@ -1017,7 +1086,7 @@ function vHome() {
   <div class="card"><h3>ニュース</h3>${s.news.slice(0, 10).map(n => `<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">${esc(n.t)}</div>`).join("")}</div>`;
   if ($("#quali")) $("#quali").onclick = qualiSetup;
   if ($("#fp")) $("#fp").onclick = practiceSetup;
-  if ($("#endS")) $("#endS").onclick = () => { const r = F1.endSeason(); const ly = ME().lastYear; render(); modal(`<h3>第${r.season}シーズン 終了</h3><p>ドライバーズチャンピオン：<b>${esc(r.champ)}</b>（${esc(r.champTeam)}）</p><p>コンストラクターズ：<b>${esc(r.cons)}</b></p><p>${esc(r.my)}：<b>${r.myRank}位</b>（${r.myPts}点）</p>${r.reg ? `<p class="bad"><b>規則変更：${esc(r.reg)}</b></p>` : ""}${growthHtml(r)}${(r.calChange || []).map(c => `<p class="small">GPの入れ替え：${esc(c.out)}（${esc(F1.natName(c.outC))}）が終了 → ${esc(c.inn)}（${esc(F1.natName(c.innC))}）が新たに開催</p>`).join("")}${r.f2champ ? `<p class="small">F2 チャンピオン：<b>${esc(r.f2champ)}</b></p>` : ""}${ly ? `<p class="small muted">今季の予算 ${money(ME().budget)}＝オーナー ${money(ly.owner)}＋スポンサー ${money(ly.sponsor)}＋賞金 ${money(ly.prize)}${ly.pay ? "＋持ち込み " + money(ly.pay) : ""}＋繰り越し ${money(ly.carry)}−給料 ${money(ly.sal)}${ly.fee ? "−PU代 " + money(ly.fee) : ""}</p>` : ""}<button class="b p big" data-x>次のシーズンへ</button>`); };
+  if ($("#endS")) $("#endS").onclick = () => { F1.endSeason(); render(); window.scrollTo(0, 0); };
 }
 // タイヤの在庫（新品の数／全部）
 const stockN = (c, k) => c.sets && c.sets[k] ? c.sets[k].length : 0;
