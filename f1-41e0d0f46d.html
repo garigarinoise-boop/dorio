@@ -60,6 +60,9 @@ canvas#trk { width:100%; display:block; border-radius:10px; background:var(--gra
 .stop { display:flex; gap:6px; align-items:center; margin:4px 0; flex-wrap:wrap; }
 .tag { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px; background:var(--chip); color:var(--ink); margin:2px 4px 2px 0; border:1px solid var(--line); }
 .tag.warn { background:#c0392b; color:#fff; border-color:#c0392b; } .tag.gold { background:#d4a017; color:#111; border-color:#d4a017; }
+.cf { position:fixed; top:-10px; width:8px; height:14px; z-index:30; pointer-events:none; animation:cf 2.6s linear forwards; }
+@keyframes cf { to { transform:translateY(105vh) rotate(720deg); opacity:.2; } }
+.podium { display:flex; align-items:flex-end; justify-content:center; gap:6px; margin:10px 0; } .podium div { flex:1; text-align:center; border-radius:8px 8px 0 0; padding:6px 4px; background:var(--chip); font-size:12px; } .podium .p1 { min-height:96px; background:linear-gradient(#f7d34a33,var(--chip)); } .podium .p2 { min-height:76px; } .podium .p3 { min-height:60px; }
 .rk { display:inline-block; min-width:18px; text-align:center; font-weight:800; font-size:11px; line-height:16px; border-radius:4px; padding:0 3px; margin-right:3px; color:#fff; }
 .rk-S { background:linear-gradient(135deg,#f7d34a,#e8a400); color:#2b1d00; } .rk-A { background:#ff4f9a; } .rk-B { background:#ff4545; } .rk-C { background:#ff8c1a; } .rk-D { background:#f2d200; color:#222; } .rk-E { background:#8fd14f; color:#1b2a0c; } .rk-F { background:#4fb8e8; } .rk-G { background:#8a8f99; }
 .nat { display:inline-block; font-size:10px; font-weight:700; letter-spacing:.5px; padding:0 4px; border-radius:3px; border:1px solid var(--line); background:var(--chip); color:var(--ink); margin-right:4px; vertical-align:1px; }
@@ -592,6 +595,14 @@ const F1 = (() => {
     res.forEach(c => { const d = drv(c.id), tm = team(c.tm); d.career.starts++; c.got = 0; if (!c.out && c.pos <= 10) { c.got = POINTS[c.pos - 1]; /* ファステストラップの1点は2025年に廃止（記録だけ残す） */ d.pts += c.got; tm.pts += c.got; } if (c.pos === 1 && !c.out) { d.wins++; d.career.wins++; } if (c.pos <= 3 && !c.out) d.podiums++; });
     const w = res[0];
     const rec = { passes: R.passes || 0, round: S.round + 1, name: tr.name, winner: drv(w.id).name, wteam: team(w.tm).name, fl: fl ? drv(fl.id).name : "-", res: res.map(c => ({ id: c.id, tm: c.tm, pos: c.pos, out: c.out, why: c.why, gap: c.out ? null : c.finT - res[0].finT, lapsDown: res[0].lap - c.lap, pits: c.pits, got: c.got, grid: c.grid })) };
+    // 自分のチームの出来事（優勝・表彰台・入賞・初記録）とボーナス資金
+    { const tm = me(), ev = []; tm.firsts = tm.firsts || {}; tm.milestones = tm.milestones || [];
+      const lab = tm.entrant ? "チーム初" : "就任後初", mark = (k, text) => { const was = tm.firsts[k]; if (k === "win") tm.firsts.podium = tm.firsts.points = true; if (k === "podium") tm.firsts.points = true; if (was) return false; tm.firsts[k] = true; tm.milestones.unshift({ season: S.season, round: S.round + 1, gp: tr.name, text }); return true; };
+      res.filter(c => c.tm === tm.id && !c.out).sort((a, b) => a.pos - b.pos).forEach(c => { const d = drv(c.id);
+        if (c.pos === 1) { const first = mark("win", d.name + " が" + lab + "優勝"), dFirst = d.career.wins === 1, bonus = 3 + (first ? 5 : 0); tm.budget += bonus; tm.sponsor = clamp(tm.sponsor + 1, 30, 140); ev.push({ k: "win", id: c.id, pos: 1, grid: c.grid, teamFirst: first, drvFirst: dFirst, bonus }); if (dFirst && !first) tm.milestones.unshift({ season: S.season, round: S.round + 1, gp: tr.name, text: d.name + " が初優勝" }); }
+        else if (c.pos <= 3) { const first = mark("podium", d.name + " が" + lab + "表彰台（" + c.pos + "位）"), bonus = 1.5 + (first ? 2 : 0); tm.budget += bonus; ev.push({ k: "podium", id: c.id, pos: c.pos, grid: c.grid, teamFirst: first, bonus }); }
+        else if (c.got > 0) { const first = mark("points", d.name + " が" + lab + "入賞（" + c.pos + "位）"); if (first) tm.budget += 1; ev.push({ k: "points", id: c.id, pos: c.pos, grid: c.grid, teamFirst: first, bonus: first ? 1 : 0 }); } });
+      if (tm.milestones.length > 40) tm.milestones.length = 40; rec.myEv = ev; rec.podium = res.filter(c => !c.out).slice(0, 3).map(c => ({ id: c.id, tm: c.tm })); }
     S.last = rec; S.results = (S.results || []).concat([rec]);
     S.teams.forEach(tm => { const got = res.filter(c => c.tm === tm.id).reduce((t, c) => t + c.got, 0); tm.budget += 1 + got * 0.3; });
     news("第" + rec.round + "戦 " + tr.name + "：優勝 " + rec.winner + "（" + rec.wteam + "）");
@@ -938,6 +949,7 @@ function vHome() {
   ${regCard()}
   ${s.last ? `<div class="card"><h3>前戦 ${esc(s.last.name)}</h3>${s.last.passes != null ? `<p class="small muted">オーバーテイク ${s.last.passes}回</p>` : ""}<table>${s.last.res.slice(0, 10).map(r => resRow(r)).join("")}${s.last.res.filter(r => r.tm === s.my && r.pos > 10).map(r => resRow(r)).join("")}</table></div>` : ""}
   <div class="card"><h3>コンストラクター</h3><table>${tt.map((x, i) => `<tr class="${x.id === s.my ? "me" : ""}"><td>${i + 1}</td><td>${tbar(x)}${esc(x.name)}</td><td class="n">${x.pts}</td></tr>`).join("")}</table></div>
+  ${(ME().milestones || []).length ? `<div class="card"><h3>チームの歩み</h3>${ME().milestones.slice(0, 8).map(m => `<div class="small" style="padding:3px 0">🏅 第${m.season}シーズン 第${m.round}戦 ${esc(m.gp)}：${esc(m.text)}</div>`).join("")}</div>` : ""}
   <div class="card"><h3>ニュース</h3>${s.news.slice(0, 10).map(n => `<div class="small" style="padding:4px 0;border-bottom:1px solid var(--line)">${esc(n.t)}</div>`).join("")}</div>`;
   if ($("#quali")) $("#quali").onclick = qualiSetup;
   if ($("#fp")) $("#fp").onclick = practiceSetup;
@@ -1252,9 +1264,31 @@ function alertBox(al) {
   document.querySelectorAll("[data-delay]").forEach(b => b.onclick = () => { const [id, k] = b.dataset.delay.split(":"), c = F1.carAt(R, +id), nx = c.plan.stops[c.stopsDone]; if (!nx) return; if (k === "x") { c.plan.stops.splice(c.stopsDone, 1); toast("この予定のピットを消しました"); } else { nx.lap = Math.min(R.laps - 1, nx.lap + 3); toast(nx.lap + "周目に延ばしました"); } F1.save(); closeModal(); drawCtls(); resumeRace(); });
   $("#goOn").onclick = () => { closeModal(); drawCtls(); resumeRace(); };
 }
+// ドライバーの喜びの無線（冷静さが低いほど叫ぶ）
+function cheer(d, k) {
+  const hot = d.calm < 50, L = { win: hot ? ["うおおおお！！やったぞ！！最高だ、みんな！！", "勝った！勝ったぞ！！信じられない！！"] : ["やった、優勝だ。みんな、本当にありがとう。", "完璧な仕事だった。このチームを誇りに思う。"], podium: hot ? ["表彰台だ！！よっしゃあ！！", "見たか！ポディウムだ！！"] : ["表彰台、いい結果だ。ありがとう。", "チームのおかげだ。次はもっと上を狙おう。"], points: ["ポイントを持ち帰れた。いい仕事だった。", "入賞だ。この調子でいこう。"] };
+  const a = L[k]; return a[(d.id + S().round) % a.length];
+}
+function confetti(n) { const cols = ["#e10600", "#ffd200", "#2bb24c", "#1f6fe0", "#ffffff", "#ff4f9a"]; for (let i = 0; i < n; i++) { const e = document.createElement("div"); e.className = "cf"; e.style.left = Math.random() * 100 + "vw"; e.style.background = cols[i % cols.length]; e.style.animationDelay = Math.random() * 0.8 + "s"; e.style.animationDuration = 1.8 + Math.random() * 1.6 + "s"; document.body.appendChild(e); setTimeout(() => e.remove(), 4000); } }
+function celebrate(rec, after) {
+  const ev = rec.myEv || [], top = ev[0]; if (!top) { after(); return; }
+  const T = { win: "🏆 優勝！", podium: "🍾 表彰台！", points: "🎉 入賞！" }[top.k], t = ME();
+  const pod = (rec.podium || []).map((p, i) => { const d = F1.drv(p.id), tm = F1.team(p.tm); return { i, html: `<div class="p${i + 1}" style="${p.tm === t.id ? "outline:2px solid var(--acc)" : ""}"><b style="font-size:18px">${i + 1}</b><br>${tbar(tm)}${nb(d.nat)}${esc(shortN(d.name))}<br><span class="muted">${esc(tm.short)}</span></div>` }; });
+  const order = [1, 0, 2].map(i => pod[i]).filter(Boolean).map(x => x.html).join("");
+  const lines = ev.map(e => { const d = F1.drv(e.id); return `<div class="ctl"><b>${esc(d.name)}：${e.pos}位</b><span class="small muted">（${e.grid}番手から${e.grid - e.pos > 0 ? "・" + (e.grid - e.pos) + "台抜き" : ""}）</span>
+    <div class="small" style="margin-top:4px">📻「${esc(cheer(d, e.k))}」</div>
+    ${e.teamFirst ? `<div style="margin-top:4px"><span class="tag gold">${t.entrant ? "チーム初" : "就任後初"}${e.k === "win" ? "優勝" : e.k === "podium" ? "表彰台" : "入賞"}</span></div>` : ""}${e.drvFirst && !e.teamFirst ? '<div style="margin-top:4px"><span class="tag gold">キャリア初優勝</span></div>' : ""}
+    ${e.bonus ? `<div class="small good" style="margin-top:4px">スポンサーからボーナス +${money(e.bonus)}${e.k === "win" ? "・スポンサー契約も少し上がった" : ""}</div>` : ""}</div>`; }).join("");
+  const win = ev.find(e => e.k === "win");
+  modal(`<h3 style="font-size:22px;text-align:center">${T}</h3><p class="small" style="text-align:center">${esc(rec.name)}${win ? "・" + esc(F1.natName(F1.drv(win.id).nat)) + "の国歌が流れる" : ""}</p>
+    <div class="podium">${order}</div>${lines}
+    <button class="b p big" style="margin-top:10px" id="celeOk">結果を見る</button>`, true);
+  confetti(top.k === "win" ? 90 : top.k === "podium" ? 50 : 20);
+  $("#celeOk").onclick = () => { closeModal(); after(); };
+}
 function raceDone() {
   const rec = S().last; U.paused = true; cancelAnimationFrame(U.raf); render();
-  if (rec) { const mine = rec.res.filter(r => r.tm === S().my); modal(`<h3>🏁 ${esc(rec.name)}</h3><p>優勝：<b>${esc(rec.winner)}</b>（${esc(rec.wteam)}）・ファステストラップ ${esc(rec.fl)}（点はなし）</p>${mine.map(r => `<p>${esc(F1.drv(r.id).name)}：<b>${r.out ? "リタイア（" + esc(r.why) + "）" : r.pos + "位"}</b>（${r.grid}番手から）${r.got ? "・" + r.got + "点" : ""}</p>`).join("")}<button class="b p big" data-x>閉じる</button>`); }
+  if (rec) celebrate(rec, () => { const mine = rec.res.filter(r => r.tm === S().my); modal(`<h3>🏁 ${esc(rec.name)}</h3><p>優勝：<b>${esc(rec.winner)}</b>（${esc(rec.wteam)}）・ファステストラップ ${esc(rec.fl)}（点はなし）</p>${mine.map(r => `<p>${esc(F1.drv(r.id).name)}：<b>${r.out ? "リタイア（" + esc(r.why) + "）" : r.pos + "位"}</b>（${r.grid}番手から）${r.got ? "・" + r.got + "点" : ""}</p>`).join("")}<button class="b p big" data-x>閉じる</button>`); });
 }
 
 /* ---------- マシン ---------- */
