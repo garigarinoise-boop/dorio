@@ -624,10 +624,15 @@ const F1 = (() => {
     if (R.wet > 0.3 && dry) return R.wet > 0.7 ? "W" : "I";
     if (R.wet > 0.72 && c.comp === "I") return "W";
     if (R.wet < 0.55 && c.comp === "W") return "I";
-    if (R.wet < 0.18 && !dry) return left > 14 ? "M" : "S";
+    // 乾いたらドライへ。雨の前に立てた予定は捨て、残り周回に合う硬さを選ぶ（2026-10-29：雨スタート後に1セットで走り切って周回遅れになっていた）
+    const trk = TRACKS[R.tr], lifeOf = k => estLife(k, trk, c.est), fitDry = n => ["S", "M", "H"].find(k => lifeOf(k) >= n) || ["S", "M", "H"].find(k => lifeOf(k) >= n / 2) || "H";
+    if (R.wet < 0.18 && !dry) { c.stopsDone = c.plan.stops.length; return fitDry(left); }
+    if (!dry && R.wet >= 0.18 && pitTo && ["S", "M", "H"].includes(pitTo)) return null; // まだ濡れているのにドライの予定が来ても入らない
     if (c.plan.sc === "stay" || c.plan.sc === "wait") { /* SC への反応は作戦どおり */ }
     else if ((R.sc || R.vsc) && c.scSeen !== R.neutralId && (c.scSeen = R.neutralId, true) && (R.sc || rnd() < 0.6) && dry && left > 8 && c.lap - c.lastPit > 4 && c.age > T.life * (0.25 + (100 - sk) / 200) && rnd() < 0.4 + sk / 160) { const nc = left > 30 ? "H" : left > 18 ? "M" : "S"; return nc === c.comp && c.used.length < 2 ? (nc === "H" ? "M" : "H") : nc; }
     if (!pitTo && dry && !R.wet && left <= 3 && c.used.length < 2 && c.lap > 3) return c.comp === "S" ? "M" : "S";
+    // 予定のピットが残っていないのに崖が近い（雨で予定が崩れたとき等）：残り周回に合わせてもう一度入る
+    if (!pitTo && dry && R.wet < 0.18 && !c.plan.stops[c.stopsDone] && left > 3 && c.age >= lifeOf(c.comp) * (0.9 + (sk - 70) / 500)) return fitDry(left);
     return pitTo;
   }
   function radio(R, c, d, tr) {
@@ -1226,7 +1231,7 @@ function render() {
   $("#tabs").innerHTML = TABS.map(([k, ic, l]) => `<button class="${U.tab === k ? "on" : ""}" data-tab="${k}"><span class="ic">${ic}</span>${l}</button>`).join("");
   document.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { if (U.tab === "race" && b.dataset.tab !== "race") pauseRace(); U.tab = b.dataset.tab; render(); window.scrollTo(0, 0); });
   ({ home: vHome, race: vRace, car: vCar, team: vTeam, table: vTable })[U.tab]();
-  if (U.tab !== "race") guide(U.tab);
+  guide(U.tab === "race" ? "" : U.tab); // レース画面は vRace 側でガイドを出す（ここでは右上のボタンだけ）
 }
 function trackFeat(tr) {
   const f = [], w = tr.wear * S().regs.wear;
