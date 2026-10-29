@@ -438,7 +438,7 @@ const F1 = (() => {
     // 故障・ミス（冷静さが低いと、詰まったり抜かれたりした後にミスしやすい）
     const hot = Math.max(0, 60 - d.calm) / 100 * (c.stuck > 2 ? 0.02 : 0.004) * (c.pace === "push" ? 2 : 1);
     const pFail = (d.nat === tr.c && d.calm < 50 ? 0.0008 : 0) + (100 - tm.car.rel) / 100 * 0.007 + (100 - d.cons) / 100 * 0.0018 * (c.pace === "push" ? 2 : 1) + R.wet * 0.0015 + hot;
-    if (rnd() < pFail) { const crash = rnd() < (hot > 0.002 ? 0.65 : 0.4); if (crash || rnd() < 0.6) { c.out = true; c.why = crash ? "クラッシュ" : "マシントラブル"; say(R, "❌ " + d.name + " リタイア（" + c.why + "）", c.tm === S.my); if (!R.sc && !R.vsc) { if (crash && rnd() < 0.55) startSC(R); else if (rnd() < (crash ? 0.6 : 0.35)) startVSC(R); } if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; } c.spin = ri(4, 9); say(R, "🌀 L" + c.lap + " " + d.name + " がスピン（" + c.spin + "秒ロス）", c.tm === S.my); }
+    if (rnd() < pFail) { const crash = rnd() < (hot > 0.002 ? 0.65 : 0.4); if (crash || rnd() < 0.6) { c.out = true; c.why = crash ? "クラッシュ" : "マシントラブル"; say(R, "❌ " + d.name + " リタイア（" + c.why + "）", c.tm === S.my); if (!R.sc && !R.vsc) { if (crash && rnd() < 0.4 + (tr.street ? 0.25 : 0)) startSC(R); else if (rnd() < (crash ? 0.5 : 0.3)) startVSC(R); } if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; } c.spin = ri(4, 9); say(R, "🌀 L" + c.lap + " " + d.name + " がスピン（" + c.spin + "秒ロス）", c.tm === S.my); }
     if (c.tm === S.my && S.radioStop !== false) radio(R, c, d, tr);
     // 予定のピットの1周前：自分の車なら止めて確認する
     if (c.tm === S.my && S.pitStop !== false && !c.pitReq) { const nx = c.plan.stops[c.stopsDone]; if (nx && nx.lap - 1 === c.lap && c.warnedStop !== c.stopsDone + ":" + nx.lap) { c.warnedStop = c.stopsDone + ":" + nx.lap; R.alerts.push({ k: "pitsoon", id: c.id }); } }
@@ -488,7 +488,7 @@ const F1 = (() => {
     R.lap++; const tr = TRACKS[R.tr];
     if (R.vsc) { R.vsc.left--; if (R.vsc.left <= 0) { R.vsc = null; R.drsFrom = R.lap + 1; say(R, "🟢 L" + R.lap + " VSC 終了、レース再開"); } }
     if (R.sc) { R.sc.left--; if (R.sc.left <= 0) { R.sc = null; R.drsFrom = R.lap + 2; say(R, "🟢 L" + R.lap + " セーフティカーが戻り、レース再開"); } }
-    else if (R.lap > 1 && R.lap < R.laps - 2 && rnd() < tr.sc) startSC(R);
+    else if (!R.vsc && R.lap > 1 && R.lap < R.laps - 2 && rnd() < tr.sc * 0.55) startSC(R);
     const dry = (was) => { if (was >= 0.2 && R.wet < 0.2) { say(R, "☀ L" + R.lap + " 路面が乾いてきた", true); R.alerts.push({ k: "dry" }); } };
     if (R.rainAt > 0) {
       if (R.lap === R.rainAt) { say(R, "🌧 L" + R.lap + " 雨が降り始めた", true); R.alerts.push({ k: "rain" }); }
@@ -804,7 +804,9 @@ const F1 = (() => {
   const drsGain = tr => r1(0.1 + drsZones(tr) * 0.08 + tr.pw * 0.3);
   const drsOK = R => R.lap >= 2 && !R.sc && !R.vsc && R.wet < 0.2 && R.lap >= (R.drsFrom || 0);
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
-  return { weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
+  const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * 0.55, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.016 : 0.0095)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
+  return { scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -1145,7 +1147,7 @@ ${coverHtml(R, c)}
 function raceData(R) {
   const tr = F1.TRACKS[R.tr], w = S().wk, has = w && w.done && w.round === S().round && w.season === S().season, est = has ? w.est : null, fc = R.fc || { p: Math.round(tr.rain * 100), from: Math.round(R.laps / 2) };
   const rows = ["S", "M", "H"].map(k => { const measured = has && w.meas.some(m => m.comp === k), gap = F1.TYRE[k].off + (est ? est.off[k] : 0); return `<tr><td>${ty(k)} ${F1.TYRE[k].n}</td><td class="n">${est ? (est.wf[k] >= 1 ? "+" : "") + Math.round((est.wf[k] - 1) * 100) + "%" : "?"}</td><td class="n">${k === "M" ? "基準" : (gap > 0 ? "+" : "") + gap.toFixed(2) + "秒"}</td><td class="n">約${F1.estLife(k, tr, est)}周</td><td class="small">${measured ? "実測" : est ? "推定" : "想定"}</td></tr>`; }).join("");
-  return `<div class="card"><h3>このレースのデータ</h3><div style="font-size:15px;margin-bottom:4px"><b>全${R.laps}周</b>・ピットロス約${tr.pit}秒・抜くには1周あたり約${F1.passNeed(tr)}秒の差が要る</div>
+  return `<div class="card"><h3>このレースのデータ</h3><div style="font-size:15px;margin-bottom:4px"><b>全${R.laps}周</b>・ピットロス約${tr.pit}秒・抜くには1周あたり約${F1.passNeed(tr)}秒の差が要る</div>${(() => { const p = F1.scChance(tr); return `<div class="small" style="margin-bottom:4px">🟡 セーフティカーが出る確率 <b>約${p.sc}%</b>（${p.sc >= 65 ? "出やすい" : p.sc >= 45 ? "ふつう" : "出にくい"}）・VSC 約${p.vsc}%${tr.street ? "・市街地で壁が近い" : ""}<br><span class="muted">SC が出やすいなら、ハードで引っ張って SC を待つ作戦が活きる。出にくいなら予定どおりのピットが無難。</span></div>`; })()}
     <div class="small">${R.wet ? "🌧 <b>雨のスタート</b>" : `☁ 天気予報：雨の確率 <b>${fc.p}%</b>${fc.p >= 30 ? `（降るなら${fc.from}周目ごろから）` : ""}`}・気温 約${tr.temp}℃${S().regs.wear !== 1 ? "・今の規則はタイヤが" + (S().regs.wear > 1 ? "減りやすい" : "減りにくい") : ""}</div>
     <div style="overflow-x:auto;margin-top:6px"><table><tr><th>タイヤ</th><th class="n">減り（想定比）</th><th class="n">ペース差</th><th class="n">崖</th><th></th></tr>${rows}</table></div>
     <p class="hint">${has ? "フリー走行で測った値。「推定」は測ったタイヤからの推測。" : "フリー走行のデータなし（いつもの想定の値）。"}崖は新品から数えた周回。予報は当たるとは限らない。</p></div>`;
