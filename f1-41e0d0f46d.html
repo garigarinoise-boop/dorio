@@ -233,6 +233,18 @@ const F1 = (() => {
   const specOf = (tm, part) => tm.specs[part].find(x => x.id === tm.use[part]) || tm.specs[part][0];
   function applyUse(tm) { const a = specOf(tm, "aero"), c = specOf(tm, "chassis"); AERO_K.forEach(k => tm.car[k] = a[k]); CHAS_K.forEach(k => tm.car[k] = c[k]); tm.car.aero = Math.round((a.df + a.drag) / 2); tm.car.chassis = Math.round((c.low + c.high + c.tyre) / 3); }
   // 古いセーブ（空力・シャシーの2つだけ）を作り直す
+  // 残っている今季の結果から、自分のチームの出来事（myEv・表彰台・初記録）を作り直す。ボーナス資金はあとからは出さない
+  function retroEvents() {
+    const tm = me(); if (!tm || !(S.results || []).some(r => !r.myEv)) return; tm.firsts = tm.firsts || {}; tm.milestones = tm.milestones || [];
+    const lab = tm.entrant ? "チーム初" : "就任後初";
+    (S.results || []).forEach(rec => { if (rec.myEv) return; const ev = [], gp = rec.name, mark = (k, text) => { const was = tm.firsts[k]; if (k === "win") tm.firsts.podium = tm.firsts.points = true; if (k === "podium") tm.firsts.points = true; if (was) return false; tm.firsts[k] = true; tm.milestones.unshift({ season: S.season, round: rec.round, gp, text }); return true; };
+      rec.res.filter(c => c.tm === tm.id && !c.out).sort((a, b) => a.pos - b.pos).forEach(c => { const d = drv(c.id);
+        if (c.pos === 1) ev.push({ k: "win", id: c.id, pos: 1, grid: c.grid, teamFirst: mark("win", d.name + " が" + lab + "優勝"), bonus: 0 });
+        else if (c.pos <= 3) ev.push({ k: "podium", id: c.id, pos: c.pos, grid: c.grid, teamFirst: mark("podium", d.name + " が" + lab + "表彰台（" + c.pos + "位）"), bonus: 0 });
+        else if (c.got > 0) ev.push({ k: "points", id: c.id, pos: c.pos, grid: c.grid, teamFirst: mark("points", d.name + " が" + lab + "入賞（" + c.pos + "位）"), bonus: 0 }); });
+      rec.myEv = ev; rec.podium = rec.res.filter(c => !c.out).slice(0, 3).map(c => ({ id: c.id, tm: c.tm })); rec.retro = true; });
+    tm.milestones.sort((a, b) => b.season - a.season || b.round - a.round);
+  }
   function migrate() {
     if (!S.nations) initWorld();
     S.teams.forEach((tm, i) => { if (!tm.nat) { const t0 = TEAM0[i]; tm.nat = t0 ? t0.nat : "jpn"; tm.fac = t0 ? t0.fac : tm.nat; } if (!tm.specs) { const a = tm.car.aero, c = tm.car.chassis; tm.specs = { aero: [newSpec("aero", { df: a, drag: a }, "第" + S.season + "期 標準")], chassis: [newSpec("chassis", { low: c, high: c, tyre: c }, "第" + S.season + "期 標準")] }; tm.use = { aero: tm.specs.aero[0].id, chassis: tm.specs.chassis[0].id }; tm.proj = []; applyUse(tm); } });
@@ -805,7 +817,7 @@ const F1 = (() => {
   const money = m => "$" + r1(m) + "M";
   const KEY = "f1_manager_save_v2";
   function save() { if (!S) return; S.rs = RS; S.uid = uid; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { } }
-  function load(txt) { try { const d = JSON.parse(txt != null ? txt : localStorage.getItem(KEY) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d; RS = d.rs; uid = d.uid; if (!S.f2) { S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {}; S.teams.forEach(tm => S.academy[tm.id] = []); for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id); } migrate(); return true; } catch (e) { return false; } }
+  function load(txt) { try { const d = JSON.parse(txt != null ? txt : localStorage.getItem(KEY) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d; RS = d.rs; uid = d.uid; if (!S.f2) { S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {}; S.teams.forEach(tm => S.academy[tm.id] = []); for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id); } migrate(); retroEvents(); save(); return true; } catch (e) { return false; } }
   function wipe() { try { localStorage.removeItem(KEY); localStorage.removeItem("f1_manager_save_v1"); } catch (e) { } S = null; }
   const exportSave = () => { save(); return JSON.stringify(S); };
 
@@ -1280,7 +1292,7 @@ function celebrate(rec, after) {
     ${e.teamFirst ? `<div style="margin-top:4px"><span class="tag gold">${t.entrant ? "チーム初" : "就任後初"}${e.k === "win" ? "優勝" : e.k === "podium" ? "表彰台" : "入賞"}</span></div>` : ""}${e.drvFirst && !e.teamFirst ? '<div style="margin-top:4px"><span class="tag gold">キャリア初優勝</span></div>' : ""}
     ${e.bonus ? `<div class="small good" style="margin-top:4px">スポンサーからボーナス +${money(e.bonus)}${e.k === "win" ? "・スポンサー契約も少し上がった" : ""}</div>` : ""}</div>`; }).join("");
   const win = ev.find(e => e.k === "win");
-  modal(`<h3 style="font-size:22px;text-align:center">${T}</h3><p class="small" style="text-align:center">${esc(rec.name)}${win ? "・" + esc(F1.natName(F1.drv(win.id).nat)) + "の国歌が流れる" : ""}</p>
+  modal(`<h3 style="font-size:22px;text-align:center">${T}</h3><p class="small" style="text-align:center">${rec.retro || rec.round < S().round ? "振り返り：第" + rec.round + "戦 " : ""}${esc(rec.name)}${win ? "・" + esc(F1.natName(F1.drv(win.id).nat)) + "の国歌が流れる" : ""}</p>
     <div class="podium">${order}</div>${lines}
     <button class="b p big" style="margin-top:10px" id="celeOk">結果を見る</button>`, true);
   confetti(top.k === "win" ? 90 : top.k === "podium" ? 50 : 20);
@@ -1376,10 +1388,11 @@ function vTable() {
   else if (sub === "con") body = `<div class="card"><table><tr><th>#</th><th>チーム</th><th class="n">点</th></tr>${F1.teamTable().map((t, i) => `<tr class="${t.id === s.my ? "me" : ""}"><td>${i + 1}</td><td>${tbar(t)}${esc(t.name)}</td><td class="n"><b>${t.pts}</b></td></tr>`).join("")}</table></div>`;
   else if (sub === "nat") { const tm = s.teams, dr = Object.values(s.drivers).filter(d => F1.teamOf(d.id)), host = s.calendar.map(id => F1.TRACKS[id].c);
     body = `<div class="card"><h3>国ごとのF1熱</h3><p class="hint">その国のドライバーやチームが活躍する、GPを開催する、地元で勝つと上がる。熱が低いとGPの契約が更新されにくく、熱の高い国が新しくGPを開く。チームの国の熱はスポンサー集めにも効く。</p><div style="overflow-x:auto"><table><tr><th>国</th><th class="n">F1熱</th><th>GP</th><th>チーム・ドライバー</th></tr>${Object.keys(s.nations).sort((a, b) => s.nations[b].fever - s.nations[a].fever).map(c => `<tr class="${ME().nat === c ? "me" : ""}"><td>${nb(c)}${esc(F1.natName(c))}</td><td class="n">${rk(s.nations[c].fever)}</td><td>${host.includes(c) ? "開催" : ""}</td><td class="small">${tm.filter(x => x.nat === c).map(x => esc(x.short)).concat(dr.filter(d => d.nat === c).map(d => esc(d.name))).join("・")}</td></tr>`).join("")}</table></div></div>`; }
-  else if (sub === "cal") body = `<div class="card"><table>${s.calendar.map((tid, i) => { const tr = F1.TRACKS[tid], r = (s.results || []).find(x => x.round === i + 1); const g = s.gp[tid] || {}; return `<tr class="${i === s.round ? "me" : ""}"><td>${i + 1}</td><td>${nb(tr.c)}${esc(tr.name)}<div class="small muted">${tr.month}月・${g.isNew ? "新規開催" : "契約あと" + g.left + "年"}</div></td><td class="small">${r ? "優勝 " + esc(r.winner) : i === s.round ? "次" : ""}</td></tr>`; }).join("")}</table></div>`;
+  else if (sub === "cal") body = `<div class="card"><table>${s.calendar.map((tid, i) => { const tr = F1.TRACKS[tid], r = (s.results || []).find(x => x.round === i + 1); const g = s.gp[tid] || {}; const ce = r && (r.myEv || []).some(e => e.k !== "points") ? `<button class="b" data-cele="${r.round}" style="margin-top:3px">🏆 お祝いを見る</button>` : ""; return `<tr class="${i === s.round ? "me" : ""}"><td>${i + 1}</td><td>${nb(tr.c)}${esc(tr.name)}${ce}<div class="small muted">${tr.month}月・${g.isNew ? "新規開催" : "契約あと" + g.left + "年"}</div></td><td class="small">${r ? "優勝 " + esc(r.winner) : i === s.round ? "次" : ""}</td></tr>`; }).join("")}</table></div>`;
   else body = `<div class="card">${s.history.slice().reverse().map(h => `<div style="padding:6px 0;border-bottom:1px solid var(--line)"><b>第${h.season}シーズン</b><div class="small muted">王者 ${esc(h.champ)}（${esc(h.champTeam)}）・コンストラクター ${esc(h.cons)}・${esc(h.my)} ${h.myRank}位（${h.myPts}点）${h.reg ? "・翌年から " + esc(h.reg) : ""}</div></div>`).join("") || '<p class="muted small">まだ記録がありません</p>'}</div>`;
   $("#main").innerHTML = seg + body;
   document.querySelectorAll("[data-tb]").forEach(b => b.onclick = () => { U.sub.tb = b.dataset.tb; render(); });
+  document.querySelectorAll("[data-cele]").forEach(b => b.onclick = () => { const r = (s.results || []).find(x => x.round === +b.dataset.cele); if (r) celebrate(r, () => {}); });
 }
 
 /* 表示テーマ：ダーク（最初）→ ライト → 端末に合わせる。上の帯のボタンで切り替え */
