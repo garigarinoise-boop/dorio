@@ -571,6 +571,15 @@ const F1 = (() => {
       if (c.plan.stops[c.stopsDone] && (c.lap >= c.plan.stops[c.stopsDone].lap - 6 || c.scPit)) c.stopsDone++; c.scPit = false;
       say(R, "🔧 L" + c.lap + " " + d.name + " ピットイン → " + TYRE[pitTo].n + "（作業" + (stat + err).toFixed(1) + "秒" + (err ? "・作業ミス" : "") + "）", c.tm === S.my);
     }
+    // 乾きかけの路面：乾いているのはライン上だけで、外すと濡れた所に乗る。スリックは滑りやすく、ピットを出たばかりの冷えたタイヤは特に危ない。雨に強いドライバーほど安全
+    if (["S", "M", "H"].includes(c.comp) && R.wet > 0.05 && R.wet < 0.5 && !R.sc) {
+      const fresh = c.lastPit === c.lap, mine = c.tm === S.my, risk = (R.wet - 0.05) * 0.05 * (1.4 - d.wet / 100) * (fresh ? 2 : 1) * (c.pace === "push" ? 1.5 : 1) * (R.vsc ? 0.4 : 1);
+      if (fresh) extra += 0.8 + R.wet * 5; // 冷えたスリックで温まるまで
+      if (rnd() < risk) {
+        if (rnd() < 0.25) { c.out = true; c.why = "クラッシュ"; R.dampOff = (R.dampOff || 0) + 1; say(R, "❌ " + d.name + " 乾きかけの路面で濡れた所に乗ってクラッシュ、リタイア", mine); if (!R.sc && !R.vsc) { if (rnd() < 0.45) startSC(R); else if (rnd() < 0.5) startVSC(R); } if (mine) R.alerts.push({ k: "dnf", id: c.id }); return; }
+        const l = 3 + rnd() * 6; extra += l; R.dampOff = (R.dampOff || 0) + 1; say(R, "🌀 L" + c.lap + " " + d.name + "：濡れた所に乗ってコースオフ（" + l.toFixed(1) + "秒ロス）", mine);
+      }
+    }
     let lt = lapTime(R, c) + extra; const ltRace = lt;
     // SC 中：先頭は SC の後ろをゆっくり、ほかは列に追いつくまで少し速く走り、追いついたら前の車の 0.6 秒後ろに並ぶ（周回遅れも含めて、コース上の並び順で）
     const scLead = R.sc && isLeader(R, c);
@@ -1566,8 +1575,9 @@ function weatherHtml(R, full) {
   const next = []; if (o.comingRain) next.push(`約${o.comingRain}周後に雨が降り出す見込み`); if (o.interFrom) next.push(`L${o.interFrom}ごろからインターの方が速くなる`); if (o.wetFrom) next.push(`L${o.wetFrom}ごろからウェットの方が速くなる`); if (o.rainStops) next.push(`雨はL${o.rainStops}ごろ止む見込み（いちばん強いと濡れ${o.peakTxt}）`); if (o.backToInter) next.push(`L${o.backToInter}ごろインターに戻せる`); if (o.dryFrom) next.push(`L${o.dryFrom}ごろドライタイヤに戻せる`);
   return `<div class="small" style="margin-top:4px;padding:6px 8px;border-radius:6px;background:var(--chip)">🌧 <b>路面 ${o.label}（濡れ ${pct(o.now)}）</b>${o.now >= 0.05 ? `・今いちばん速いのは <b>${T(b[0].comp)}</b>（次の${T(b[1].comp)}より約${gap}秒/周速い）` : ""}
     ${full && o.now >= 0.05 ? `<div style="margin-top:3px">今の差：ドライ（${T(dryNow.comp)}）${(dryNow.t - b[0].t).toFixed(1)}秒遅い・インター ${(inter.t - b[0].t).toFixed(1)}秒・ウェット ${(wet.t - b[0].t).toFixed(1)}秒（いちばん速いタイヤとの差、1周あたり）</div>` : ""}
+    ${o.now > 0.05 && o.now < 0.5 && b[0].comp !== "I" && b[0].comp !== "W" ? `<div style="margin-top:3px" class="warn">⚠ ドライタイヤが速いが、まだ濡れた所が残っている（スピン・クラッシュの危険）</div>` : o.now > 0.05 && o.now < 0.3 ? `<div style="margin-top:3px">⚠ 乾き始め：ドライに替えると速くなるが、濡れた所が残っていてスピン・クラッシュの危険がある</div>` : ""}
     ${next.length ? `<div style="margin-top:3px">📡 見込み：${next.join("・")}</div>` : ""}
-    ${full ? `<div style="margin-top:3px">${o.steps.map(x => `L${x.lap}：濡れ${pct(x.w)}→${T(x.best)}`).join("　")}</div><div class="muted" style="margin-top:3px">目安：濡れ22%くらいからインター、74%くらいからウェットが速い。予報はL${o.fcAt}時点のもので3周ごとに更新。先のことほど幅が広く、雨の強さや止む時期が途中で変わって外れることもある（戦略担当の腕とデータ施設で精度が上がる）。</div>` : ""}</div>`;
+    ${full ? `<div style="margin-top:3px">${o.steps.map(x => `L${x.lap}：濡れ${pct(x.w)}→${T(x.best)}`).join("　")}</div><div class="muted" style="margin-top:3px">目安：濡れ22%くらいからインター、74%くらいからウェットが速い。濡れが残っているうち（5〜50%）にドライタイヤで走ると、濡れた所に乗ってコースオフ・クラッシュすることがある。替えたばかりの冷えたタイヤとプッシュは特に危なく、雨に強いドライバーほど安全。予報はL${o.fcAt}時点のもので3周ごとに更新。先のことほど幅が広く、雨の強さや止む時期が途中で変わって外れることもある（戦略担当の腕とデータ施設で精度が上がる）。</div>` : ""}</div>`;
 }
 function drawStrip() {
   const R = S().race, el = $("#strip"); if (!R || !el) return;
