@@ -496,8 +496,16 @@ const F1 = (() => {
     // 赤旗：同じセッションの最後のアタックが乱れる（ほかの車のタイムが少しぶれる）
     const session = (list, si, comp, evo) => { list.forEach(x => { const k = ["t1", "t2", "t3"][si], tb = qTrouble(x, si); x[k] = tb == null ? null : lap(x, comp(x), evo) + tb; });
       if (list.some(x => x.red === si)) list.forEach(x => { const k = ["t1", "t2", "t3"][si]; if (x.red !== si && x[k] != null) x[k] += Math.abs(gauss()) * 0.15; });
+      // 経過の記録（再生用）。at＝セッションの中の時刻 0〜1。1回目のアタックは最後のアタックより少し遅い
+      R.qLists[si] = list.map(x => x.id);
+      list.forEach(x => { const t = x[["t1", "t2", "t3"][si]], nt = x.note[si], a1 = 0.1 + rnd() * 0.35, a2 = 0.66 + rnd() * 0.3, slow = /トラブル/.test(nt);
+        if (/出走できず/.test(nt)) return R.qLog.push({ si, at: 0.02, id: x.id, k: "dns" });
+        if (/クラッシュ/.test(nt)) { if (t != null) { R.qLog.push({ si, at: a1, id: x.id, k: "lap", t }); R.qLog.push({ si, at: a2, id: x.id, k: "crash" }); } else R.qLog.push({ si, at: a1, id: x.id, k: "crash" }); return; }
+        if (slow && t == null) return R.qLog.push({ si, at: a1, id: x.id, k: "stop" });
+        R.qLog.push({ si, at: a1, id: x.id, k: "lap", t: t + 0.05 + Math.abs(gauss()) * 0.35, slow }); R.qLog.push({ si, at: a2, id: x.id, k: "lap", t, slow }); });
+      R.qLog.sort((a, b) => a.si - b.si || a.at - b.at);
       list.sort((a, b) => (a[["t1", "t2", "t3"][si]] ?? 1e9) - (b[["t1", "t2", "t3"][si]] ?? 1e9)); };
-    all.forEach(x => x.note = ["", "", ""]);
+    all.forEach(x => x.note = ["", "", ""]); R.qLists = []; R.qLog = [];
     all.forEach(x => { x.ch.q1 = useQ(x, x.ch.q1); }); session(all, 0, x => R.wet ? "S" : x.ch.q1, 0);
     const q2 = all.slice(0, cut1); q2.forEach(x => { if (x.dead) return; x.ch.q2 = useQ(x, x.ch.q2); x.q2Age = x.qAge; }); session(q2, 1, x => R.wet ? "S" : x.ch.q2, 0.15);
     const q3 = q2.slice(0, cut2); q3.forEach(x => { if (x.dead) return; x.ch.q3 = useQ(x, x.ch.q3 || "S"); }); session(q3, 2, x => R.wet ? "S" : x.ch.q3, 0.3);
@@ -1451,9 +1459,10 @@ function qualiSetup() {
   const sel = (id, k) => `<div class="row small" style="margin-top:4px"><span style="width:34px">${k.toUpperCase()}</span>${opts.map(o => `<button class="b ${ch[id][k] === o ? "on" : ""}" data-qt="${id}:${k}:${o}">${F1.TYRE[o].n}</button>`).join("")}</div>`;
   modal(`<h3>予選のタイヤ（${esc(tr.name)}）</h3><p class="small">Q1（22台→16台）・Q2（16台→10台）・Q3（上位10台の順位決め）。決勝のスタートのタイヤは全員が自由に選べます（予選と違う硬さ・新品でもよい）。</p><p class="small">週末に使えるのはドライ13セット（ソフト8・ミディアム3・ハード2）。金曜の走行でソフト2・ミディアム1を使い、ソフト1は返却済み。<b>予選で使ったセットは中古（3周）になって決勝に残ります。</b>予選でソフトを使うほど、決勝で使える新品のソフトが減ります。</p>
     ${t.drivers.map(id => { const d = F1.drv(id); return `<div class="ctl"><b>${esc(d.name)}</b>${sel(id, "q1")}${sel(id, "q2")}${sel(id, "q3")}</div>`; }).join("")}
-    <button class="b p big" id="runQ" style="margin-top:10px">予選を走る</button><button class="b big" data-x style="margin-top:6px">やめる</button>`);
+    <button class="b p big" id="runQ" style="margin-top:10px">予選を見る</button><button class="b big" id="runQs" style="margin-top:6px">結果だけ（飛ばす）</button><button class="b big" data-x style="margin-top:6px">やめる</button>`);
   document.querySelectorAll("[data-qt]").forEach(b => b.onclick = () => { const [id, k, o] = b.dataset.qt.split(":"); ch[id][k] = o; qualiSetup(); });
-  $("#runQ").onclick = () => { const c = {}; t.drivers.forEach(id => c[id] = { q1: ch[id].q1, q2: ch[id].q2, q3: ch[id].q3 }); closeModal(); F1.setupRace(c); F1.save(); U.tab = "race"; U.paused = true; render(); };
+  const runQ = watch => { const c = {}; t.drivers.forEach(id => c[id] = { q1: ch[id].q1, q2: ch[id].q2, q3: ch[id].q3 }); closeModal(); F1.setupRace(c); F1.save(); U.tab = "race"; U.paused = true; render(); if (watch && S().race.qLog) qualiWatch(); };
+  $("#runQ").onclick = () => runQ(true); $("#runQs").onclick = () => runQ(false);
 }
 const ATTR_N = { pace: "速さ", craft: "バトル", cons: "安定感", tm: "タイヤ管理", wet: "雨", dev: "開発", adapt: "規則変更", calm: "冷静さ" };
 function growthHtml(r) {
@@ -1588,6 +1597,30 @@ function drawStrip() {
     const cmp = o => { if (!o || o.out || !o.lt || !c.lt) return ""; const df = c.lt - o.lt; return ` <span class="${df < -0.05 ? "good" : df > 0.05 ? "bad" : "muted"}">${df > 0 ? "+" : ""}${df.toFixed(1)}</span>`; };
     return `<div class="row small" style="padding:3px 0;border-bottom:1px solid var(--line);gap:6px;flex-wrap:wrap"><b style="min-width:30px">P${i + 1}</b><b>${esc(shortN(d.name))}</b>${ty(c.comp)}<span class="muted">${c.age}周</span>${c.drs ? '<span class="tag gold">DRS</span>' : ""}<span class="sp"></span><span>前周 <b>${lapFmt(c.lt)}</b></span>
       <div style="width:100%;display:flex;gap:10px;flex-wrap:wrap">${a && !a.out ? `<span>▲ ${esc(shortN(F1.drv(a.id).name))} ${gapTo(c, a)}秒 ${ty(a.comp)}${a.age}周・前周差${cmp(a)}</span>` : '<span class="muted">▲ トップ</span>'}${b && !b.out ? `<span>▼ ${esc(shortN(F1.drv(b.id).name))} ${gapTo(c, b)}秒 ${ty(b.comp)}${b.age}周・前周差${cmp(b)}</span>` : ""}</div></div>`; }).join("")}<div class="small muted" style="margin-top:3px">前周差：マイナス（緑）＝自分の方が速い</div></div>`;
+}
+// 予選の再生：セッションごとに約15秒（×4で速く）。ノックアウトの線の下は赤
+function qualiWatch() {
+  const R = S().race, my = S().my, n = R.qLists[0].length, cuts = [Math.max(10, n - 6), 10, 0], QN = ["Q1", "Q2", "Q3"], DUR = 15;
+  let si = 0, at = 0, spd = 1, timer = null;
+  const ft = t => Math.floor(t / 60) + ":" + (t % 60).toFixed(3).padStart(6, "0"), nm = id => esc(F1.drv(id).name), mine = id => F1.teamOf(id) && F1.teamOf(id).id === my;
+  modal(`<div id="qw"><div class="row"><b class="sp" id="qwT"></b><button class="b" data-qs="1">×1</button><button class="b" data-qs="4">×4</button><button class="b" id="qwSkip">このセッションを飛ばす</button><button class="b" id="qwEnd">最後まで</button></div><div style="height:4px;background:var(--chip);border-radius:2px;margin:6px 0"><div id="qwBar" style="height:4px;background:var(--acc);border-radius:2px;width:0"></div></div><div id="qwTk" class="small" style="min-height:4.5em"></div><div id="qwB" style="overflow-x:auto"></div><div id="qwN"></div></div>`, true);
+  const draw = () => {
+    if (!$("#qw")) { clearInterval(timer); return; }
+    const ids = R.qLists[si] || [], ev = R.qLog.filter(e => e.si === si && e.at <= at), b = {}, st = {}, tk = []; let top = null;
+    ev.forEach(e => { if (e.k === "lap") { const imp = b[e.id] == null || e.t < b[e.id]; if (imp) b[e.id] = e.t; if (imp && (top == null || e.t < top)) { top = e.t; tk.push(`⏱ <b>${nm(e.id)}</b> がトップタイム ${ft(e.t)}`); } else if (mine(e.id)) tk.push(`${nm(e.id)}：${ft(e.t)}${imp ? "" : "（更新ならず）"}`); }
+      else { st[e.id] = e.k; tk.push(e.k === "crash" ? `💥 <b>${nm(e.id)}</b> がクラッシュ。赤旗` : e.k === "stop" ? `🔧 <b>${nm(e.id)}</b> がマシントラブルでストップ` : `${nm(e.id)} は出走できず`); } });
+    const rows = ids.slice().sort((x, y) => (b[x] ?? 1e9) - (b[y] ?? 1e9)), lead = b[rows[0]], cut = cuts[si];
+    $("#qwT").textContent = QN[si] + (at >= 1 ? " 終了" : "（残り " + Math.ceil((1 - at) * [18, 15, 12][si]) + " 分）"); $("#qwBar").style.width = Math.round(at * 100) + "%";
+    $("#qwTk").innerHTML = tk.slice(-3).reverse().map((x, i) => `<div${i ? ' class="muted"' : ""}>${x}</div>`).join("");
+    $("#qwB").innerHTML = `<table>${rows.map((id, i) => { const tm = F1.teamOf(id), t = b[id], s2 = st[id]; return `${cut && i === cut ? '<tr><td colspan="4" class="small bad" style="border-top:2px solid var(--bad)">ここから下は脱落</td></tr>' : ""}<tr class="${mine(id) ? "me" : ""}"${cut && i >= cut ? ' style="opacity:.6"' : ""}><td>${i + 1}</td><td>${tm ? tbar(tm) : ""}${nm(id)}${s2 === "crash" ? " 💥" : s2 === "stop" ? " 🔧" : ""}</td><td class="n small">${t != null ? ft(t) : s2 === "dns" ? "出走できず" : "—"}</td><td class="n small muted">${t != null && i ? "+" + (t - lead).toFixed(3) : ""}</td></tr>`; }).join("")}</table>`;
+    $("#qwN").innerHTML = at >= 1 ? `<button class="b p big" id="qwNext" style="margin-top:8px">${si < 2 ? QN[si + 1] + " へ" : "決勝のグリッドへ"}</button>` : "";
+    if (at >= 1) $("#qwNext").onclick = () => { if (si < 2) { si++; at = 0; run(); } else closeModal(); };
+  };
+  const run = () => { clearInterval(timer); timer = setInterval(() => { at = Math.min(1, at + 0.1 / DUR * spd); draw(); if (at >= 1) clearInterval(timer); }, 100); draw(); };
+  document.querySelectorAll("[data-qs]").forEach(x => x.onclick = () => { spd = +x.dataset.qs; document.querySelectorAll("[data-qs]").forEach(y => y.classList.toggle("on", y === x)); });
+  $("#qwSkip").onclick = () => { at = 1; clearInterval(timer); draw(); };
+  $("#qwEnd").onclick = () => { clearInterval(timer); closeModal(); };
+  run();
 }
 function gridTable(R) {
   const q = R.quali || [], f = v => v == null ? "" : v.toFixed(3), nt = (x, i) => x.note && x.note[i] ? ` <span class="small">${x.note[i]}</span>` : "";
