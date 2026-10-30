@@ -186,7 +186,7 @@ const F1 = (() => {
     const t = [];
     if (["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"].every(k => d[k] >= 88)) t.push("完全無欠");
     if (d.wet >= 88) t.push("雨の名手"); if (d.calm <= 45) t.push("カッとなりやすい"); if (d.dev >= 86) t.push("開発上手"); if (d.adapt >= 86) t.push("規則変更に強い");
-    if (d.tm >= 88) t.push("タイヤを長持ちさせる"); if (d.craft >= 88) t.push("バトルに強い"); if (d.sponsor) t.push("ペイドライバー（+$" + d.sponsor + "M）"); if (d.loyal >= 75 && teamOf(d.id)) t.push("チームへの愛着が強い"); if (d.age <= 22 && d.pot >= d.pace + 6) t.push("伸びしろ大");
+    if (d.tm >= 88) t.push("タイヤを長持ちさせる"); if (d.craft >= 88) t.push("バトルに強い"); if (d.sponsor) t.push("ペイドライバー（+$" + d.sponsor + "M）"); if (d.loyal >= 75 && teamOf(d.id)) t.push("チームへの愛着が強い"); if (d.age <= 22 && d.pot >= d.pace + 6) t.push("速さの伸びしろ大");
     return t;
   };
   // F2 の若手：今は遅いが伸びしろ（pot）がある
@@ -1020,7 +1020,9 @@ const F1 = (() => {
       const a = d.age, young = a <= 24, prime = a >= 25 && a <= 30, vet = a >= 31, old = a >= 34;
       const ch = k => Math.round(gauss() * 0.8);
       const up = (k, v) => d[k] = clamp(d[k] + v + ch(k), 35, 98);
-      if (young) { up("pace", Math.min(4, Math.max(0, Math.round((d.pot - d.pace) * 0.45)))); up("craft", 1); up("cons", 2); up("tm", 1); up("dev", 1); up("adapt", 1); up("wet", 1); }
+      // 24歳以下：速さは伸びしろ（pot）に向かって伸びる。ほかの能力は伸びしろと関係なく、F1 の水準（78）より低いほど早く伸びる（年 +1〜+3）
+      const yk = (k, b) => up(k, b + Math.min(2, Math.max(0, Math.round((78 - d[k]) * 0.15))));
+      if (young) { up("pace", Math.min(4, Math.max(0, Math.round((d.pot - d.pace) * 0.45)))); yk("craft", 1); yk("cons", 1); yk("tm", 1); yk("dev", 1); yk("adapt", 1); yk("wet", 1); }
       else if (prime) { up("pace", a <= 27 ? 1 : 0); up("craft", 1); up("cons", 1); up("tm", 1); up("dev", 1); up("adapt", 0); up("wet", 0); }
       else { up("pace", old ? -2 : -1); up("craft", old ? -2 : -1); up("cons", 1); up("tm", 1); up("dev", 2); up("adapt", old ? -1 : 0); up("wet", 0); }
       d.calm = clamp(d.calm + (a <= 24 ? 1 : a >= 29 ? 2 : 1) + Math.round(gauss() * 1), 20, 98); // 経験で落ち着く
@@ -1031,7 +1033,7 @@ const F1 = (() => {
     S.teams.forEach(tm => { const rank = tt.indexOf(tm); tm.devp = clamp(Math.round(tm.devp + (rank < 3 ? 1 : rank > 7 ? -1 : 0) + (tm.budget > 160 ? 1 : tm.budget < 90 ? -1 : 0) + gauss() * 1.2), 40, 95); for (const k of ["strat", "crew"]) { const st = tm.staff[k]; st.skill = clamp(Math.round(st.skill + gauss() * 1.5 + (k === "crew" ? 0.5 : 0)), 40, 97); } });
     S.staffPool.forEach(st => st.skill = clamp(Math.round(st.skill + gauss() * 1.5), 40, 97));
     // ジュニアは毎年もう少し伸びる（チームの育成）
-    Object.entries(S.academy || {}).forEach(([t, l]) => l.forEach(id => { const d = drv(id); if (d.pace < d.pot) { d.pace = Math.min(d.pot, d.pace + 1 + (rnd() < 0.5 ? 1 : 0) + (rnd() < (fl(team(+t), "acad") - 1) * 0.06 ? 1 : 0)); d.cons = clamp(d.cons + 1, 35, 98); } }));
+    Object.entries(S.academy || {}).forEach(([t, l]) => l.forEach(id => { const d = drv(id); if (d.pace < d.pot) { d.pace = Math.min(d.pot, d.pace + 1 + (rnd() < 0.5 ? 1 : 0) + (rnd() < (fl(team(+t), "acad") - 1) * 0.06 ? 1 : 0)); } const lo = ["craft", "cons", "tm", "wet"].sort((a, b) => d[a] - d[b])[0]; d[lo] = clamp(d[lo] + 1 + (rnd() < (fl(team(+t), "acad") - 1) * 0.06 ? 1 : 0), 35, 98); }));
     const growth = myIds.map(id => { const d = drv(id), b = before[id], diff = {}; ["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"].forEach(k => { if (d[k] !== b[k]) diff[k] = d[k] - b[k]; }); return { id, name: d.name, age: d.age, diff }; });
     rec.growth = growth;
     const retire = Object.values(S.drivers).filter(d => d.age >= 36 && rnd() < 0.3 + (d.age - 36) * 0.25 || d.age >= 40);
@@ -1860,8 +1862,8 @@ function vTeam() {
       + `<div class="card"><h3>空いているドライバー</h3><p class="small muted">契約金（年俸の半分）を払って入れ替え。ペイドライバーはスポンサー資金を持ってくる。レース週末中は入れ替えできません。</p>${s.free.map(id => { const d = F1.drv(id); return `<div class="drvm"><div class="row"><b class="sp">${nb(d.nat)}${esc(d.name)}</b><span class="small muted">${d.age}歳・年俸${money(d.salary)}</span></div>${attrGrid(d)}<div style="margin:4px 0">${tags(d)}</div><select data-sw="${id}"><option value="">入れ替える…</option>${t.drivers.map(x => `<option value="${x}">${esc(F1.drv(x).name)} と（契約金 ${money(F1.drv(id).salary * 0.5)}）</option>`).join("")}</select></div>`; }).join("")}</div>`;
   } else if (sub === "f2") {
     const ac = F1.academyOf(t.id), ft = F1.f2Table(), owner = id => { const e = Object.entries(s.academy).find(([k, l]) => l.includes(id)); return e ? F1.team(+e[0]) : null; };
-    const pv = d => { const p = F1.potView(d); return p.lo === p.hi ? "伸びしろ " + p.hi : "伸びしろ " + p.lo + "〜" + p.hi + "（推定）"; };
-    body = `<div class="card"><h3>自分のジュニア（${ac.length}/3）</h3><p class="small muted">ジュニアは F2 を走りながら、毎年ふつうより少し多く伸びます。F1 に上げるときは契約金なし（今のドライバーは空きに回ります）。F2 を卒業した後もリザーブとして26歳まで残せます。</p>
+    const pv = d => { const p = F1.potView(d); return p.lo === p.hi ? "速さの伸びしろ " + p.hi : "速さの伸びしろ " + p.lo + "〜" + p.hi + "（推定）"; };
+    body = `<div class="card"><h3>自分のジュニア（${ac.length}/3）</h3><p class="small muted">ジュニアは F2 を走りながら、毎年ふつうより少し多く伸びます（速さと、速さ以外でいちばん低い能力）。「速さの伸びしろ」は速さだけの上限の目安で、ほかの能力には上限がありません。24歳以下は、F1 の水準（78）より低い能力ほど早く伸びます。F1 に上げるときは契約金なし（今のドライバーは空きに回ります）。F2 を卒業した後もリザーブとして26歳まで残せます。</p>
       ${ac.length ? ac.map(id => { const d = F1.drv(id); return `<div class="drvm"><div class="row"><b class="sp">${nb(d.nat)}${esc(d.name)}</b><span class="small muted">${d.age}歳・${d.reserve ? "リザーブ" : "F2 " + d.f2.pts + "点 " + d.f2.wins + "勝"}・${pv(d)}</span></div>${attrGrid(d)}<div style="margin:4px 0">${tags(d)}</div><div class="row"><select data-pro="${id}"><option value="">F1 に上げる…</option>${t.drivers.map(x => `<option value="${x}">${esc(F1.drv(x).name)} と交代</option>`).join("")}</select><button class="b" data-lv="${id}">外す</button></div></div>`; }).join("") : '<p class="small muted">まだいません。下の F2 から選んでください。</p>'}</div>
       <div class="card"><h3>F2 ランキング（第${s.season}シーズン）</h3><p class="small muted">F1 の各戦のあとに1戦。王者と、22歳以上・速い若手は卒業して F1 の空きドライバーに（ジュニアならチームに残る）。伸びしろは自分のジュニアにすると正確に分かります。</p>
       <div style="overflow-x:auto"><table><tr><th>#</th><th>ドライバー</th><th class="n">歳</th><th class="n">速さ</th><th class="n">点</th><th></th></tr>${ft.map((d, i) => { const o = owner(d.id); return `<tr class="${o && o.id === t.id ? "me" : ""}"><td>${i + 1}</td><td>${esc(d.name)}<div class="small muted">${pv(d)}${o ? "・" + esc(o.short) + "のジュニア" : ""}</div></td><td class="n">${d.age}</td><td class="n">${d.pace}</td><td class="n">${d.f2.pts}</td><td>${o ? "" : `<button class="b" data-ja="${d.id}">${money(F1.academyFee(d))}で育成</button>`}</td></tr>`; }).join("")}</table></div></div>
