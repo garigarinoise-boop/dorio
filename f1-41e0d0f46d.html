@@ -99,6 +99,15 @@ const F1 = (() => {
   const FIRST = "ルカ マックス オリバー ノア レオ ハーヴェイ セバスチャン マテオ アントン ニコ ラファエル ジャック リアム ダニエル アレックス マルコ フェリックス テオ エミル ヴィクトル トマス アドリアン ジョージ ランド エステバン ピエール ケビン ヤン オスカー ガブリエル アンドレア ミケル カルロス フランコ ルイス ヨナス アーサー ディノ パト リッカルド".split(" ");
   const LAST = "ベルナール ハートマン コスタ リンドクヴィスト オコナー ヴァレンティ ノヴァク フィッシャー ロッシ デュボワ サンドバル ミラー ブラント ケラー モロー アルヴェス ペトロフ ヴァイス ストーン ラングレー マルティネス ホルム ラッセル ガスリー ニールセン シューマン ドゥーハン クラーク リヴィエール ブラウン ソレンセン バルデス フォンテーヌ ヴェルナー アッカーマン ベアード".split(" ");
   const JP = ["早瀬 颯太", "神崎 海斗", "桐生 蓮", "城戸 大翔", "片山 湊"];
+  const JP_L = "早瀬 神崎 桐生 城戸 片山 佐伯 東條 鳴海 久遠 真壁 高槻 結城 氷室 一条 柊 朝霧 速水 九条".split(" "), JP_F = "颯太 海斗 蓮 大翔 湊 陽斗 悠真 蒼 律 晴 碧 奏太 隼 樹 迅 怜 匠 航".split(" ");
+  // 名前は今いる（引退した人も含む）ドライバーと重ならないように作る
+  const NAMES = new Set();
+  function freshName(jp) {
+    const used = new Set([...NAMES, ...Object.values((typeof S !== "undefined" && S && S.drivers) || {}).map(d => d.name)]), take = n => (NAMES.add(n), n);
+    if (jp) { const f = JP.filter(n => !used.has(n)); if (f.length) return take(pick(f)); }
+    for (let i = 0; i < 300; i++) { const n = jp ? pick(JP_L) + " " + pick(JP_F) : pick(FIRST) + "・" + pick(LAST); if (!used.has(n)) return take(n); }
+    for (let k = 2; ; k++) { const n = (jp ? pick(JP_L) + " " + pick(JP_F) : pick(FIRST) + "・" + pick(LAST)) + " " + k + "世"; if (!used.has(n)) return take(n); }
+  }
   const STAFF_N = "ジェームズ アンドリュー ハンナ エイドリアン マッティア ローラン ジョナサン ピーター シモーネ ルース ベン クリスティアン マリア トト フレッド".split(" ");
   const STAFF_L = "ヒギンズ ボッシ アリソン ステラ ウィートリー モンタニャ グリーン ボウラー フォーリー ホーナー ラッセル ブリーン メキエス ヴォウルズ バッサー".split(" ");
 
@@ -164,7 +173,7 @@ const F1 = (() => {
   function newDriver(lvl, age, opt) {
     opt = opt || {};
     const st = (v, sd) => clamp(Math.round(v + gauss() * sd), 40, 98);
-    const d = { id: uid++, nat: opt.nat || (opt.name && JP.includes(opt.name) ? "jpn" : pickNat()), name: opt.name || (pick(FIRST) + "・" + pick(LAST)), age, pace: st(lvl, 4), craft: st(lvl, 6), cons: st(lvl, 6), tm: st(lvl, 7), wet: st(lvl, 9), dev: st(lvl - 4, 10), adapt: st(lvl - 2, 10), calm: st(70, 15), pot: 0, sponsor: 0, salary: 0, contract: ri(1, 3), pts: 0, wins: 0, podiums: 0, career: { starts: 0, wins: 0, titles: 0 } };
+    const d = { id: uid++, nat: opt.nat || (opt.jp || (opt.name && JP.includes(opt.name)) ? "jpn" : pickNat()), name: opt.name || freshName(opt.jp), age, pace: st(lvl, 4), craft: st(lvl, 6), cons: st(lvl, 6), tm: st(lvl, 7), wet: st(lvl, 9), dev: st(lvl - 4, 10), adapt: st(lvl - 2, 10), calm: st(70, 15), pot: 0, sponsor: 0, salary: 0, contract: ri(1, 3), pts: 0, wins: 0, podiums: 0, career: { starts: 0, wins: 0, titles: 0 } };
     if (opt.perfect) for (const k of ["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"]) d[k] = clamp(ri(90, 96), 40, 98);
     if (opt.hot) d.calm = ri(25, 42);
     if (opt.pay) d.sponsor = ri(8, 25);
@@ -181,7 +190,7 @@ const F1 = (() => {
     return t;
   };
   // F2 の若手：今は遅いが伸びしろ（pot）がある
-  function newF2Driver(age) { const d = newDriver(ri(60, 70), age, { pay: rnd() < 0.2, hot: rnd() < 0.2, name: rnd() < 0.05 ? pick(JP) : null }); d.pot = clamp(d.pace + ri(6, 24), d.pace, 97); d.f2 = { pts: 0, wins: 0, starts: 0 }; d.salary = 1; S.drivers[d.id] = d; return d; }
+  function newF2Driver(age) { const d = newDriver(ri(60, 70), age, { pay: rnd() < 0.2, hot: rnd() < 0.2, jp: rnd() < 0.05 }); d.pot = clamp(d.pace + ri(6, 24), d.pace, 97); d.f2 = { pts: 0, wins: 0, starts: 0 }; d.salary = 1; S.drivers[d.id] = d; return d; }
   // F1熱の高い国ほどドライバーが出やすい
   function pickNat() { const ks = Object.keys(DNAT), w = ks.map(k => DNAT[k] * (S && S.nations && S.nations[k] ? 0.5 + S.nations[k].fever / 100 : 1)), tot = w.reduce((a, b) => a + b, 0); let x = rnd() * tot; for (let i = 0; i < ks.length; i++) { x -= w[i]; if (x <= 0) return ks[i]; } return ks[0]; }
   function newStaff(kind, lvl) { return { id: uid++, kind, name: pick(STAFF_N) + "・" + pick(STAFF_L), skill: clamp(Math.round(lvl + gauss() * 5), 45, 97), salary: 0 }; }
@@ -208,7 +217,7 @@ const F1 = (() => {
     const lv = TEAM0.map(t => t.car + 1);
     const jpTeam = ri(4, 10), perfTeam = ri(0, 3), hotTeams = [ri(0, 10), ri(0, 10)], payTeams = [8, 10];
     S.teams.forEach((tm, i) => {
-      const a = newDriver(lv[i] + 1, ri(24, 34), { perfect: i === perfTeam }), b = newDriver(lv[i] - 3, ri(20, 28), { hot: hotTeams.includes(i), pay: payTeams.includes(i), name: i === jpTeam ? pick(JP) : null });
+      const a = newDriver(lv[i] + 1, ri(24, 34), { perfect: i === perfTeam }), b = newDriver(lv[i] - 3, ri(20, 28), { hot: hotTeams.includes(i), pay: payTeams.includes(i), jp: i === jpTeam });
       [a, b].forEach(d => { S.drivers[d.id] = d; tm.drivers.push(d.id); });
     });
     // 空いているドライバー（若手・ベテラン・ペイドライバー）
@@ -281,6 +290,8 @@ const F1 = (() => {
     S.teams.forEach(initFac);
     S.teams.forEach((tm, i) => { if (!tm.nat) { const t0 = TEAM0[i]; tm.nat = t0 ? t0.nat : "jpn"; tm.fac = t0 ? t0.fac : tm.nat; } if (!tm.specs) { const a = tm.car.aero, c = tm.car.chassis; tm.specs = { aero: [newSpec("aero", { df: a, drag: a }, "第" + S.season + "期 標準")], chassis: [newSpec("chassis", { low: c, high: c, tyre: c }, "第" + S.season + "期 標準")] }; tm.use = { aero: tm.specs.aero[0].id, chassis: tm.specs.chassis[0].id }; tm.proj = []; applyUse(tm); } });
     Object.values(S.drivers).forEach(d => { if (!d.nat) d.nat = JP.includes(d.name) ? "jpn" : pickNat(); });
+    // 同姓同名がいたら、あとから来た方を改名（古いセーブの直し）
+    { const seen = new Set(); Object.values(S.drivers).sort((a, b) => a.id - b.id).forEach(d => { if (seen.has(d.name)) { const old = d.name; d.name = freshName(d.nat === "jpn" && !old.includes("・")); news(old + "（同姓同名の2人目）は登録名を " + d.name + " に変更"); } seen.add(d.name); }); }
     if (!S.gp) { S.gp = {}; S.calendar.forEach(id => S.gp[id] = { left: ri(1, 5) }); }
     if (S.nRaces == null) { S.nRaces = 24; if (S.phase === "off" || (S.round === 0 && !S.race)) fitCal(); }
   }
