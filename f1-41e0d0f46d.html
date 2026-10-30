@@ -543,7 +543,7 @@ const F1 = (() => {
 
   function crossLine(R, c) {
     const tr = TRACKS[R.tr];
-    c.lap++; c.age++; c.tot = c.lapEnd;
+    c.lap++; c.age++; c.tot = c.lapEnd; if (c.unlapping) { c.unlapping = false; c.lap++; }
     if (c.lap > 0 && c.lt > 0 && c.lt < c.best) c.best = c.lt;
     if (R.flag) { c.fin = true; c.finT = c.lapEnd; return; }
     if (c.lap >= R.laps) { R.flag = true; c.fin = true; c.finT = c.lapEnd; say(R, "🏁 " + drv(c.id).name + " がトップでチェッカー"); return; }
@@ -596,10 +596,20 @@ const F1 = (() => {
     let end = c.lapEnd + lt;
     const maxLap = Math.max(...R.cars.filter(o => !o.out).map(o => o.lap)), lapped = c.lap < maxLap;
     /* 周回遅れもコース上の順で隊列に並ぶ（以前は並ばずに自由に走っていた） */
-    if (R.sc && !scLead) { const at = R.cars.filter(o => o !== c && !o.out && !o.fin && o.lastPit !== o.lap).reduce((x, y) => !x || y.tot > x.tot ? y : x, null); if (at) end = Math.max(end, at.lapEnd + 0.6); }
+    const unlap = R.sc && R.sc.unlap && !scLead && lapped && c.unlapId !== R.neutralId && c.lastPit !== c.lap && R.laps - c.lap > 3;
+    if (unlap) {
+      // 先頭が次に線を越えた後の周で、隊列の最後尾（先頭から q 秒後ろ）の 0.6 秒後ろにつく。先にアンラップした車がいればその後ろ
+      c.unlapId = R.neutralId; c.unlapping = true;
+      const ld = R.cars.filter(o => !o.out && !o.fin).reduce((x, y) => y.lap > x.lap || (y.lap === x.lap && y.tot < x.tot) ? y : x);
+      const q = Math.max(0, ...R.cars.filter(o => o !== c && o !== ld && !o.out && !o.fin && !o.unlapping).map(o => (o.tot >= ld.tot ? o.tot : o.lapEnd) - ld.tot));
+      end = Math.max(c.lapEnd + tr.base * 1.05, ld.lapEnd + q + 0.6);
+      R.cars.forEach(o => { if (o !== c && o.unlapping && !o.out) end = Math.max(end, o.lapEnd + 0.6); });
+      R.unlaps = (R.unlaps || 0) + 1; if (c.tm === S.my) say(R, "↻ L" + c.lap + " " + d.name + "：SC を追い越して周回遅れを取り戻す（隊列の最後尾へ）", true);
+    }
+    else if (R.sc && !scLead) { const at = R.cars.filter(o => o !== c && !o.out && !o.fin && o.lastPit !== o.lap && !o.unlapping).reduce((x, y) => !x || y.tot > x.tot ? y : x, null); if (at) end = Math.max(end, at.lapEnd + 0.6); }
     const rsNow = !R.sc && !R.vsc && R.rs && c.rsDone !== R.rs.id && !scLead;
     if (rsNow) { c.rsDone = R.rs.id; c.rsAt = c.lap; const dl = rsDelta(R, c, false); if (c.out) return; end += dl; }
-    const ahead = R.cars.filter(o => o !== c && !o.out && !o.fin && o.lap === c.lap && o.tot <= c.tot).sort((a, b) => b.tot - a.tot)[0];
+    const ahead = unlap ? null : R.cars.filter(o => o !== c && !o.out && !o.fin && !o.unlapping && o.lap === c.lap && o.tot <= c.tot).sort((a, b) => b.tot - a.tot)[0];
     c.drs = !!(ahead && drsOK(R) && c.tot - ahead.tot < 1.0);
     if (ahead) {
       const gap = c.tot - ahead.tot;
@@ -628,6 +638,7 @@ const F1 = (() => {
     if (R.sc) { R.sc.left--;
       // 予定の周回が来ても、隊列が整っていなければ（次に線を越える時刻の間隔が2.5秒を超える所がある）最大2周延長
       if (R.sc.left <= 0 && (R.sc.ext || 0) < 2) { const ends = R.cars.filter(x => !x.out && !x.fin && x.lap < R.lap && x.lastPit !== x.lap).map(x => x.lapEnd).sort((a, b) => a - b); if (ends.some((e, i) => i && e - ends[i - 1] > 2.5)) { R.sc.left = 1; R.sc.ext = (R.sc.ext || 0) + 1; if (R.sc.ext === 1) say(R, "🟡 L" + R.lap + " 隊列が整うまでセーフティカーを続ける"); } }
+      if (R.sc.left === 1 && !R.sc.unlap && R.cars.some(x => !x.out && !x.fin && x.lap < R.lap - 1)) { R.sc.unlap = true; say(R, "🟡 L" + R.lap + " 周回遅れの車は SC を追い越して周回を取り戻してよい（SC はこの周で戻る）", true); }
       if (R.sc.left <= 0) { R.sc = null; R.drsFrom = R.lap + 2; R.rs = { id: R.neutralId, lap: R.lap, pos: {} }; R.cars.filter(x => !x.out && !x.fin).sort((a, b) => b.lap - a.lap || a.tot - b.tot).forEach((x, i) => R.rs.pos[x.id] = i + 1); say(R, "🟢 L" + R.lap + " セーフティカーが戻り、レース再開"); } }
     else if (!R.vsc && R.lap > 1 && R.lap < R.laps - 2 && rnd() < tr.sc * 0.55) startSC(R);
     const dry = (was) => { if (was >= 0.2 && R.wet < 0.2) { say(R, "☀ L" + R.lap + " 路面が乾いてきた", true); R.alerts.push({ k: "dry" }); } };
