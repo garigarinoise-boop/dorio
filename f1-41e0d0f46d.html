@@ -530,8 +530,8 @@ const F1 = (() => {
     const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[c.comp], pm = PACE[c.pace];
     const wearMul = tr.wear * S.regs.wear * pm.w * (1.12 - d.tm / 250) * carWear(tm) * (c.comp === "I" || c.comp === "W" ? (R.wet < 0.25 ? 3 : 1) : 1);
     const wfc = trueWf(c.comp);
-    let t = tr.base + perfDelta(tm, d, tr) - (c.tm === S.my ? setupB(c.id) : 0.02) + T.off + trueOff(c.comp) + T.deg * c.age * wearMul * wfc + pm.t;
-    const life = T.life / (tr.wear * S.regs.wear * pm.w * wfc); t += cliffT(c.age, life);
+    let t = tr.base + perfDelta(tm, d, tr) - (c.tm === S.my ? setupB(c.id) : 0.02) + T.off + trueOff(c.comp) + T.deg * (c.age + (c.dw || 0)) * wearMul * wfc + pm.t;
+    const life = T.life / (tr.wear * S.regs.wear * pm.w * wfc); t += cliffT(c.age + (c.dw || 0), life);
     t += Math.max(0, c.fuel) * 0.055; // 燃料の重さ
     const w = R.wet; t += w * 7 * (1.25 - d.wet / 160);
     if (c.comp === "S" || c.comp === "M" || c.comp === "H") t += Math.max(0, w - 0.15) * 16;
@@ -575,7 +575,7 @@ const F1 = (() => {
       if (c.sets && !setsLeft(c.sets, pitTo)) { const alt = (["I", "W"].includes(pitTo) ? ["I", "W"] : ["M", "H", "S"]).find(z => setsLeft(c.sets, z)); say(R, "⚠ " + d.name + "：" + TYRE[pitTo].n + "のセットが残っていない" + (alt ? " → " + TYRE[alt].n : ""), c.tm === S.my); if (alt) pitTo = alt; }
       const setAge = c.sets ? (takeSet(c.sets, pitTo) || 0) : 0;
       if (c.tm !== S.my && S.rivalStop !== false) { const ord = order(R), i = ord.indexOf(c); [ord[i - 1], ord[i + 1]].forEach((m, j) => { if (m && m.tm === S.my && !m.out && !m.fin && !m.pitReq && !m.cover && m.lap - m.lastPit > 3 && Math.abs(m.tot - c.tot) < 5 && R.laps - m.lap > 3) R.alerts.push({ k: "rivalpit", id: m.id, who: c.id, rel: j === 0 ? "後ろ" : "前" }); }); }
-      c.saidTyre = false; c.comp = pitTo; c.age = setAge; c.pits++; c.lastPit = c.lap; if (!c.used.includes(pitTo)) c.used.push(pitTo);
+      c.saidTyre = false; if (c.dw) { R.dwSum = (R.dwSum || 0) + c.dw; R.dwN = (R.dwN || 0) + 1; } c.dw = 0; c.saidDirty = false; c.comp = pitTo; c.age = setAge; c.pits++; c.lastPit = c.lap; if (!c.used.includes(pitTo)) c.used.push(pitTo);
       if (c.plan.stops[c.stopsDone] && (c.lap >= c.plan.stops[c.stopsDone].lap - 6 || c.scPit)) c.stopsDone++; c.scPit = false;
       say(R, "🔧 L" + c.lap + " " + d.name + " ピットイン → " + TYRE[pitTo].n + "（作業" + (stat + err).toFixed(1) + "秒" + (err ? "・作業ミス" : "") + "）", c.tm === S.my);
     }
@@ -610,9 +610,12 @@ const F1 = (() => {
     const rsNow = !R.sc && !R.vsc && R.rs && c.rsDone !== R.rs.id && !scLead;
     if (rsNow) { c.rsDone = R.rs.id; c.rsAt = c.lap; const dl = rsDelta(R, c, false); if (c.out) return; end += dl; }
     const ahead = unlap ? null : R.cars.filter(o => o !== c && !o.out && !o.fin && !o.unlapping && o.lap === c.lap && o.tot <= c.tot).sort((a, b) => b.tot - a.tot)[0];
-    c.drs = !!(ahead && drsOK(R) && c.tot - ahead.tot < 1.0);
+    c.drs = !!(ahead && drsOK(R) && c.tot - ahead.tot < 1.0); c.dirty = false;
     if (ahead) {
       const gap = c.tot - ahead.tot;
+      const close = !R.sc && !R.vsc && R.lap >= 2 && ahead.lastPit !== ahead.lap && !extra && gap < 1.2;
+      if (close) { c.dirty = true; end += 0.3 * (1 - tr.pw) * (gap < 0.6 ? 1 : 0.6); c.dw = Math.min(3, (c.dw || 0) + 0.15 * (1 - tr.pw));
+        if (c.tm === S.my && c.dw >= 1.5 && !c.saidDirty) { c.saidDirty = true; say(R, "📻 L" + c.lap + " " + d.name + "：前の車の乱気流でタイヤが余計に減っている。少し間隔をあけるのも手", true); } }
       if (ahead.lastPit === ahead.lap) { /* 前の車はピットに入った：詰まらない（SC・VSC中も） */ }
       else if (R.sc || R.vsc) end = Math.max(end, ahead.lapEnd + 0.6);
       else if (ahead.tm === c.tm && gap < 1.5 && !extra && orderYield(R, c, ahead, ahead.lapEnd - end)) {
@@ -623,7 +626,7 @@ const F1 = (() => {
       }
       else if (gap < 1.2 && end < ahead.lapEnd + 0.25 && !extra) {
         const dd = drv(c.id), da = drv(ahead.id), adv = ahead.lapEnd - end;
-        /* 抜きにくいコースほど、抜くのに要る速さの差（need 秒/周）が大きい。モナコ級は1.4秒近く要る */ const drs = drsOK(R) && gap < 1.0, need = 0.25 + (1 - tr.ovt) * 1.6 - (drs ? drsGain(tr) : 0) - (rsNow ? 0.8 : 0), sig = 1 / (1 + Math.exp(-(adv - need) / 0.35)), p = clamp((0.03 + tr.ovt * 0.75) * sig * (0.75 + (dd.craft - da.craft) / 150) * (rsNow ? 2.2 : 1), 0, 0.9);
+        /* 抜きにくいコースほど、抜くのに要る速さの差（need 秒/周）が大きい。モナコ級は1.4秒近く要る */ const drs = drsOK(R) && gap < 1.0, need = 0.25 + (1 - tr.ovt) * 1.6 - (drs ? drsGain(tr) : 0) - (rsNow ? 0.8 : 0) - (gap < 1.0 ? 0.25 * tr.pw + 0.05 : 0), sig = 1 / (1 + Math.exp(-(adv - need) / 0.35)), p = clamp((0.03 + tr.ovt * 0.75) * sig * (0.75 + (dd.craft - da.craft) / 150) * (rsNow ? 2.2 : 1), 0, 0.9);
         if (drs) R.drsPass = (R.drsPass || 0) + (rnd() < p ? 1 : 0); if (rnd() < p) { R.passes = (R.passes || 0) + 1; if (end > ahead.lapEnd - 0.1) end = ahead.lapEnd - 0.1; ahead.lapEnd += 0.25; ahead.stuck += 2; c.stuck = 0; if (c.tm === S.my || ahead.tm === S.my) say(R, "⚔ L" + (c.lap + 1) + " " + dd.name + " が " + da.name + " を抜いた", true); }
         else { end = Math.max(end, ahead.lapEnd + 0.3); c.stuck++; }
       } else c.stuck = Math.max(0, c.stuck - 1);
@@ -1426,7 +1429,7 @@ function gpCard(tr, round) {
 }
 function trackInfo(tr) {
   const lv = (v, a) => a[v < 0.35 ? 0 : v < 0.65 ? 1 : 2];
-  return `<div class="small muted">${tr.laps}周・ピットロス約${tr.pit}秒・${lv(tr.pw, ["曲がりの多いコース", "バランス型", "直線の長いコース"])}・抜きやすさ ${lv(tr.ovt, ["低", "中", "高"])}（抜くには1周あたり約${F1.passNeed(tr)}秒速さが要る・DRSゾーン${F1.drsZones(tr)}か所で約${F1.drsGain(tr)}秒楽になる）・タイヤの減り ${tr.wear * S().regs.wear < 0.9 ? "少" : tr.wear * S().regs.wear < 1.1 ? "中" : "多"}・燃料 ${tr.fuel >= 1.08 ? "厳しい" : "普通"}・雨の確率 ${Math.round(tr.rain * 100)}%</div>`;
+  return `<div class="small muted">${tr.laps}周・ピットロス約${tr.pit}秒・${lv(tr.pw, ["曲がりの多いコース", "バランス型", "直線の長いコース"])}・抜きやすさ ${lv(tr.ovt, ["低", "中", "高"])}（抜くには1周あたり約${F1.passNeed(tr)}秒速さが要る・DRSゾーン${F1.drsZones(tr)}か所で約${F1.drsGain(tr)}秒楽になる）・1秒以内のスリップで約${(0.25*tr.pw+0.05).toFixed(1)}秒楽、1.2秒以内は乱気流でコーナー約${(0.3*(1-tr.pw)).toFixed(1)}秒遅れてタイヤも少し減る・タイヤの減り ${tr.wear * S().regs.wear < 0.9 ? "少" : tr.wear * S().regs.wear < 1.1 ? "中" : "多"}・燃料 ${tr.fuel >= 1.08 ? "厳しい" : "普通"}・雨の確率 ${Math.round(tr.rain * 100)}%</div>`;
 }
 function regCard() {
   const s = S(), r = s.regs, nx = s.nextReg, RT = F1.REG_TYPES;
@@ -1665,7 +1668,7 @@ function drawCtls() {
     if (c.fin) return `<div class="card"><b>${esc(d.name)}</b> チェッカー</div>`;
     if (!started) return planEditor(c, tr);
     const fl = fuelLeft(R, c);
-    return `<div class="card"><div class="row"><b class="sp">${esc(d.name)}　P${posOf(R, c)}${c.drs ? ' <span class="tag gold">DRS</span>' : ""}</b>${ty(c.comp)}<span class="small">${c.age}周目（崖まで約${Math.max(0, life - c.age)}周${c.est ? "" : "・データなし"}）</span></div>
+    return `<div class="card"><div class="row"><b class="sp">${esc(d.name)}　P${posOf(R, c)}${c.drs ? ' <span class="tag gold">DRS</span>' : ""}${c.dirty ? ' <span class="tag">乱気流</span>' : ""}</b>${ty(c.comp)}<span class="small">${c.age}周目（崖まで約${Math.max(0, Math.round(life - c.age - (c.dw || 0)))}周${c.dw >= 0.5 ? "・乱気流で" + c.dw.toFixed(1) + "周ぶん余計に減った" : ""}${c.est ? "" : "・データなし"}）</span></div>
 ${ucHtml(R, c)}
       <div class="small" style="margin-top:4px">燃料：<b class="${fl < 0 ? "bad" : ""}">${fl < 0 ? "約" + (-fl).toFixed(1) + "周分たりない" : "余裕 " + fl.toFixed(1) + "周分"}</b></div>
       <div class="row small" style="margin-top:6px"><span class="muted">ペース</span>${Object.keys(F1.PACE).map(k => `<button class="b ${c.pace === k ? "on" : ""}" data-pace="${c.id}:${k}">${F1.PACE[k].n}</button>`).join("")}</div>
