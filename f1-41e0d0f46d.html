@@ -1606,7 +1606,8 @@ const shortN = n => { n = String(n); if (n.includes(" ")) return n.split(" ")[0]
 // 自分の2台：順位・前後との差・直前の1周を前後の車と比べる
 // 天気レーダー（雨が近い・降っているときだけ）
 // 崖の目安：新品から何周で崖か（フリー走行のデータがあればそれで）。今のタイヤはあと何周か
-function cliffLine(R, c) { const tr = F1.TRACKS[R.tr], est = c && c.est; return `<div class="small" style="margin:4px 0">⚠ 崖の目安（新品から・普通のペース）：${["S", "M", "H"].map(k => `${ty(k)}約${F1.estLife(k, tr, est)}周`).join("　")}${est ? "" : '<span class="muted">（データなし・想定値）</span>'}</div>`; }
+// ミディアムとの差（新品同士・秒/周）：フリー走行で測ったタイヤは実測、測っていなければ推定、データなしは想定
+function cliffLine(R, c) { const tr = F1.TRACKS[R.tr], est = c && c.est, gap = k => F1.TYRE[k].off + (est ? est.off[k] : 0), src = k => !est ? "想定" : est.err[k] < 9 ? "実測" : "推定"; return `<div class="small" style="margin:4px 0">⚠ 崖の目安（新品から・普通のペース）とミディアムとの差（新品同士・1周あたり）：${["S", "M", "H"].map(k => `${ty(k)}約${F1.estLife(k, tr, est)}周・${k === "M" ? "基準" : "<b>" + (gap(k) > 0 ? "+" : "") + gap(k).toFixed(2) + "秒</b><span class=\"muted\">（" + src(k) + "）</span>"}`).join("　")}${est ? "" : '<span class="muted">（データなし・想定値）</span>'}</div>`; }
 function cliffLeft(R, c) { const tr = F1.TRACKS[R.tr]; if (!["S", "M", "H"].includes(c.comp)) return ""; const left = F1.estLife(c.comp, tr, c.est, F1.PACE[c.pace].w) - c.age; return left > 0 ? `崖まで約${left}周` : `<b class="bad">崖を越えている（${-left}周）</b>`; }
 function weatherHtml(R, full) {
   const o = F1.weatherOutlook(R); if (o.now < 0.05 && !o.comingRain) return "";
