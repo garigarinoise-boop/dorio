@@ -138,12 +138,11 @@ const F1 = (() => {
   const langOf = nat => nat === "bel" && rnd() < 0.5 ? "nl" : nat === "che" && rnd() < 0.4 ? "fr" : NAME_LANG[nat] || "en";
   const poolName = nat => { const L = langOf(nat), P = NAME_POOL[L]; return L === "zh" ? pick(P.f) + " " + pick(P.l) : pick(P.f) + "・" + pick(P.l); };
   const JP = ["早瀬 颯太", "神崎 海斗", "桐生 蓮", "城戸 大翔", "片山 湊"];
-  const JP_L = "早瀬 神崎 桐生 城戸 片山 佐伯 東條 鳴海 久遠 真壁 高槻 結城 氷室 一条 柊 朝霧 速水 九条".split(" "), JP_F = "颯太 海斗 蓮 大翔 湊 陽斗 悠真 蒼 律 晴 碧 奏太 隼 樹 迅 怜 匠 航".split(" ");
+  const JP_L = "早瀬 神崎 桐生 城戸 片山 佐伯 東條 鳴海 久遠 真壁 高槻 結城 氷室 一条 柊 朝霧 速水 九条 藤堂 篠原 白石 黒川 宮城 三浦 北条 南雲 西園寺 小野寺 長谷部 若林 本郷 相馬 天野 霧島 芹沢 水城 守谷 浅倉 滝本 日向 秋山 野々村 久我 有馬 千早 大河内 鷹野 葛城".split(" "), JP_F = "颯太 海斗 蓮 大翔 湊 陽斗 悠真 蒼 律 晴 碧 奏太 隼 樹 迅 怜 匠 航 健太 拓海 翔 大和 陸 優斗 慎吾 誠 拓真 直樹 光 圭 駿 瑛太 創 啓介 雄大 恭平 涼 一真 永遠 朔 遥斗 尚人 真央 晃 修司 侑 凌 勇気".split(" ");
   // 名前は今いる（引退した人も含む）ドライバーと重ならないように作る
   const NAMES = new Set();
   function freshName(jp, nat) {
     const used = new Set([...NAMES, ...Object.values((typeof S !== "undefined" && S && S.drivers) || {}).map(d => d.name)]), take = n => (NAMES.add(n), n);
-    if (jp) { const f = JP.filter(n => !used.has(n)); if (f.length) return take(pick(f)); }
     for (let i = 0; i < 300; i++) { const n = jp ? pick(JP_L) + " " + pick(JP_F) : nat ? poolName(nat) : pick(FIRST) + "・" + pick(LAST); if (!used.has(n)) return take(n); }
     for (let k = 2; ; k++) { const n = (jp ? pick(JP_L) + " " + pick(JP_F) : pick(FIRST) + "・" + pick(LAST)) + " " + k + "世"; if (!used.has(n)) return take(n); }
   }
