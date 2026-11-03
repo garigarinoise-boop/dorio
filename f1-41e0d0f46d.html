@@ -89,7 +89,7 @@ canvas#trk { width:100%; display:block; border-radius:10px; background:var(--gra
 .ag { display:grid; grid-template-columns:repeat(4, 1fr); gap:4px 8px; margin-top:8px; font-size:12px; } .ag div { display:flex; justify-content:space-between; gap:4px; border-bottom:1px dotted var(--line); padding:2px 0; } .ag span { color:var(--muted); }
 @media (max-width:420px) { .ag { grid-template-columns:repeat(2, 1fr); } }
 .drv { cursor:pointer; } .drv.selc { outline:3px solid var(--acc); }
-.ico { display:inline-block; width:1.15em; height:1.15em; vertical-align:-.2em; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.ico { display:inline-block; width:max(1.15em, 16px); height:max(1.15em, 16px); vertical-align:-.2em; flex:none; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
 .ico .f { fill:currentColor; stroke:none; } header .hb .ico { width:16px; height:16px; }
 .ico-sc { color:var(--flag-sc); } .ico-go { color:var(--good); } .ico-x, .ico-crash { color:var(--bad); } .ico-warn { color:var(--warn-ico); }
 .flag .ico, button.p .ico { color:inherit; }
@@ -1193,7 +1193,7 @@ const ICO = {
   sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
   moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>',
   auto: '<circle cx="12" cy="12" r="9"/><path class="f" d="M12 3a9 9 0 0 1 0 18z"/>',
-  radar: '<path d="M4 18a10 10 0 0 1 16 0M7.5 18a6 6 0 0 1 9 0"/><circle class="f" cx="12" cy="18" r="1.6"/>',
+  radar: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
   timer: '<circle cx="12" cy="14" r="7"/><path d="M12 14v-4M10 3h4M12 3v4"/>',
   crash: '<path d="M12 2l2 6 6-2-3 5 5 3-6 1 1 7-5-5-5 5 1-7-6-1 5-3-3-5 6 2z"/>',
   sc: '<path d="M3 17v-3l2.5-1 2.5-4h8l3 4 2 1v3z"/><path d="M8 9.5h8"/><circle class="f" cx="7.5" cy="17.5" r="2"/><circle class="f" cx="16.5" cy="17.5" r="2"/>',
