@@ -117,14 +117,34 @@ const F1 = (() => {
   // ---- 名前 ----
   const FIRST = "ルカ マックス オリバー ノア レオ ハーヴェイ セバスチャン マテオ アントン ニコ ラファエル ジャック リアム ダニエル アレックス マルコ フェリックス テオ エミル ヴィクトル トマス アドリアン ジョージ ランド エステバン ピエール ケビン ヤン オスカー ガブリエル アンドレア ミケル カルロス フランコ ルイス ヨナス アーサー ディノ パト リッカルド".split(" ");
   const LAST = "ベルナール ハートマン コスタ リンドクヴィスト オコナー ヴァレンティ ノヴァク フィッシャー ロッシ デュボワ サンドバル ミラー ブラント ケラー モロー アルヴェス ペトロフ ヴァイス ストーン ラングレー マルティネス ホルム ラッセル ガスリー ニールセン シューマン ドゥーハン クラーク リヴィエール ブラウン ソレンセン バルデス フォンテーヌ ヴェルナー アッカーマン ベアード".split(" ");
+  // 国ごとの名と姓（言語圏でまとめる）。中国は漢字で「姓 名」
+  const NAME_POOL = {
+    en: { f: "オリバー ハリー ジャック ジョージ チャーリー トーマス ジェームズ ウィリアム ヘンリー サム ベン ルーク ジョシュ ネイサン ライアン ディラン イーサン ケイレブ メイソン ローガン タイラー コナー ザック マット アダム".split(" "), l: "ウォーカー ハリス クラーク ライト トンプソン ベネット ヒューズ ターナー パーカー コリンズ エドワーズ スチュワート モリス ベイカー フレッチャー グラント マーシャル ハドソン ケネディ ウォレス フォスター ブルックス リード カーター ミッチェル ホール チャップマン".split(" ") },
+    de: { f: "ルーカス フェリックス ヨナス レオン マクシミリアン パウル ニクラス ティム ヤニック ファビアン ルーカ モーリッツ ユリアン トビアス ラファエル エリアス ベンヤミン マティアス".split(" "), l: "ベッカー ヴァーグナー ホフマン シュルツ コッホ リヒター クライン ヴォルフ ノイマン シュヴァルツ ツィンマーマン クラウゼ ハルトマン ブラント ケラー フランケ ヴェルナー ローレンツ フクス".split(" ") },
+    fr: { f: "ルイ ガブリエル アルチュール ラファエル ジュール エンゾ ノエ テオ バティスト アントワーヌ マキシム クレマン ロマン ユーゴ ヴァランタン ジュリアン バスティアン ニコラ".split(" "), l: "ルフェーヴル モロー ジラール ボネ デュボワ ルソー フォンテーヌ ブランシャール ショヴァン ルグラン ガルニエ ペラン リヴィエール ベルナール マルシャン デュラン ロラン ブーシェ".split(" ") },
+    it: { f: "マッテオ アレッサンドロ ロレンツォ フランチェスコ リッカルド ダヴィデ ジャコモ トンマーゾ エドアルド フェデリコ ステファノ ルカ ニコロ アンドレア ミケーレ ピエトロ ジュリオ フィリッポ".split(" "), l: "ロッシ ルッソ エスポジト ビアンキ ロマーノ コロンボ リッチ マリーニ ガッリ コンティ デ・ルカ モレッティ バルビエリ フォンタナ サントロ マリーノ グレコ ヴァレンティ".split(" ") },
+    es: { f: "アレハンドロ パブロ ハビエル ディエゴ アドリアン セルヒオ ダニエル マリオ アルバロ イケル ウーゴ ゴンサロ ラウル ルベン イバン マルティン ニコラス サンティアゴ".split(" "), l: "ガルシア ロドリゲス マルティネス ロペス サンチェス ゴメス フェルナンデス モレノ ムニョス ナバロ ルイス ロメロ ガリード カストロ オルテガ バルデス サンドバル メディナ".split(" ") },
+    pt: { f: "ガブリエル ルーカス ペドロ マテウス ラファエル ギリェルメ ヴィニシウス ブルーノ チアゴ ヴィトール カイオ フェリペ ジョアン ダヴィ エンリケ ラウル".split(" "), l: "シルヴァ サントス オリヴェイラ ソウザ ロドリゲス アルヴェス リマ ペレイラ コスタ カルヴァーリョ ゴメス マルティンス アラウージョ ヒベイロ メンデス バホス".split(" ") },
+    nl: { f: "ダーン ルーク ティム ラース セム ヨリス ブラム ティース ヨープ ルート ステイン ニルス ミルコ ケース".split(" "), l: "デ・ヨング ヤンセン デ・フリース ファン・デイク バッケル フィッセル スミット メイエル デ・ボーア ムルデル ボス フォス ペーテルス ヘンドリクス ファン・デン・ベルフ".split(" ") },
+    sv: { f: "エリック オスカー ヴィクトル アクセル グスタフ ルドヴィグ フィリップ アントン エミル ヨハン ニクラス ラスムス".split(" "), l: "リンドクヴィスト ニルソン ヨハンソン アンデション ベリストレム エングルンド ルンドベリ ホルムベリ サンドストレム ストランド ヴィクルンド".split(" ") },
+    da: { f: "マグヌス ラスムス フレデリク ミケル ヨナス マティアス クリスチャン ソーレン トビアス アスガー".split(" "), l: "ニールセン ハンセン ペーデシェン ソレンセン ラスムセン ヨルゲンセン クリステンセン ラーセン ポウルセン".split(" ") },
+    fi: { f: "ミカ ヤルノ ラウリ エリアス オンニ ヴィルヘルミ ヴァルッテリ アレクシ トゥオマス サンテリ ヨーナス".split(" "), l: "コルホネン ヴィルタネン マキネン ニエミネン ヘイッキネン ラハティネン ラークソネン ルオホネン ユンティラ".split(" ") },
+    pl: { f: "ヤクブ カツペル シモン フィリップ ミコワイ バルトシュ トマシュ パヴェウ マテウシュ ヴォイチェフ".split(" "), l: "ノヴァク コヴァルスキ ヴィシニェフスキ ヴイチク カミンスキ レヴァンドフスキ ジェリンスキ シマンスキ ヴォズニャク".split(" ") },
+    zh: { f: "王 李 張 劉 陳 楊 黄 趙 周 呉 林 何 孫".split(" "), l: "浩然 子軒 宇航 俊傑 嘉偉 博文 天佑 志遠 明哲 一凡 思遠 皓軒".split(" ") },
+    th: { f: "アヌワット ソムチャイ キッティ ナッタポン ティーラポン パコーン ウィラット チャナポン スラシット".split(" "), l: "スワンナラット ウォンサワット チャイヤプーム シーサワット ブンミー ラッタナクン サエタン ポンパイブーン".split(" ") },
+  };
+  const NAME_LANG = {gbr: "en", usa: "en", aus: "en", nzl: "en", can: "en", deu: "de", aut: "de", che: "de", fra: "fr", mco: "fr", bel: "fr", ita: "it", esp: "es", mex: "es", arg: "es", bra: "pt", nld: "nl", swe: "sv", dnk: "da", fin: "fi", pol: "pl", chn: "zh", tha: "th"};
+  // ベルギーはフランス語とオランダ語、スイスはドイツ語とフランス語が混ざる
+  const langOf = nat => nat === "bel" && rnd() < 0.5 ? "nl" : nat === "che" && rnd() < 0.4 ? "fr" : NAME_LANG[nat] || "en";
+  const poolName = nat => { const L = langOf(nat), P = NAME_POOL[L]; return L === "zh" ? pick(P.f) + " " + pick(P.l) : pick(P.f) + "・" + pick(P.l); };
   const JP = ["早瀬 颯太", "神崎 海斗", "桐生 蓮", "城戸 大翔", "片山 湊"];
   const JP_L = "早瀬 神崎 桐生 城戸 片山 佐伯 東條 鳴海 久遠 真壁 高槻 結城 氷室 一条 柊 朝霧 速水 九条".split(" "), JP_F = "颯太 海斗 蓮 大翔 湊 陽斗 悠真 蒼 律 晴 碧 奏太 隼 樹 迅 怜 匠 航".split(" ");
   // 名前は今いる（引退した人も含む）ドライバーと重ならないように作る
   const NAMES = new Set();
-  function freshName(jp) {
+  function freshName(jp, nat) {
     const used = new Set([...NAMES, ...Object.values((typeof S !== "undefined" && S && S.drivers) || {}).map(d => d.name)]), take = n => (NAMES.add(n), n);
     if (jp) { const f = JP.filter(n => !used.has(n)); if (f.length) return take(pick(f)); }
-    for (let i = 0; i < 300; i++) { const n = jp ? pick(JP_L) + " " + pick(JP_F) : pick(FIRST) + "・" + pick(LAST); if (!used.has(n)) return take(n); }
+    for (let i = 0; i < 300; i++) { const n = jp ? pick(JP_L) + " " + pick(JP_F) : nat ? poolName(nat) : pick(FIRST) + "・" + pick(LAST); if (!used.has(n)) return take(n); }
     for (let k = 2; ; k++) { const n = (jp ? pick(JP_L) + " " + pick(JP_F) : pick(FIRST) + "・" + pick(LAST)) + " " + k + "世"; if (!used.has(n)) return take(n); }
   }
   const STAFF_N = "ジェームズ アンドリュー ハンナ エイドリアン マッティア ローラン ジョナサン ピーター シモーネ ルース ベン クリスティアン マリア トト フレッド".split(" ");
@@ -192,7 +212,8 @@ const F1 = (() => {
   function newDriver(lvl, age, opt) {
     opt = opt || {};
     const st = (v, sd) => clamp(Math.round(v + gauss() * sd), 40, 98);
-    const d = { id: uid++, nat: opt.nat || (opt.jp || (opt.name && JP.includes(opt.name)) ? "jpn" : pickNat()), name: opt.name || freshName(opt.jp), age, pace: st(lvl, 4), craft: st(lvl, 6), cons: st(lvl, 6), tm: st(lvl, 7), wet: st(lvl, 9), dev: st(lvl - 4, 10), adapt: st(lvl - 2, 10), calm: st(70, 15), pot: 0, sponsor: 0, salary: 0, contract: ri(1, 3), pts: 0, wins: 0, podiums: 0, career: { starts: 0, wins: 0, titles: 0 } };
+    const nat = opt.nat || (opt.jp || (opt.name && JP.includes(opt.name)) ? "jpn" : pickNat());
+    const d = { id: uid++, nat, name: opt.name || freshName(opt.jp || nat === "jpn", nat), age, pace: st(lvl, 4), craft: st(lvl, 6), cons: st(lvl, 6), tm: st(lvl, 7), wet: st(lvl, 9), dev: st(lvl - 4, 10), adapt: st(lvl - 2, 10), calm: st(70, 15), pot: 0, sponsor: 0, salary: 0, contract: ri(1, 3), pts: 0, wins: 0, podiums: 0, career: { starts: 0, wins: 0, titles: 0 } };
     if (opt.perfect) for (const k of ["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"]) d[k] = clamp(ri(90, 96), 40, 98);
     if (opt.hot) d.calm = ri(25, 42);
     if (opt.pay) d.sponsor = ri(8, 25);
