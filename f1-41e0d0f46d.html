@@ -269,7 +269,7 @@ const F1 = (() => {
     // ほかのチームのジュニア（強いチームほど持っている）
     S.teams.forEach((tm, i) => { S.academy[tm.id] = []; const n = i < 4 ? 2 : i < 8 ? 1 : 0; for (let k = 0; k < n; k++) { const pool = S.f2.drivers.filter(id => !Object.values(S.academy).some(a => a.includes(id))); const best = pool.map(drv).sort((a, b) => b.pot - a.pot)[k * 2 + ri(0, 2)]; if (best) S.academy[tm.id].push(best.id); } });
     S.nRaces = 24; S.calendar = sortCal(TRACKS.slice(0, 24).map(t => t.id)); S.gp = {}; S.calendar.forEach(id => S.gp[id] = { left: ri(1, 5) });
-    S.nextReg = { season: 3, type: "aero" };
+    S.nextReg = { season: 3, type: "aero" }; S.nameV = 2;
     return S;
   }
   function initWorld() { S.nations = {}; for (const k in NATIONS) S.nations[k] = { fever: NATIONS[k][1], hist: [] }; }
@@ -1194,7 +1194,16 @@ const F1 = (() => {
   function restoreBackup(i) { const b = bkList(slot)[i]; if (!b) return { ok: false, msg: "ありません" }; const cur = S ? JSON.stringify(S) : null; if (!load(b.data)) return { ok: false, msg: "読み込めませんでした" }; if (cur) { const list = bkList(slot); list.unshift({ t: Date.now(), label: "巻き戻す前の状態", data: cur }); let l = list.slice(0, BK_MAX); while (l.length && !ls.set(bkKey(slot), JSON.stringify(l))) l = l.slice(0, -1); } return { ok: true, msg: "「" + b.label + "」に戻しました" }; }
   // 書き出し・読み込み（読み込む前に今の状態をバックアップに残す）
   function importSave(txt) { const cur = S ? JSON.stringify(S) : null; if (!load(txt)) { if (cur) load(cur); return { ok: false, msg: "読み込めませんでした（このゲームのセーブではないか、旧版のセーブです）" }; } if (cur) { const list = bkList(slot); list.unshift({ t: Date.now(), label: "読み込む前の状態", data: cur }); let l = list.slice(0, BK_MAX); while (l.length && !ls.set(bkKey(slot), JSON.stringify(l))) l = l.slice(0, -1); } return { ok: true, msg: "読み込みました" }; }
-  function load(txt) { try { const d = JSON.parse(txt != null ? txt : ls.get(slotKey(slot)) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d; RS = d.rs; uid = d.uid; if (!S.f2) { S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {}; S.teams.forEach(tm => S.academy[tm.id] = []); for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id); } migrate(); retroEvents(); save(); return true; } catch (e) { return false; } }
+  // 国ごとの名前になる前のセーブ：日本人以外のドライバーを付け替える。名前はニュース・記録・F2の王者などの文の中にもあるので、セーブの文字ごと置き換える
+  function renameByNat(d) {
+    const ds = Object.values(d.drivers || {}).filter(x => x.nat && x.nat !== "jpn"), used = new Set(Object.values(d.drivers || {}).map(x => x.name)), map = [];
+    ds.forEach(x => { let n = null; for (let i = 0; i < 400 && !n; i++) { const c = poolName(x.nat); if (!used.has(c)) n = c; } if (!n) return; used.add(n); map.push({ old: x.name, nw: n }); });
+    let js = JSON.stringify(d);
+    map.slice().sort((a, b) => b.old.length - a.old.length).forEach((m, i) => { m.t = "⟦" + i + "⟧"; js = js.split(m.old).join(m.t); });
+    map.forEach(m => { js = js.split(m.t).join(m.nw); });
+    const out = JSON.parse(js); out.nameV = 2; return out;
+  }
+  function load(txt) { try { const d = JSON.parse(txt != null ? txt : ls.get(slotKey(slot)) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d.nameV === 2 ? d : renameByNat(d); const renamed = d.nameV !== 2; RS = d.rs; uid = d.uid; if (!S.f2) { S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {}; S.teams.forEach(tm => S.academy[tm.id] = []); for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id); } if (renamed) RS = S.rs; migrate(); retroEvents(); save(); return true; } catch (e) { return false; } }
   function wipe() { if (S) { const list = bkList(slot); list.unshift({ t: Date.now(), label: "やり直す前の状態", data: JSON.stringify(S) }); let l = list.slice(0, BK_MAX); while (l.length && !ls.set(bkKey(slot), JSON.stringify(l))) l = l.slice(0, -1); } ls.del(slotKey(slot)); if (slot === 1) ls.del("f1_manager_save_v1"); S = null; }
   const exportSave = () => { save(); return JSON.stringify(S); };
 
