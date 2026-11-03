@@ -222,14 +222,23 @@ const F1 = (() => {
   }
   const salaryOf = d => Math.max(1, Math.round(Math.pow(Math.max(0, d.pace - 60), 2) / 28 + (d.career.titles || 0) * 6));
   const traits = d => {
-    const t = [];
+    const t = []; if (d.legend) t.push("伝説の再来");
     if (["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"].every(k => d[k] >= 88)) t.push("完全無欠");
     if (d.wet >= 88) t.push("雨の名手"); if (d.calm <= 45) t.push("カッとなりやすい"); if (d.dev >= 86) t.push("開発上手"); if (d.adapt >= 86) t.push("規則変更に強い");
     if (d.tm >= 88) t.push("タイヤを長持ちさせる"); if (d.craft >= 88) t.push("バトルに強い"); if (d.sponsor) t.push("ペイドライバー（+$" + d.sponsor + "M）"); if (d.loyal >= 75 && teamOf(d.id)) t.push("チームへの愛着が強い"); if (d.age <= 22 && d.pot >= d.pace + 6) t.push("速さの伸びしろ大");
     return t;
   };
+  // 本物に近い名前の大物新人：F2の新人にまれに混ざる（1人1回だけ）。速さは並より少し上、伸びしろは最上位、持ち味が1つ光る
+  const LEGENDS = [["マキシム・フェルスタッペル","nld","craft"],["ルイス・ハミルソン","gbr","tm"],["シャルル・ルクレーヌ","mco","pace"],["ランド・ノリッシュ","gbr","craft"],["オスカル・ピアストラ","aus","calm"],["フェルナン・アロンゾ","esp","craft"],["アイルトン・セーナ","bra","wet"],["ミハエル・シューマッカ","deu","dev"],["セバスチャン・フェッテン","deu","pace"],["キミ・ライコネル","fin","calm"],["ミカ・ハッキネル","fin","pace"],["アラン・プロスタ","fra","tm"],["ニキ・ラウダー","aut","dev"],["ジム・クラーカ","gbr","wet"],["ニコ・ロズベルト","deu","cons"],["ジェンソン・バットン","gbr","wet"],["ネルソン・ピケー","bra","adapt"],["キミ・アントネリ","ita","pace"],["フランコ・コラピーノ","arg","craft"],["アレックス・アルボーン","tha","tm"],["周 冠羽","chn","cons"],["角田 裕希","jpn","craft"],["佐藤 琢真","jpn","wet"]];
+  function legendRookie(age) {
+    const used = S.legendsUsed || (S.legendsUsed = []), left = LEGENDS.filter(x => !used.includes(x[0]) && !Object.values(S.drivers).some(d => d.name === x[0]));
+    if (!left.length || rnd() >= 0.06) return null;
+    const [name, nat, key] = pick(left); used.push(name);
+    const d = newDriver(ri(68, 73), age, { name, nat }); d.pot = key === "pace" ? 97 : ri(94, 97); if (key !== "pace") d[key] = clamp(d[key] + ri(10, 16), 40, 98); d.legend = true;
+    return d;
+  }
   // F2 の若手：今は遅いが伸びしろ（pot）がある
-  function newF2Driver(age) { const d = newDriver(ri(60, 70), age, { pay: rnd() < 0.2, hot: rnd() < 0.2, jp: rnd() < 0.05 }); d.pot = clamp(d.pace + ri(6, 24), d.pace, 97); d.f2 = { pts: 0, wins: 0, starts: 0 }; d.salary = 1; S.drivers[d.id] = d; return d; }
+  function newF2Driver(age) { const d = legendRookie(age) || newDriver(ri(60, 70), age, { pay: rnd() < 0.2, hot: rnd() < 0.2, jp: rnd() < 0.05 }); if (d.legend) { d.f2 = { pts: 0, wins: 0, starts: 0 }; d.salary = 1; S.drivers[d.id] = d; if (S.news) news(d.name + " が F2 にデビュー。どこかで聞いたような名前の大物新人"); return d; } d.pot = clamp(d.pace + ri(6, 24), d.pace, 97); d.f2 = { pts: 0, wins: 0, starts: 0 }; d.salary = 1; S.drivers[d.id] = d; return d; }
   // F1熱の高い国ほどドライバーが出やすい
   function pickNat() { const ks = Object.keys(DNAT), w = ks.map(k => DNAT[k] * (S && S.nations && S.nations[k] ? 0.5 + S.nations[k].fever / 100 : 1)), tot = w.reduce((a, b) => a + b, 0); let x = rnd() * tot; for (let i = 0; i < ks.length; i++) { x -= w[i]; if (x <= 0) return ks[i]; } return ks[0]; }
   function newStaff(kind, lvl) { return { id: uid++, kind, name: pick(STAFF_N) + "・" + pick(STAFF_L), skill: clamp(Math.round(lvl + gauss() * 5), 45, 97), salary: 0 }; }
@@ -1296,7 +1305,7 @@ function toast(t) { const d = document.createElement("div"); d.className = "toas
 const ty = c => { const T = F1.TYRE[c]; return `<span class="ty" style="border-color:${T.col}">${c}</span>`; };
 const tbar = tm => `<span class="tbar" style="background:${esc(tm.color)}"></span>`;
 const stars = (v, lo, hi) => { const n = Math.max(1, Math.min(5, Math.round((v - lo) / (hi - lo) * 4) + 1)); return `<span class="stars">${"★".repeat(n)}${"☆".repeat(5 - n)}</span>`; };
-const tags = d => F1.traits(d).map(t => `<span class="tag ${/カッと/.test(t) ? "warn" : /完全/.test(t) ? "gold" : ""}">${esc(t)}</span>`).join("");
+const tags = d => F1.traits(d).map(t => `<span class="tag ${/カッと/.test(t) ? "warn" : /完全|伝説/.test(t) ? "gold" : ""}">${esc(t)}</span>`).join("");
 function modal(html, noClose) { closeModal(); const m = document.createElement("div"); m.className = "modal"; m.id = "modal"; m.innerHTML = `<div class="sheet">${html}</div>`; m.onclick = e => { if ((!noClose && e.target === m) || e.target.hasAttribute("data-x")) closeModal(); }; document.body.appendChild(m); }
 function closeModal() { const m = document.getElementById("modal"); if (m) m.remove(); }
 // パワプロ風のランク（数値＋評価）
