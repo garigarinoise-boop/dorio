@@ -1876,7 +1876,7 @@ function fuelLeft(R, c) { const tr = F1.TRACKS[R.tr]; return c.fuel - (R.laps - 
 function drawCtls() {
   const R = S().race, box = $("#ctls"); if (!R || !box) return;
   const tr = F1.TRACKS[R.tr], mine = R.cars.filter(c => c.tm === S().my), started = !!R.started;
-  box.innerHTML = (R.started ? (mine.length ? `<div class="card" style="padding:6px 10px">${cliffLine(R, mine[0])}</div>` : "") : raceData(R)) + mine.map(c => {
+  box.innerHTML = (R.started ? `<div class="card" style="padding:6px 10px"><div class="row" style="margin-bottom:4px"><b style="font-size:16px">残り ${Math.max(0, R.laps - R.lap)} 周</b><span class="small muted">（L${Math.min(R.laps, R.lap + 1)} / ${R.laps}）</span></div>${mine.length ? cliffLine(R, mine[0]) : ""}</div>` : raceData(R)) + mine.map(c => {
     const d = F1.drv(c.id), T = F1.TYRE[c.comp], life = F1.estLife(c.comp, tr, c.est, F1.PACE[c.pace].w), nx = c.plan.stops[c.stopsDone];
     if (c.out) return `<div class="card"><b>${esc(d.name)}</b> <span class="bad">リタイア（${esc(c.why)}）</span></div>`;
     if (c.fin) return `<div class="card"><b>${esc(d.name)}</b> チェッカー</div>`;
