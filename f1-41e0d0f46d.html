@@ -225,7 +225,7 @@ const F1 = (() => {
     const t = []; if (d.legend) t.push("伝説の再来");
     if (["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"].every(k => d[k] >= 88)) t.push("完全無欠");
     if (d.wet >= 88) t.push("雨の名手"); if (d.calm <= 45) t.push("カッとなりやすい"); if (d.dev >= 86) t.push("開発上手"); if (d.adapt >= 86) t.push("規則変更に強い");
-    if (d.tm >= 88) t.push("タイヤを長持ちさせる"); if (d.craft >= 88) t.push("バトルに強い"); if (d.sponsor) t.push("ペイドライバー（+$" + d.sponsor + "M）"); if (d.loyal >= 75 && teamOf(d.id)) t.push("チームへの愛着が強い"); if (d.age <= 22 && d.pot >= d.pace + 6) t.push("速さの伸びしろ大");
+    if (d.tm >= 88) t.push("タイヤを長持ちさせる"); if (d.craft >= 88) t.push("バトルに強い"); if (d.sponsor) t.push("ペイドライバー（+$" + d.sponsor + "M）"); if (d.loyal >= 75 && teamOf(d.id)) t.push("チームへの愛着が強い"); if (d.age <= 22 && d.pot >= d.pace + 6 && S.my != null && (() => { const p = potView(d); return p.lo === p.hi; })()) t.push("速さの伸びしろ大");
     return t;
   };
   // 本物に近い名前の大物新人：F2の新人にまれに混ざる（1人1回だけ）。速さは並より少し上、伸びしろは最上位、持ち味が1つ光る
