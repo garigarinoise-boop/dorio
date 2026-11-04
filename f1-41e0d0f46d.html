@@ -1157,9 +1157,11 @@ const F1 = (() => {
   const NC_REL = [0, 6, 12, 20];
   // 2種類目は同じ力の入れ具合で、費用は6割（設計の土台を共有するぶん安い）
   const ncCost = ch => ["aero", "chassis"].reduce((a, k) => { const z = (ch[k] || {}).size || 0; return a + NC[z].cost + (z && ch[k + "2"] && ch[k + "2"].on ? Math.round(NC[z].cost * 0.6) : 0); }, 0) + NC_REL[(ch.rel || {}).size || 0];
+  // 狙った項目の伸び：その項目が低いほど伸びやすく（平均ではなく自分の値で見る）、ハズレの年でも最低 +0.6 は伸びる（平均より下の項目は少し伸びやすい）
+  const focusUp = (g, v, base) => Math.max(g * 1.3 * Math.min(1.15, clamp((99 - v) / 22, 0.25, 1.2) / clamp((99 - base) / 22, 0.25, 1.2)), 0.6);
   function newCarSpec(tm, part, focus, m, mine, base0) {
     const cur = base0 || specOf(tm, part), keys = part === "aero" ? AERO_K : CHAS_K, base = projBase(tm, part), v = {};
-    const g = rollGain(tm, base, "b") * m; keys.forEach(k => { let d; if (focus === "bal") d = g * 0.6 + gauss() * 0.6; else if (k === focus) d = g * 1.3 + gauss() * 0.5; else if (part === "aero") d = -g * 0.3 + gauss() * 0.7; else d = g * 0.2 + gauss() * 0.7; v[k] = cur[k] + d; });
+    const g = rollGain(tm, base, "b") * m; keys.forEach(k => { let d; if (focus === "bal") d = g * 0.6 + gauss() * 0.6; else if (k === focus) d = focusUp(g, cur[k], base) + gauss() * 0.5; else if (part === "aero") d = -g * 0.3 + gauss() * 0.7; else d = g * 0.2 + gauss() * 0.7; v[k] = cur[k] + d; });
     const sp = newSpec(part, v, "第" + S.season + "期 新車（" + FOCUS[part][focus] + "）"); sp.from = "第" + S.season + "期 開幕前";
     if (mine) { sp.known = false; keys.forEach(k => sp.e[k] = clamp(Math.round(sp[k] + gauss() * 2), 45, 99)); }
     tm.specs[part].unshift(sp); if (!base0) tm.use[part] = sp.id; return { part, from: cur, to: sp };
@@ -1184,7 +1186,7 @@ const F1 = (() => {
     if (p.part === "rel") { const v = Math.round(g * 1.3); tm.car.rel = clamp(tm.car.rel + v, 50, 99); if (mine) news("信頼性の対策が入った：" + (v >= 0 ? "+" : "") + v); return; }
     if (p.part === "pu") { const pp = pu(tm.pu), v = r1(g * 0.7); pp.lvl = clamp(r1(pp.lvl + v), 55, 99); if (mine || S.teams.some(t => t.id === S.my && t.pu === tm.pu)) news(pp.name + " PU のアップデート：" + (v >= 0 ? "+" : "") + v); return; }
     const cur = specOf(tm, p.part), keys = p.part === "aero" ? AERO_K : CHAS_K, v = {};
-    keys.forEach(k => { let d; if (p.focus === "bal") d = g * 0.6 + gauss() * 0.6; else if (k === p.focus) d = g * 1.3 + gauss() * 0.5; else if (p.part === "aero") d = -g * 0.35 + gauss() * 0.7; else d = g * 0.15 + gauss() * 0.7; v[k] = cur[k] + d; });
+    keys.forEach(k => { let d; if (p.focus === "bal") d = g * 0.6 + gauss() * 0.6; else if (k === p.focus) d = focusUp(g, cur[k], base) + gauss() * 0.5; else if (p.part === "aero") d = -g * 0.35 + gauss() * 0.7; else d = g * 0.15 + gauss() * 0.7; v[k] = cur[k] + d; });
     const n = tm.specs[p.part].length + 1, sp = newSpec(p.part, v, "Spec" + n + "（" + FOCUS[p.part][p.focus] + "）");
     sp.known = false; keys.forEach(k => sp.e[k] = clamp(Math.round(sp[k] + gauss() * 1.6), 45, 99)); // 工場の予測（走らせると本当の値が分かる）
     sp.from = "第" + S.season + "期 第" + (S.round + 1) + "戦";
