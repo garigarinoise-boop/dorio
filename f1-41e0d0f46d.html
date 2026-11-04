@@ -1040,10 +1040,11 @@ const F1 = (() => {
     S.ev = { id, data, title: v.title, text: v.text, ch: v.ch.map(x => x[0]) }; S.evLast = [id].concat(last).slice(0, 4);
   }
   // 画面に出す文と選択肢（いまの定義から作り直す。保存した文が古くても新しい文で出る）
-  function evView() { if (!S.ev) return null; try { const v = evBuild(S.ev.id, S.ev.data).v; return { title: v.title, text: v.text, ch: v.ch.map(x => x[0]) }; } catch (er) { return S.ev; } }
+  function evView() { if (!S.ev) return null; try { if (!EVENTS[S.ev.id]) throw 0; const v = evBuild(S.ev.id, S.ev.data).v; return { title: v.title, text: v.text, ch: v.ch.map(x => x[0]) }; } catch (er) { S.ev = null; save(); return null; } }
   function answerEvent(i) {
     if (!S.ev) return { ok: false, msg: "出来事はありません" };
-    const v = evBuild(S.ev.id, S.ev.data).v, ch = v.ch[i]; if (!ch) return { ok: false, msg: "選べません" };
+    let v; try { v = evBuild(S.ev.id, S.ev.data).v; } catch (er) { S.ev = null; save(); return { ok: true, msg: "状況が変わって、この話はなくなった" }; }
+    const ch = v.ch[i]; if (!ch) return { ok: false, msg: "選べません" };
     const msg = ch[1](); news("{i:mail} " + S.ev.title + "：" + msg); S.ev = null; save(); return { ok: true, msg };
   }
   // レースが終わったら：約束の判定・グッズの売り上げ・次戦だけの効果を消す
