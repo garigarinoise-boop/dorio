@@ -226,6 +226,7 @@ const F1 = (() => {
     if (["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"].every(k => d[k] >= 88)) t.push("完全無欠");
     if (d.wet >= 88) t.push("雨の名手"); if (d.calm <= 45) t.push("カッとなりやすい"); if (d.dev >= 86) t.push("開発上手"); if (d.adapt >= 86) t.push("規則変更に強い");
     if (d.tm >= 88) t.push("タイヤを長持ちさせる"); if (d.craft >= 88) t.push("バトルに強い"); if (d.sponsor) t.push("ペイドライバー（+$" + d.sponsor + "M）"); if (d.loyal >= 75 && teamOf(d.id)) t.push("チームへの愛着が強い"); if (d.age <= 22 && d.pot >= d.pace + 6 && S.my != null && (() => { const p = potView(d); return p.lo === p.hi; })()) t.push("速さの伸びしろ大");
+    if (d.fm && d.fm.left > 0) t.push(FM[d.fm.k] + (S.my != null && me().drivers.includes(d.id) ? "（" + (d.fm.k === "hot" ? "−" : "+") + d.fm.amt.toFixed(2) + "秒・あと" + d.fm.left + "戦）" : ""));
     return t;
   };
   // 本物に近い名前の大物新人：F2の新人にまれに混ざる（1人1回だけ）。速さは並より少し上、伸びしろは最上位、持ち味が1つ光る
@@ -375,7 +376,7 @@ const F1 = (() => {
   const feverF = c => 0.5 + ((S.nations && S.nations[c] ? S.nations[c].fever : 50) / 100);
   // ホームGP：チームの国なら全員が気合い、ドライバーの国なら大声援
   const homeB = (tm, d, tr) => (tm.nat === tr.c ? 0.03 : 0) * feverF(tr.c) + (d.nat === tr.c ? 0.06 : 0) * feverF(tr.c);
-  const perfDelta = (tm, d, tr) => (75 - carPace(tm, tr)) * 0.045 + (82 - d.pace) * 0.03 - homeB(tm, d, tr) + evPace(tm, d);
+  const perfDelta = (tm, d, tr) => (75 - carPace(tm, tr)) * 0.045 + (82 - d.pace) * 0.03 - homeB(tm, d, tr) + evPace(tm, d) + formD(d);
 
   // 戦略の見積もり
   // 第1スティントはタイヤの使用済み周回（age0）から数える
@@ -909,8 +910,57 @@ const F1 = (() => {
     const wd = drv(w.id); if (S.nations[wd.nat]) S.nations[wd.nat].fever = clamp(S.nations[wd.nat].fever + (wd.nat === tr.c ? 1 : 0.15), 5, 100);
     S.round++; S.race = null;
     S.teams.forEach(tm => { if (tm.id !== S.my) aiDevelop(tm); });
-    deliverAll(); finishBuilds(); evAfterRace(res); genEvent();
+    deliverAll(); finishBuilds(); evAfterRace(res); formAfterRace(res); genEvent();
     save(); return rec;
+  }
+
+  // ---- ドライバーの調子と覚醒（レースのあと） ----
+  // d.fm = { k: hot|cold|slump, amt: 秒/周, left: 残り戦数, why: 理由, asked: 出来事を出したか }。d.hist = 直近3戦の順位（リタイアは -1）
+  const FM = { hot: "▲ 好調", cold: "▼ 不調", slump: "▼▼ スランプ" };
+  const FM_WHY = {
+    hot: ["マシンの感触がよくなって、自信がついた", "新しいセットアップがはまった", "エンジニアとの息が合ってきた", "表彰台の流れに乗っている", "走りがかみ合い、迷いがなくなった"],
+    cold: ["マシンの感触がつかめず、迷っている", "私生活で気がかりがあるらしい", "チームメイトに差をつけられて焦っている", "続いたミスで自信をなくしている", "体調が万全ではない"],
+    slump: ["何をやってもかみ合わない。走りの迷路に入り込んでしまった", "大きなクラッシュの記憶が抜けず、攻めきれない"]
+  };
+  const formD = d => d && d.fm && d.fm.left > 0 ? (d.fm.k === "hot" ? -d.fm.amt : d.fm.amt) : 0;
+  // 覚醒：何かをつかんで、能力が一気に伸びる（恒久）
+  function awaken(d) {
+    const k = pick(["pace", "pace", "pace", "wet", "calm", "craft", "cons", "tm"]); let v, what, why;
+    if (k === "pace") { v = d.age > 28 ? ri(1, 2) : ri(2, 4); d.pace = clamp(d.pace + v, 40, 98); if (d.pot < d.pace) d.pot = d.pace; what = "速さ +" + v; why = "ある日、マシンの限界の使い方をつかんだ"; }
+    else if (k === "wet") { v = ri(6, 10); d.wet = clamp(d.wet + v, 40, 98); what = "雨 +" + v; why = "雨の中で急に走り方が分かった"; }
+    else if (k === "calm") { v = ri(8, 14); d.calm = clamp(d.calm + v, 20, 98); what = "冷静さ +" + v; why = "落ち着いて走れるようになった"; }
+    else if (k === "craft") { v = ri(4, 7); d.craft = clamp(d.craft + v, 40, 98); what = "バトル +" + v; why = "抜き方と守り方のコツをつかんだ"; }
+    else if (k === "cons") { v = ri(4, 7); d.cons = clamp(d.cons + v, 40, 98); what = "安定感 +" + v; why = "ミスが急に減った"; }
+    else { v = ri(4, 7); d.tm = clamp(d.tm + v, 40, 98); what = "タイヤ管理 +" + v; why = "タイヤのいたわり方が分かった"; }
+    d.awk = (d.awk || 0) + 1; d.salary = salaryOf(d); return { what, why };
+  }
+  function formAfterRace(res) {
+    const sc = perRace(), mineIds = S.my != null ? me().drivers : [], seated = Array.from(new Set(S.teams.flatMap(t => t.drivers)));
+    seated.forEach(id => {
+      const d = drv(id), c = res.find(x => x.id === id), mine = mineIds.includes(id);
+      d.hist = (d.hist || []).concat([c ? (c.out ? -1 : c.pos) : 0]).slice(-3);
+      if (d.fm) { d.fm.left--; if (d.fm.left <= 0) { if (mine) news("{i:go} " + d.name + "：" + FM[d.fm.k].replace(/^[▲▼ ]+/, "") + " が終わり、いつもの調子に戻った"); delete d.fm; } }
+      if (!d.fm) {
+        const h = d.hist, gm = d.gt === "streaky" ? 2 : 1, podium = h.length >= 2 && h.slice(-2).every(p => p > 0 && p <= 3), dnf = h[h.length - 1] === -1 && c && c.why === "クラッシュ";
+        const pH = (0.018 + (podium ? 0.08 : 0)) * sc * gm, pC = (0.018 + (100 - d.calm) / 2500 + (dnf ? 0.05 : 0)) * sc * gm, pS = 0.0015 * sc * gm * (d.calm < 50 ? 2 : 1), r = rnd();
+        const k = r < pS ? "slump" : r < pS + pH ? "hot" : r < pS + pH + pC ? "cold" : null;
+        if (k) {
+          d.fm = { k, amt: r2(k === "hot" ? 0.1 + rnd() * 0.15 : k === "cold" ? 0.1 + rnd() * 0.2 : 0.25 + rnd() * 0.15), left: k === "slump" ? ri(8, 14) : ri(3, 6), why: pick(FM_WHY[k]) };
+          if (mine) news((k === "hot" ? "{i:go} " : "{i:warn} ") + d.name + " が" + FM[k].replace(/^[▲▼ ]+/, "") + "：" + d.fm.why + "（約" + d.fm.amt.toFixed(2) + "秒/周・あと" + d.fm.left + "戦）");
+        }
+      }
+      if (d.age <= 30 && rnd() < 0.005 * sc * (d.gt === "streaky" ? 2.5 : d.gt === "late" ? 2 : d.gt === "early" ? 0.5 : 1) * (mine ? 1.5 : 1)) {
+        const a = awaken(d), t = teamOf(d.id);
+        news("{i:go} " + (mine ? "" : (t ? t.short + " の" : "")) + d.name + " が覚醒：" + a.why + "（" + a.what + "）");
+        if (mine) S.awk = { d: id, what: a.what, why: a.why };
+      }
+    });
+    // F2 のドライバー（自分のジュニアにはニュースを出す）
+    const mineJ = S.my != null ? academyOf(S.my) : [];
+    (S.f2 ? S.f2.drivers : []).forEach(id => {
+      const d = drv(id); if (!d || d.age > 25) return;
+      if (rnd() < 0.008 * sc * (d.gt === "streaky" ? 2.5 : d.gt === "late" ? 2 : d.gt === "early" ? 0.5 : 1)) { const a = awaken(d); if (mineJ.includes(id)) news("{i:go} ジュニアの " + d.name + " が覚醒：" + a.why + "（" + a.what + "）"); }
+    });
   }
 
   // ---- パドックの出来事（レースのあと、選択肢つき） ----
@@ -943,6 +993,28 @@ const F1 = (() => {
     jrClash: { w: 3, when: c => c.f2my.some(r => r.crash), make: (c, x) => { const d = drv(c.f2my.find(r => r.crash).id); return { title: "ジュニアの F2 でのミス", text: `${d.name} が F2 で無理な飛び込みをして順位を落とした。`, ch: [["かばう（思い入れ +5）", () => { jrOf(d).bond += 5; return `${d.name} をかばった`; }], ["厳しく叱る（冷静さ +1・思い入れ −4）", () => { jrUp(d, "calm"); jrOf(d).bond -= 4; return `${d.name} を叱った。冷静さが少し上がった`; }]] }; } },
     taunt: { w: 2, when: c => !!c.rival, make: (c, x) => ({ title: "ライバルの代表の挑発", text: `${c.rival.name} の代表が「あのチームはまぐれで速いだけだ」と話している。`, ch: [["言い返す（士気 +3・次戦で負けると士気 −3）", () => { addMor(c.tm, 3); evN().cond.push({ k: "beat", tm: c.rival.id, v: -3 }); return `${c.rival.name} の代表に言い返した`; }], ["相手にしない（士気 +1）", () => { addMor(c.tm, 1); return "挑発は相手にしなかった"; }]] }) }
   };
+  Object.assign(EVENTS, {
+    slump: { w: 6, when: c => c.ds.some(d => d.fm && d.fm.left > 0 && d.fm.k !== "hot" && !d.fm.asked),
+      data: () => { const d = me().drivers.map(drv).find(d => d.fm && d.fm.left > 0 && d.fm.k !== "hot" && !d.fm.asked); d.fm.asked = true; return { d: d.id }; },
+      make: (c, x) => { const d = drv(x.d), f = d.fm || { k: "cold", amt: 0.15, left: 3, why: "" };
+        return { title: d.name + " の" + FM[f.k].replace(/^[▲▼ ]+/, ""), text: d.name + "：" + (f.why || "調子が落ちている") + "。このままだと、あと約" + f.left + "戦、1周あたり約" + f.amt.toFixed(2) + "秒遅い。",
+          ch: [["メンタルコーチをつける（$1M・遅れも期間も半分・冷静さ +1）", () => { pay(c.tm, 1); if (d.fm) { d.fm.left = Math.max(1, Math.ceil(d.fm.left / 2)); d.fm.amt = Math.round(d.fm.amt * 50) / 100; } d.calm = clamp(d.calm + 1, 20, 98); return d.name + " にメンタルコーチをつけた。立て直しが早まる"; }],
+            ["そっとしておく（費用なし・愛着 +3）", () => { addLoy(d, 3); return d.name + " をそっとしておいた。信頼してくれているのが伝わった"; }],
+            ["データで原因を探す（$0.5M・60%で原因が見つかり、すぐ回復。外れても期間が1戦短くなる）", () => { pay(c.tm, 0.5); if (!d.fm) return "調べたが、もう調子は戻っていた"; if (rnd() < 0.6) { delete d.fm; return d.name + "：データから原因が見つかり、すぐ調子が戻った"; } d.fm.left = Math.max(1, d.fm.left - 1); return "原因は分からなかったが、ヒントは得られた。期間が少し短くなった"; }]] }; } },
+    hot: { w: 4, when: c => c.ds.some(d => d.fm && d.fm.left > 0 && d.fm.k === "hot" && !d.fm.asked),
+      data: () => { const d = me().drivers.map(drv).find(d => d.fm && d.fm.left > 0 && d.fm.k === "hot" && !d.fm.asked); d.fm.asked = true; return { d: d.id }; },
+      make: (c, x) => { const d = drv(x.d), f = d.fm || { k: "hot", amt: 0.15, left: 3, why: "" };
+        return { title: d.name + " が好調", text: d.name + "：" + (f.why || "走りが乗っている") + "。あと約" + f.left + "戦、1周あたり約" + f.amt.toFixed(2) + "秒速い。",
+          ch: [["勢いに乗せる（次戦はさらに 0.1秒速い・好調があと1戦短くなる）", () => { evN().paceD[d.id] = (evN().paceD[d.id] || 0) - 0.1; if (d.fm) d.fm.left = Math.max(1, d.fm.left - 1); return d.name + " を勢いに乗せた。次戦は攻める"; }],
+            ["好調のうちに契約を延ばす（愛着 +8・契約 +1年（最大3年））", () => { d.contract = clamp(d.contract + 1, 1, 3); addLoy(d, 8); return d.name + " と契約を延ばした。チームへの愛着が強まった"; }],
+            ["自信をつけさせる（冷静さ +1・好調があと1戦長引く）", () => { d.calm = clamp(d.calm + 1, 20, 98); if (d.fm) d.fm.left += 1; return d.name + " に自信をつけさせた。好調が少し長引きそうだ"; }]] }; } },
+    awake: { w: 0, when: () => false,
+      make: (c, x) => { const d = drv(x.d);
+        return { title: d.name + " が覚醒", text: d.name + "：" + (x.why || "何かをつかんだ") + "（" + (x.what || "") + "）。能力が一段上がった。この変化をどう生かす？",
+          ch: [["取材とファンの前で盛り上げる（+$1M・F1熱 +2）", () => { c.tm.budget += 1; const n = S.nations[d.nat]; if (n) n.fever = clamp(n.fever + 2, 0, 100); return d.name + " の覚醒が話題になり、$1M の協賛が入った"; }],
+            ["この勢いで契約を結び直す（愛着 +8・契約 +1年（最大3年））", () => { d.contract = clamp(d.contract + 1, 1, 3); addLoy(d, 8); return d.name + " と契約を延ばした"; }],
+            ["気づきをチームで共有する（士気 +3）", () => { addMor(c.tm, 3); return d.name + " の気づきをチームで共有した。士気が上がった"; }]] }; } }
+  });
   function evCtx() {
     const tm = me(), rec = S.last, rs = rec ? rec.res.filter(r => r.tm === S.my) : [], fin = rs.filter(r => !r.out).sort((a, b) => a.pos - b.pos), top = fin[0];
     const dnfR = rs.find(r => r.out), tt = teamTable(), myI = tt.findIndex(x => x.id === S.my), rival = tt[myI - 1] || tt[myI + 1];
@@ -951,6 +1023,7 @@ const F1 = (() => {
   function evBuild(id, data) { const c = evCtx(), E = EVENTS[id]; return { c, v: E.make(c, data || {}) }; }
   // レースのあとに出来事を1つ（だいたい8割）。同じ出来事は続けない
   function genEvent() {
+    if (!S.ev && S.awk != null && S.my != null) { const data = S.awk, v = evBuild("awake", data).v; S.awk = null; S.ev = { id: "awake", data, title: v.title, text: v.text, ch: v.ch.map(x => x[0]) }; S.evLast = ["awake"].concat(S.evLast || []).slice(0, 4); return; }
     if (S.ev || S.my == null || rnd() > 0.8) return;
     const c = evCtx(), last = S.evLast || [], pool = Object.entries(EVENTS).filter(([k, E]) => !last.includes(k) && (() => { try { return E.when(c); } catch (e) { return false; } })());
     if (!pool.length) return;
@@ -1358,7 +1431,7 @@ const F1 = (() => {
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
   const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * 0.55, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.016 : 0.0095)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
-  return { ncRoom, gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { FM, formD, ncRoom, gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
