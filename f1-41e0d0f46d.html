@@ -216,7 +216,7 @@ const F1 = (() => {
     if (opt.perfect) for (const k of ["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"]) d[k] = clamp(ri(90, 96), 40, 98);
     if (opt.hot) d.calm = ri(25, 42);
     if (opt.pay) d.sponsor = ri(8, 25);
-    d.pot = age <= 23 ? clamp(d.pace + ri(3, 12), d.pace, 97) : d.pace;
+    if (age <= 23) assignGrowth(d); else d.pot = d.pace;
     d.salary = salaryOf(d);
     return d;
   }
@@ -234,7 +234,7 @@ const F1 = (() => {
     const used = S.legendsUsed || (S.legendsUsed = []), left = LEGENDS.filter(x => !used.includes(x[0]) && !Object.values(S.drivers).some(d => d.name === x[0]));
     if (!left.length || rnd() >= 0.06) return null;
     const [name, nat, key] = pick(left); used.push(name);
-    const d = newDriver(ri(68, 73), age, { name, nat }); d.pot = key === "pace" ? 97 : ri(94, 97); if (key !== "pace") d[key] = clamp(d[key] + ri(10, 16), 40, 98); d.legend = true;
+    const d = newDriver(ri(68, 73), age, { name, nat }); d.pot = key === "pace" ? 97 : ri(94, 97); if (key !== "pace") d[key] = clamp(d[key] + ri(10, 16), 40, 98); d.gt = pick(["early", "late", "steady"]); d.legend = true;
     return d;
   }
   // F2 の若手：今は遅いが伸びしろ（pot）がある
@@ -277,7 +277,7 @@ const F1 = (() => {
     // ほかのチームのジュニア（強いチームほど持っている）
     S.teams.forEach((tm, i) => { S.academy[tm.id] = []; const n = i < 4 ? 2 : i < 8 ? 1 : 0; for (let k = 0; k < n; k++) { const pool = S.f2.drivers.filter(id => !Object.values(S.academy).some(a => a.includes(id))); const best = pool.map(drv).sort((a, b) => b.pot - a.pot)[k * 2 + ri(0, 2)]; if (best) S.academy[tm.id].push(best.id); } });
     S.nRaces = 24; S.calendar = sortCal(TRACKS.slice(0, 24).map(t => t.id)); S.gp = {}; S.calendar.forEach(id => S.gp[id] = { left: ri(1, 5) });
-    S.nextReg = { season: 3, type: "aero" }; S.nameV = 2;
+    S.nextReg = { season: 3, type: "aero" }; S.nameV = 2; S.gtV = 1;
     return S;
   }
   function initWorld() { S.nations = {}; for (const k in NATIONS) S.nations[k] = { fever: NATIONS[k][1], hist: [] }; }
@@ -428,7 +428,7 @@ const F1 = (() => {
     sim: { n: "シミュレーター", i: "{i:pad}", d: "レースのたびにドライバーが少しずつ育つ", e: L => "毎戦 " + (L - 1) * 3 + "% の確率で各ドライバーの能力 +1" },
     pit: { n: "ピット練習場", i: "{i:wrench}", d: "ピット作業が速く、ミスが減る", e: L => "ピットクルーの腕 +" + r1((L - 1) * 0.8) },
     data: { n: "データ解析室", i: "{i:chart}", d: "戦略の見立て・SC への反応・フリー走行の読みが正確に", e: L => "戦略担当の腕 +" + r1((L - 1) * 0.8) },
-    acad: { n: "育成アカデミー", i: "{i:cap}", d: "ジュニアがオフにさらに伸びる", e: L => "ジュニアの速さ +1 の確率 " + (L - 1) * 6 + "%（毎年）" },
+    acad: { n: "育成アカデミー", i: "{i:cap}", d: "ジュニアがオフにさらに伸び、才能（伸びしろ・成長タイプ）が早く見える", e: L => "速さ +1 の確率 " + (L - 1) * 6 + "%（毎年）・成長タイプが分かるまで " + (L >= 7 ? 1 : L >= 4 ? 2 : 3) + "年" },
     home: { n: "チームハウス", i: "{i:home}", d: "スタッフの居心地が良くなり、士気が下がりにくい", e: L => "士気の平常値 " + Math.round(60 + (L - 1) * 1.1) }
   };
   const fl = (tm, k) => (tm && tm.fl && tm.fl[k]) || 1;
@@ -981,6 +981,18 @@ const F1 = (() => {
   // ---- F2 ----
   // ---- ジュニアの育成 ----
   // d.jr = { focus: 練習する能力, int: 強さ(0〜2), ord: F2 の指示, mentor: メンターの F1 ドライバー, hurt: けがで休む残り戦数, bond: チームへの思い入れ（F1 に上げたときの愛着に足す）, promised: 「F1 に上げる」と約束したシーズン }
+  // 成長タイプ：年ごとの「伸びしろの残りのうち何割を伸ばすか」が歳で変わる。ムラは年ごとのぶれが大きい
+  const GT = {
+    early: { n: "早熟", d: "19〜21歳で一気に伸びて、そのあとは止まりやすい", r: a => a <= 21 ? 0.65 : a <= 23 ? 0.25 : 0.1 },
+    late: { n: "晩成", d: "若いうちはゆっくり。22〜25歳で急に伸びる", r: a => a <= 21 ? 0.2 : a <= 25 ? 0.6 : 0.3 },
+    steady: { n: "安定", d: "毎年同じくらいずつ伸びる", r: () => 0.42 },
+    streaky: { n: "ムラ", d: "年によって大きく伸びたり、止まったりする", r: () => 0.42, sd: 2.4 },
+    ready: { n: "完成型", d: "最初から完成度が高い。伸びしろは小さい", r: () => 0.45 }
+  };
+  function assignGrowth(d) { const w = rnd(), t0 = w < 0.2 ? "early" : w < 0.4 ? "late" : w < 0.7 ? "steady" : w < 0.85 ? "streaky" : "ready", t = t0 === "ready" && d.pace < 76 ? "steady" : t0, r = { early: [3, 11], late: [7, 18], steady: [4, 14], streaky: [2, 18], ready: [0, 3] }[t]; d.gt = t; d.pot = clamp(d.pace + ri(r[0], r[1]), d.pace, 97); }
+  const gtStep = (d, a) => { const g = GT[d.gt || "steady"], gap = Math.max(0, d.pot - d.pace); return clamp(Math.round(gap * g.r(a) + (g.sd ? gauss() * g.sd : 0)), 0, Math.min(6, gap)); };
+  // 引き直し：古いセーブの24歳以下（ジュニア・F2・若手）に成長タイプと新しい伸びしろを配る
+  function migrateGrowth() { Object.values(S.drivers).forEach(d => { if (d.age > 23) return; if (d.legend) d.gt = pick(["early", "late", "steady"]); else assignGrowth(d); }); S.gtV = 1; news("{i:mail} ジュニアと若手の伸びしろを引き直した。伸びしろは見えにくくなり、育成アカデミーで才能を見極める形に"); }
   const JR_FOCUS = { pace: "速さ", craft: "バトル", cons: "安定感", tm: "タイヤ管理", wet: "雨", calm: "冷静さ", dev: "開発", adapt: "規則変更" };
   const JR_INT = [{ n: "軽め", cost: 0, p: 0.10 }, { n: "しっかり", cost: 0.3, p: 0.22 }, { n: "つきっきり", cost: 0.8, p: 0.38, hurt: 0.03 }];
   const JR_ORD = { bal: "いつもどおり", push: "攻める", safe: "確実に完走" };
@@ -1023,13 +1035,20 @@ const F1 = (() => {
   }
   const R0 = () => rnd();
   const f2Table = () => S.f2.drivers.map(drv).sort((a, b) => b.f2.pts - a.f2.pts || b.f2.wins - a.f2.wins);
-  const academyFee = d => 2 + Math.round(Math.max(0, d.pot - 75) / 4);
+  const academyFee = d => { const p = potView(d); return 2 + Math.round(Math.max(0, (p.lo + p.hi) / 2 - 75) / 4); };
   function joinAcademy(id) { const tm = me(), a = academyOf(tm.id), d = drv(id); if (a.length >= 3) return { ok: false, msg: "ジュニアは3人までです" }; if (Object.entries(S.academy).some(([t, l]) => +t !== tm.id && l.includes(id))) return { ok: false, msg: "ほかのチームのジュニアです" }; const fee = academyFee(d); if (tm.budget < fee) return { ok: false, msg: "予算が足りません（" + money(fee) + "）" }; tm.budget -= fee; a.push(id); S.academy[tm.id] = a; news(d.name + " をジュニアに迎えた（年 " + money(fee) + "）"); save(); return { ok: true, msg: d.name + " をジュニアに入れました" }; }
   function leaveAcademy(id) { const tm = me(); S.academy[tm.id] = academyOf(tm.id).filter(x => x !== id); if (!S.f2.drivers.includes(id)) { drv(id).reserve = false; drv(id).salary = salaryOf(drv(id)); S.free.push(id); } save(); return { ok: true, msg: "ジュニアから外しました" }; }
   // ジュニアを F1 に上げる（今のドライバーと交代、契約金なし）
   function promote(outId, inId) { const tm = me(); if (!isAcademy(inId, tm.id)) return { ok: false, msg: "ジュニアではありません" }; if (S.race) return { ok: false, msg: "レース週末中はできません" }; tm.drivers = tm.drivers.map(x => x === outId ? inId : x); S.academy[tm.id] = academyOf(tm.id).filter(x => x !== inId); S.f2.drivers = S.f2.drivers.filter(x => x !== inId); S.free.push(outId); const d = drv(inId); d.reserve = false; d.contract = 2; d.loyal = clamp(Math.round(70 + (d.jr ? d.jr.bond : 0)), 30, 95); if (d.jr) d.jr.promised = null; d.salary = salaryOf(d); tm.budget += d.sponsor; news(d.name + " がジュニアから F1 に昇格（" + drv(outId).name + " と交代）"); save(); return { ok: true, msg: d.name + " を F1 に上げました" }; }
   // スカウト：伸びしろは推定の幅（戦略担当の腕で少し正確に）
-  function potView(d) { const tm = me(); if (isAcademy(d.id, tm.id) || tm.drivers.includes(d.id)) return { lo: d.pot, hi: d.pot }; const err = 7, mid = clamp(d.pot + Math.round(((d.id * 7919) % 11) - 5), d.pace, 99); return { lo: clamp(mid - err, d.pace, 99), hi: clamp(mid + err, d.pace, 99) }; }
+  const gtKnown = d => { const tm = me(); if (tm.drivers.includes(d.id)) return true; if (!isAcademy(d.id, tm.id) || !d.jr) return false; const L = fl(tm, "acad"); return (d.jr.yrs || 0) >= (L >= 7 ? 1 : L >= 4 ? 2 : 3); };
+  const gtView = d => { const g = GT[d.gt || "steady"]; return { known: gtKnown(d), n: g.n, d: g.d }; };
+  function potView(d) {
+    const tm = me(), L = fl(tm, "acad"); if (tm.drivers.includes(d.id)) return { lo: d.pot, hi: d.pot };
+    const mine = isAcademy(d.id, tm.id), yrs = mine && d.jr ? d.jr.yrs || 0 : 0; if (mine && yrs >= 4) return { lo: d.pot, hi: d.pot };
+    const err = mine ? Math.max(2, Math.round(7 - yrs * 1.5 - (L - 1) * 0.4)) : Math.round(clamp(8 - (L - 1) * 0.4, 5, 8)), mid = d.pot + Math.round((((d.id * 7919) % 11) - 5) * err / 7);
+    return { lo: clamp(mid - err, d.pace, 99), hi: clamp(mid + err, d.pace, 99) };
+  }
 
   // ---- 開発（パーツの発注） ----
   const FOCUS = { aero: { df: "ダウンフォース重視", drag: "ストレート重視", bal: "バランス" }, chassis: { low: "低速コーナー", high: "高速コーナー", tyre: "タイヤに優しく", bal: "バランス" }, rel: { bal: "信頼性" }, pu: { bal: "パワー" } };
@@ -1210,7 +1229,7 @@ const F1 = (() => {
       const yk = (k, b) => up(k, b + Math.min(2, Math.max(0, Math.round((78 - d[k]) * 0.15))));
       // F1 に上げる目安は能力の平均 80。24歳以下は速さ以外の能力が水準 85 に向けて年 +1〜+4（低いほど速い）
       const yk2 = k => up(k, 1 + Math.min(3, Math.max(0, Math.round((85 - d[k]) * 0.15))));
-      if (young) { up("pace", Math.min(4, Math.max(0, Math.round((d.pot - d.pace) * 0.45)))); yk2("craft"); yk2("cons"); yk2("tm"); yk2("dev"); yk2("adapt"); yk2("wet"); }
+      if (young) { const gap0 = Math.max(0, d.pot - d.pace), st = gtStep(d, a); up("pace", st); if (S.my != null && isAcademy(d.id, S.my)) { if (st >= 5) news("{i:go} " + d.name + " の速さが急に伸びた（+" + st + "）"); else if (d.gt === "streaky" && st === 0 && gap0 > 5) news("{i:warn} " + d.name + " は今年は伸び悩んだ（速さは変わらず）"); } yk2("craft"); yk2("cons"); yk2("tm"); yk2("dev"); yk2("adapt"); yk2("wet"); }
       else if (prime) { up("pace", a <= 27 ? 1 : 0); up("craft", 1); up("cons", 1); up("tm", 1); up("dev", 1); up("adapt", 0); up("wet", 0); }
       else { up("pace", old ? -2 : -1); up("craft", old ? -2 : -1); up("cons", 1); up("tm", 1); up("dev", 2); up("adapt", old ? -1 : 0); up("wet", 0); }
       d.calm = clamp(d.calm + (a <= 24 ? 2 : a >= 29 ? 2 : 1) + Math.round(gauss() * 1), 20, 98); // 経験で落ち着く
@@ -1221,7 +1240,7 @@ const F1 = (() => {
     S.teams.forEach(tm => { const rank = tt.indexOf(tm); tm.devp = clamp(Math.round(tm.devp + (rank < 3 ? 1 : rank > 7 ? -1 : 0) + (tm.budget > 160 ? 1 : tm.budget < 90 ? -1 : 0) + gauss() * 1.2), 40, 95); for (const k of ["strat", "crew"]) { const st = tm.staff[k]; st.skill = clamp(Math.round(st.skill + gauss() * 1.5 + (k === "crew" ? 0.5 : 0)), 40, 97); } });
     S.staffPool.forEach(st => st.skill = clamp(Math.round(st.skill + gauss() * 1.5), 40, 97));
     // ジュニアは毎年もう少し伸びる（チームの育成）
-    Object.entries(S.academy || {}).forEach(([t, l]) => l.forEach(id => { const d = drv(id); if (d.pace < d.pot) { d.pace = Math.min(d.pot, d.pace + 1 + (rnd() < 0.5 ? 1 : 0) + (rnd() < (fl(team(+t), "acad") - 1) * 0.06 ? 1 : 0)); } const lo = ["craft", "cons", "tm", "wet"].sort((a, b) => d[a] - d[b])[0]; d[lo] = clamp(d[lo] + 1 + (rnd() < (fl(team(+t), "acad") - 1) * 0.06 ? 1 : 0), 35, 98); }));
+    Object.entries(S.academy || {}).forEach(([t, l]) => l.forEach(id => { const d = drv(id); if (+t === S.my) { const j = jrOf(d); j.yrs = (j.yrs || 0) + 1; if (!j.gtShown && gtKnown(d)) { j.gtShown = true; news("{i:mail} " + d.name + "：成長タイプは「" + GT[d.gt || "steady"].n + "型」と分かった"); } } if (d.pace < d.pot) { d.pace = Math.min(d.pot, d.pace + 1 + (rnd() < 0.5 ? 1 : 0) + (rnd() < (fl(team(+t), "acad") - 1) * 0.06 ? 1 : 0)); } const lo = ["craft", "cons", "tm", "wet"].sort((a, b) => d[a] - d[b])[0]; d[lo] = clamp(d[lo] + 1 + (rnd() < (fl(team(+t), "acad") - 1) * 0.06 ? 1 : 0), 35, 98); }));
     const growth = myIds.map(id => { const d = drv(id), b = before[id], diff = {}; ["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"].forEach(k => { if (d[k] !== b[k]) diff[k] = d[k] - b[k]; }); return { id, name: d.name, age: d.age, diff }; });
     rec.growth = growth;
     const retire = Object.values(S.drivers).filter(d => d.age >= 36 && rnd() < 0.3 + (d.age - 36) * 0.25 || d.age >= 40);
@@ -1325,7 +1344,7 @@ const F1 = (() => {
     map.forEach(m => { js = js.split(m.t).join(m.nw); });
     const out = JSON.parse(js); out.nameV = 2; return out;
   }
-  function load(txt) { try { const d = JSON.parse(txt != null ? txt : ls.get(slotKey(slot)) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d.nameV === 2 ? d : renameByNat(d); const renamed = d.nameV !== 2; RS = d.rs; uid = d.uid; if (!S.f2) { S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {}; S.teams.forEach(tm => S.academy[tm.id] = []); for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id); } if (renamed) RS = S.rs; migrate(); retroEvents(); save(); return true; } catch (e) { return false; } }
+  function load(txt) { try { const d = JSON.parse(txt != null ? txt : ls.get(slotKey(slot)) || "null"); if (!d || !d.teams || d.v !== 2) return false; S = d.nameV === 2 ? d : renameByNat(d); const renamed = d.nameV !== 2; RS = d.rs; uid = d.uid; if (S.gtV !== 1) migrateGrowth(); if (!S.f2) { S.f2 = { drivers: [], results: [], champs: [] }; S.academy = {}; S.teams.forEach(tm => S.academy[tm.id] = []); for (let k = 0; k < 22; k++) S.f2.drivers.push(newF2Driver(ri(17, 21)).id); } if (renamed) RS = S.rs; migrate(); retroEvents(); save(); return true; } catch (e) { return false; } }
   function wipe() { if (S) { const list = bkList(slot); list.unshift({ t: Date.now(), label: "やり直す前の状態", data: JSON.stringify(S) }); let l = list.slice(0, BK_MAX); while (l.length && !ls.set(bkKey(slot), JSON.stringify(l))) l = l.slice(0, -1); } ls.del(slotKey(slot)); if (slot === 1) ls.del("f1_manager_save_v1"); S = null; }
   const exportSave = () => { save(); return JSON.stringify(S); };
 
@@ -1337,7 +1356,7 @@ const F1 = (() => {
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
   const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * 0.55, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.016 : 0.0095)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
-  return { evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -2144,9 +2163,10 @@ function vTeam() {
       <p class="hint">練習：選んだ能力が毎戦伸びることがある（軽め 約2・しっかり 約4・つきっきり 約7／シーズン。つきっきりはたまにけがで F2 を2戦休む）。F2の指示：攻める＝順位が上がりやすいがミスしやすい、確実に完走＝少し遅いがミスしにくい。メンター：冷静さと安定感が伸びやすく、メンター役の愛着も少し上がる。F2 で勝つ・表彰台・メンターで「思い入れ」がたまり、F1 に上げたときの愛着に足される（今 ${Math.round(j.bond)}）。</p>
       ${j.hurt ? `<p class="small bad">けがで F2 を あと${j.hurt}戦 休む</p>` : ""}${j.promised ? `<p class="small warnc">第${j.promised}シーズンまでに F1 に上げると約束している</p>` : ""}${last ? `<p class="small">前戦の F2（${esc(last.gp)}）：<b>${last.hurt ? "欠場" : last.crash ? "ミスで後退" : last.pos + "位"}</b>（${F1.JR_ORD[last.ord] || ""}）${j.gain ? "・練習で伸びた合計 +" + j.gain : ""}</p>` : ""}</div>`; };
     const ac = F1.academyOf(t.id), ft = F1.f2Table(), owner = id => { const e = Object.entries(s.academy).find(([k, l]) => l.includes(id)); return e ? F1.team(+e[0]) : null; };
+    const gv = d => { const g = F1.gtView(d); return g.known ? ` <span class="tag gold">${g.n}型</span><span class="small muted"> ${g.d}</span>` : ' <span class="tag">成長タイプ：まだ分からない</span>'; };
     const pv = d => { const p = F1.potView(d); return p.lo === p.hi ? "速さの伸びしろ " + p.hi : "速さの伸びしろ " + p.lo + "〜" + p.hi + "（推定）"; };
-    body = `<div class="card"><h3>自分のジュニア（${ac.length}/3）</h3><p class="small muted">ジュニアは F2 を走りながら、毎年ふつうより少し多く伸びます（速さと、速さ以外でいちばん低い能力）。「速さの伸びしろ」は速さだけの上限の目安で、ほかの能力には上限がありません。24歳以下は、速さ以外の能力が水準 85 に向けて、低いほど早く（年 +1〜+4）伸びます。能力の平均が 80 になるのが F1 に上げる目安で、練習ありなら 23〜24歳ごろです。練習には開発・規則変更も選べます。F1 に上げるときは契約金なし（今のドライバーは空きに回ります）。F2 を卒業した後もリザーブとして26歳まで残せます。</p>
-      ${ac.length ? ac.map(id => { const d = F1.drv(id); return `<div class="drvm"><div class="row"><b class="sp">${nb(d.nat)}${esc(d.name)}</b><span class="small muted">${d.age}歳・${d.reserve ? "リザーブ" : "F2 " + d.f2.pts + "点 " + d.f2.wins + "勝"}・${pv(d)}</span></div>${attrGrid(d)}<div style="margin:4px 0">${tags(d)}</div>${jrCtl(d)}<div class="row" style="margin-top:6px"><select data-pro="${id}"><option value="">F1 に上げる…</option>${t.drivers.map(x => `<option value="${x}">${esc(F1.drv(x).name)} と交代</option>`).join("")}</select><button class="b" data-lv="${id}">外す</button></div></div>`; }).join("") : '<p class="small muted">まだいません。下の F2 から選んでください。</p>'}</div>
+    body = `<div class="card"><h3>自分のジュニア（${ac.length}/3）</h3><p class="small muted">ジュニアは F2 を走りながら、毎年ふつうより少し多く伸びます（速さと、速さ以外でいちばん低い能力）。「速さの伸びしろ」は速さだけの上限で、最初は幅のある推定です。ジュニアとして何年か育てる（育成アカデミーの施設が高いほど早い）と幅が狭まり、本当の上限と「成長タイプ」（早熟・晩成・安定・ムラ・完成型）が分かります。ほかの能力には上限がありません。24歳以下は、速さ以外の能力が水準 85 に向けて、低いほど早く（年 +1〜+4）伸びます。能力の平均が 80 になるのが F1 に上げる目安で、練習ありなら 23〜24歳ごろです。練習には開発・規則変更も選べます。F1 に上げるときは契約金なし（今のドライバーは空きに回ります）。F2 を卒業した後もリザーブとして26歳まで残せます。</p>
+      ${ac.length ? ac.map(id => { const d = F1.drv(id); return `<div class="drvm"><div class="row"><b class="sp">${nb(d.nat)}${esc(d.name)}</b><span class="small muted">${d.age}歳・${d.reserve ? "リザーブ" : "F2 " + d.f2.pts + "点 " + d.f2.wins + "勝"}・${pv(d)}</span></div>${attrGrid(d)}<div style="margin:4px 0">${tags(d)}${gv(d)}</div>${jrCtl(d)}<div class="row" style="margin-top:6px"><select data-pro="${id}"><option value="">F1 に上げる…</option>${t.drivers.map(x => `<option value="${x}">${esc(F1.drv(x).name)} と交代</option>`).join("")}</select><button class="b" data-lv="${id}">外す</button></div></div>`; }).join("") : '<p class="small muted">まだいません。下の F2 から選んでください。</p>'}</div>
       <div class="card"><h3>F2 ランキング（第${s.season}シーズン）</h3><p class="small muted">F1 の各戦のあとに1戦。王者と、22歳以上・速い若手は卒業して F1 の空きドライバーに（ジュニアならチームに残る）。伸びしろは自分のジュニアにすると正確に分かります。</p>
       <div style="overflow-x:auto"><table><tr><th>#</th><th>ドライバー</th><th class="n">歳</th><th class="n">速さ</th><th class="n">点</th></tr>${ft.map((d, i) => { const o = owner(d.id); return `<tr class="${o && o.id === t.id ? "me" : ""}"><td>${i + 1}</td><td>${esc(d.name)}<div class="small muted">${pv(d)}${o ? "・" + esc(o.short) + "のジュニア" : ""}</div>${o ? "" : `<button class="b" style="margin-top:4px" data-ja="${d.id}">${money(F1.academyFee(d))}で育成</button>`}</td><td class="n">${d.age}</td><td class="n">${d.pace}</td><td class="n">${d.f2.pts}</td></tr>`; }).join("")}</table></div></div>
       ${s.f2.champs.length ? `<div class="card"><h3>F2 歴代王者</h3>${s.f2.champs.map(c => `<div class="small">第${c.season}シーズン：${esc(c.name)}${F1.teamOf(c.id) ? "（今は " + esc(F1.teamOf(c.id).short) + "）" : ""}</div>`).join("")}</div>` : ""}`;
