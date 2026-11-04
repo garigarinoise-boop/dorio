@@ -619,8 +619,9 @@ const F1 = (() => {
     if (c.pitReq) { pitTo = c.pitReq; c.pitReq = null; }
     else { const nx = c.plan.stops[c.stopsDone]; if (nx && c.lap >= nx.lap) pitTo = nx.comp; else if (nx && (R.sc || R.vsc) && c.plan.sc === "wait" && c.lap >= (c.plan.scFrom || 10) && c.lap - c.lastPit > 4 && R.laps - c.lap > 5) { pitTo = nx.comp; c.scPit = true; if (c.tm === S.my) say(R, "{i:sc} L" + c.lap + " " + d.name + "：待っていた SC。予定を前倒しして入る", true); } if (c.autoReact) pitTo = aiReact(R, c, pitTo); }
     let extra = c.spin || 0; c.spin = 0;
+    let parkNow = false;
     if (R.sc && R.sc.red && c.redTyre !== R.sc.red) {
-      c.redTyre = R.sc.red;
+      c.redTyre = R.sc.red; parkNow = true;
       if (c.redKeep) { c.redKeep = false; pitTo = null; if (c.tm === S.my) say(R, "{i:rf} " + d.name + "：赤旗中もタイヤはそのまま", true); }
       else {
         let k = pitTo || (R.wet >= 0.22 ? bestTyres(R.wet)[0].comp : nextComp(c)); pitTo = null;
@@ -694,6 +695,12 @@ const F1 = (() => {
         else { end = Math.max(end, ahead.lapEnd + 0.3); c.stuck++; }
       } else c.stuck = Math.max(0, c.stuck - 1);
     }
+    if (parkNow) {
+      const live = R.cars.filter(o => !o.out && !o.fin).length, rk = c.unlapping ? live + (R.redU = (R.redU || 0) + 1) : (R.redN = (R.redN || 0) + 1) - 1;
+      const st = R.redGo + rk * 0.6; c.lt = st - c.lapEnd + tr.base * 1.38; c.lapStart = st; c.lapEnd = st + tr.base * 1.38;
+      if (isLeader(R, c)) leaderLap(R);
+      return;
+    }
     c.lt = end - c.lapEnd; c.lapStart = c.lapEnd; c.lapEnd = end;
     if (isLeader(R, c)) { leaderLap(R); if (scLead && !R.sc && R.rs && R.rs.lap === R.lap) { c.rsDone = R.rs.id; c.rsAt = c.lap; c.lapEnd = c.lapStart + ltRace + rsDelta(R, c, true); c.lt = c.lapEnd - c.lapStart; } }
   }
@@ -708,7 +715,7 @@ const F1 = (() => {
         else { R.sc.left = Math.max(R.sc.left, 1); R.sc.ext = 9; R.sc.unlap = true; } if (spread || fresh) say(R, "{i:sc} L" + R.lap + " " + (fresh ? "事故の処理が終わらないため" : "隊列がばらばらのため") + "、SC のままゴールする", true);
       }
       // 予定の周回が来ても、隊列が整っていなければ（次に線を越える時刻の間隔が2.5秒を超える所がある）最大2周延長
-      if (R.sc.left <= 0 && (R.sc.ext || 0) < 2) { const ends = R.cars.filter(x => !x.out && !x.fin && x.lap < R.lap && x.lastPit !== x.lap).map(x => x.lapEnd).sort((a, b) => a - b); if (ends.some((e, i) => i && e - ends[i - 1] > 2.5)) { R.sc.left = 1; R.sc.ext = (R.sc.ext || 0) + 1; if (R.sc.ext === 1) say(R, "{i:sc} L" + R.lap + " 隊列が整うまでセーフティカーを続ける"); } }
+      if (R.sc.left <= 0 && !R.sc.red && (R.sc.ext || 0) < 2) { const ends = R.cars.filter(x => !x.out && !x.fin && x.lap < R.lap && x.lastPit !== x.lap).map(x => x.lapEnd).sort((a, b) => a - b); if (ends.some((e, i) => i && e - ends[i - 1] > 2.5)) { R.sc.left = 1; R.sc.ext = (R.sc.ext || 0) + 1; if (R.sc.ext === 1) say(R, "{i:sc} L" + R.lap + " 隊列が整うまでセーフティカーを続ける"); } }
       if (R.sc.left === 1 && !R.sc.unlap && R.cars.some(x => !x.out && !x.fin && x.lap < R.lap - 1)) { R.sc.unlap = true; say(R, "{i:sc} L" + R.lap + " 周回遅れの車は SC を追い越して周回を取り戻してよい（SC はこの周で戻る）", true); }
       if (R.sc.left <= 0) { R.sc0red = !!R.sc.red; R.sc = null; R.drsFrom = R.lap + 2; R.rs = { id: R.neutralId, lap: R.lap, pos: {}, standing: R.sc0red }; R.cars.filter(x => !x.out && !x.fin).sort((a, b) => b.lap - a.lap || a.tot - b.tot).forEach((x, i) => R.rs.pos[x.id] = i + 1); say(R, "{i:go} L" + R.lap + (R.sc0red ? " 赤旗明け：SC の先導のあと、グリッドに並んでスタンディングスタート" : " セーフティカーが戻り、レース再開")); } }
     else if (!R.vsc && R.lap > 1 && R.lap < R.laps - 2 && rnd() < tr.sc * 0.55) startSC(R);
@@ -752,7 +759,7 @@ const F1 = (() => {
   // SC が出た瞬間：線を越えた順で差がつかないよう、全車の走っている途中の周の残りを SC のペースまで伸ばす
   function scScale(R) { const base = TRACKS[R.tr].base; R.cars.forEach(c => { if (c.out || c.fin || c.lapEnd <= R.t) return; const k = Math.max(1, base * 1.25 / Math.max(1, c.lapEnd - c.lapStart)); c.lapEnd = R.t + (c.lapEnd - R.t) * k; c.vscF = null; }); }
   function startVSC(R) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => c.drs = false); R.vsc = { left: ri(1, 3) }; vscScale(R, true); R.vscCount = (R.vscCount || 0) + 1; say(R, "{i:sc} L" + R.lap + " バーチャルセーフティカー（全車ペースダウン・差はそのまま）", true); R.alerts.push({ k: "vsc" }); }
-  function startRed(R, who) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => { c.drs = false; c.redKeep = false; }); R.drsFrom = 999; R.vsc = null; R.sc = { left: 2, from: R.lap, red: R.neutralId }; scScale(R); R.scCount++; R.redCount = (R.redCount || 0) + 1; say(R, "{i:rf} L" + R.lap + " 赤旗：" + who + " の大きな事故でバリアが壊れ、修復のためレース中断（全車ピットレーンで待機・タイヤは無料で交換・SC の先導のあとスタンディングスタート）", true); R.alerts.push({ k: "red", crashBy: who }); }
+  function startRed(R, who) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => { c.drs = false; c.redKeep = false; }); R.drsFrom = 999; R.vsc = null; R.sc = { left: 2, from: R.lap, red: R.neutralId }; scScale(R); R.redN = 0; R.redU = 0; R.redMin = ri(15, 40); R.redGo = Math.max(...R.cars.filter(c => !c.out && !c.fin).map(c => c.lapEnd)) + 25; R.scCount++; R.redCount = (R.redCount || 0) + 1; say(R, "{i:rf} L" + R.lap + " 赤旗：" + who + " の大きな事故でバリアが壊れ、レース中断。全車ゆっくりピットレーンに戻って止まる（タイヤは無料で交換できる）", true); R.redSaid = 0; R.alerts.push({ k: "red", crashBy: who }); }
   function startSC(R) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => c.drs = false); R.drsFrom = 999; R.sc = { left: ri(3, 5), from: R.lap }; scScale(R); R.scCount++; say(R, "{i:sc} L" + R.lap + " セーフティカー出動（ピットの損失が半分）", true); R.alerts.push({ k: "sc" }); }
   // タイヤだけのタイム（新品との比較用）
   function tyreTime(R, c, comp, age) { const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[comp], wf = trueWf(comp), w = tr.wear * S.regs.wear * (1.12 - d.tm / 250) * carWear(tm) * wf; let t = T.off + trueOff(comp) + T.deg * age * w; const life = T.life / (tr.wear * S.regs.wear * wf); return t + cliffT(age, life); }
@@ -841,6 +848,7 @@ const F1 = (() => {
   }
   function advance(R, dt) {
     if (R.finished) return null;
+    if (R.sc && R.sc.red && R.redGo && !R.redSaid && R.t + dt >= R.redGo) { R.redSaid = R.sc.red; say(R, "{i:go} 約" + R.redMin + "分の中断のあと再開：SC の先導でピットレーンを出て1周し、グリッドに並んでスタンディングスタート", true); }
     if (!R.started) {
       R.started = true;
       R.cars.forEach(c => { if (c.lockStart || !c.sets) return; const k = setsLeft(c.sets, c.plan.start) ? c.plan.start : ["S", "M", "H", "I", "W"].find(z => setsLeft(c.sets, z)); const a = takeSet(c.sets, k); c.comp = k; c.age = a || 0; c.used = [k]; });
@@ -2007,13 +2015,13 @@ function drawTrack() {
   const started = !!R.started, live = R.cars.filter(c => !c.out), ord = F1.order(R);
   live.slice().reverse().forEach(c => {
     let f = 0;
-    if (!started) f = -(c.grid - 1) * 0.004; else if (c.fin) f = 0.02 + ord.indexOf(c) * 0.002; else f = Math.max(0, Math.min(0.999, (R.t - c.lapStart) / ((c.lapEnd - c.lapStart) || 1)));
+    if (!started) f = -(c.grid - 1) * 0.004; else if (c.fin) f = 0.02 + ord.indexOf(c) * 0.002; else if (R.sc && R.sc.red && c.redTyre === R.sc.red && R.t < c.lapStart) f = -Math.min(0.12, (c.lapStart - R.redGo) / 0.6 * 0.005 + 0.004); else f = Math.max(0, Math.min(0.999, (R.t - c.lapStart) / ((c.lapEnd - c.lapStart) || 1)));
     const p = posAt(geo, f), tm = F1.team(c.tm), mine = c.tm === S().my;
     ctx.beginPath(); ctx.arc(X(p), Y(p), mine ? 8 : 6, 0, Math.PI * 2); ctx.fillStyle = tm.color; ctx.fill(); ctx.lineWidth = mine ? 3 : 1.5; ctx.strokeStyle = mine ? paint : tm.color2; ctx.stroke();
     if (mine) { const n0 = F1.drv(c.id).name; ctx.fillStyle = paint; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"; ctx.fillText(n0.includes("・") ? n0.split("・").pop() : n0.split(" ")[0], X(p), Y(p) - 12); }
   });
   const lapEl = $("#lapc"); if (lapEl) lapEl.textContent = R.finished ? "終了" : started ? "L" + Math.min(R.laps, R.lap + 1) + " / " + R.laps : "スタート前";
-  const fl = $("#flag"); if (fl) fl.innerHTML = R.finished ? '<div class="flag fin">{i:flag} チェッカー</div>' : R.sc && R.sc.red ? '<div class="flag red">{i:rf} 赤旗明け・SC の先導（このあとスタンディングスタート）</div>' : R.sc ? '<div class="flag sc">{i:sc} セーフティカー（全車が整列・ピットの損失が半分）</div>' : R.vsc ? '<div class="flag sc">{i:sc} バーチャルセーフティカー（差はそのまま・ピットの損失は約6割）</div>' : R.wet > 0.15 ? `<div class="flag rain">{i:rain} 路面がウェット（${Math.round(R.wet * 100)}%）</div>` : "";
+  const fl = $("#flag"); if (fl) fl.innerHTML = R.finished ? '<div class="flag fin">{i:flag} チェッカー</div>' : R.sc && R.sc.red ? (R.t < R.redGo ? '<div class="flag red">{i:rf} 赤旗中断：全車ピットレーンに戻って停止</div>' : '<div class="flag red">{i:rf} 赤旗明け・SC の先導（このあとスタンディングスタート）</div>') : R.sc ? '<div class="flag sc">{i:sc} セーフティカー（全車が整列・ピットの損失が半分）</div>' : R.vsc ? '<div class="flag sc">{i:sc} バーチャルセーフティカー（差はそのまま・ピットの損失は約6割）</div>' : R.wet > 0.15 ? `<div class="flag rain">{i:rain} 路面がウェット（${Math.round(R.wet * 100)}%）</div>` : "";
 }
 function resumeRace() { const R0 = S().race; if (R0 && !R0.started) { U.rsub = null; F1.advance(R0, 0); U.paused = false; vRace(); } U.paused = false; U.last = 0; const pp = $("#pp"); if (pp) { pp.textContent = "{i:pause} 一時停止"; pp.classList.remove("p"); } cancelAnimationFrame(U.raf); U.raf = requestAnimationFrame(tick); }
 // 急な判断の画面を閉じた後：×3・×10 なら一時停止のまま指示タブを開く（間違えても次の周の前に直せる）。×1 ならそのまま再開
