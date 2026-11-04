@@ -1046,8 +1046,8 @@ const F1 = (() => {
   function potView(d) {
     const tm = me(), L = fl(tm, "acad"); if (tm.drivers.includes(d.id)) return { lo: d.pot, hi: d.pot };
     const mine = isAcademy(d.id, tm.id), yrs = mine && d.jr ? d.jr.yrs || 0 : 0; if (mine && yrs >= 4) return { lo: d.pot, hi: d.pot };
-    const err = mine ? Math.max(2, Math.round(7 - yrs * 1.5 - (L - 1) * 0.4)) : Math.round(clamp(8 - (L - 1) * 0.4, 5, 8)), mid = d.pot + Math.round((((d.id * 7919) % 11) - 5) * err / 7);
-    return { lo: clamp(mid - err, d.pace, 99), hi: clamp(mid + err, d.pace, 99) };
+    const err = mine ? Math.max(2, Math.round(10 - yrs * 2 - (L - 1) * 0.5)) : Math.round(clamp(12 - (L - 1) * 0.5, 8, 12)), mid = d.pot + Math.round((((d.id * 7919) % 11) - 5) * err / 7);
+    return { lo: clamp(mid - err, d.pace, 99), hi: clamp(mid + err, d.pace, 99), mine };
   }
 
   // ---- 開発（パーツの発注） ----
@@ -2164,10 +2164,10 @@ function vTeam() {
       ${j.hurt ? `<p class="small bad">けがで F2 を あと${j.hurt}戦 休む</p>` : ""}${j.promised ? `<p class="small warnc">第${j.promised}シーズンまでに F1 に上げると約束している</p>` : ""}${last ? `<p class="small">前戦の F2（${esc(last.gp)}）：<b>${last.hurt ? "欠場" : last.crash ? "ミスで後退" : last.pos + "位"}</b>（${F1.JR_ORD[last.ord] || ""}）${j.gain ? "・練習で伸びた合計 +" + j.gain : ""}</p>` : ""}</div>`; };
     const ac = F1.academyOf(t.id), ft = F1.f2Table(), owner = id => { const e = Object.entries(s.academy).find(([k, l]) => l.includes(id)); return e ? F1.team(+e[0]) : null; };
     const gv = d => { const g = F1.gtView(d); return g.known ? ` <span class="tag gold">${g.n}型</span><span class="small muted"> ${g.d}</span>` : ' <span class="tag">成長タイプ：まだ分からない</span>'; };
-    const pv = d => { const p = F1.potView(d); return p.lo === p.hi ? "速さの伸びしろ " + p.hi : "速さの伸びしろ " + p.lo + "〜" + p.hi + "（推定）"; };
+    const pv = d => { const p = F1.potView(d); if (p.lo === p.hi) return "速さの伸びしろ " + p.hi; if (p.mine) return "速さの伸びしろ " + p.lo + "〜" + p.hi + "（推定）"; const a = RK(p.lo), b = RK(p.hi); return "才能の目安 " + (a === b ? a : a + "〜" + b) + "（スカウト評価）"; };
     body = `<div class="card"><h3>自分のジュニア（${ac.length}/3）</h3><p class="small muted">ジュニアは F2 を走りながら、毎年ふつうより少し多く伸びます（速さと、速さ以外でいちばん低い能力）。「速さの伸びしろ」は速さだけの上限で、最初は幅のある推定です。ジュニアとして何年か育てる（育成アカデミーの施設が高いほど早い）と幅が狭まり、本当の上限と「成長タイプ」（早熟・晩成・安定・ムラ・完成型）が分かります。ほかの能力には上限がありません。24歳以下は、速さ以外の能力が水準 85 に向けて、低いほど早く（年 +1〜+4）伸びます。能力の平均が 80 になるのが F1 に上げる目安で、練習ありなら 23〜24歳ごろです。練習には開発・規則変更も選べます。F1 に上げるときは契約金なし（今のドライバーは空きに回ります）。F2 を卒業した後もリザーブとして26歳まで残せます。</p>
       ${ac.length ? ac.map(id => { const d = F1.drv(id); return `<div class="drvm"><div class="row"><b class="sp">${nb(d.nat)}${esc(d.name)}</b><span class="small muted">${d.age}歳・${d.reserve ? "リザーブ" : "F2 " + d.f2.pts + "点 " + d.f2.wins + "勝"}・${pv(d)}</span></div>${attrGrid(d)}<div style="margin:4px 0">${tags(d)}${gv(d)}</div>${jrCtl(d)}<div class="row" style="margin-top:6px"><select data-pro="${id}"><option value="">F1 に上げる…</option>${t.drivers.map(x => `<option value="${x}">${esc(F1.drv(x).name)} と交代</option>`).join("")}</select><button class="b" data-lv="${id}">外す</button></div></div>`; }).join("") : '<p class="small muted">まだいません。下の F2 から選んでください。</p>'}</div>
-      <div class="card"><h3>F2 ランキング（第${s.season}シーズン）</h3><p class="small muted">F1 の各戦のあとに1戦。王者と、22歳以上・速い若手は卒業して F1 の空きドライバーに（ジュニアならチームに残る）。伸びしろは自分のジュニアにすると正確に分かります。</p>
+      <div class="card"><h3>F2 ランキング（第${s.season}シーズン）</h3><p class="small muted">F1 の各戦のあとに1戦。王者と、22歳以上・速い若手は卒業して F1 の空きドライバーに（ジュニアならチームに残る）。ほかのチームのドライバーの才能は、文字ランクの幅でしか分かりません。自分のジュニアにして育てると、数字の幅が狭まっていきます。</p>
       <div style="overflow-x:auto"><table><tr><th>#</th><th>ドライバー</th><th class="n">歳</th><th class="n">速さ</th><th class="n">点</th></tr>${ft.map((d, i) => { const o = owner(d.id); return `<tr class="${o && o.id === t.id ? "me" : ""}"><td>${i + 1}</td><td>${esc(d.name)}<div class="small muted">${pv(d)}${o ? "・" + esc(o.short) + "のジュニア" : ""}</div>${o ? "" : `<button class="b" style="margin-top:4px" data-ja="${d.id}">${money(F1.academyFee(d))}で育成</button>`}</td><td class="n">${d.age}</td><td class="n">${d.pace}</td><td class="n">${d.f2.pts}</td></tr>`; }).join("")}</table></div></div>
       ${s.f2.champs.length ? `<div class="card"><h3>F2 歴代王者</h3>${s.f2.champs.map(c => `<div class="small">第${c.season}シーズン：${esc(c.name)}${F1.teamOf(c.id) ? "（今は " + esc(F1.teamOf(c.id).short) + "）" : ""}</div>`).join("")}</div>` : ""}`;
   } else if (sub === "staff") {
