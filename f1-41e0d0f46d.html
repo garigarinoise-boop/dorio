@@ -526,7 +526,7 @@ const F1 = (() => {
   function aiQualiTyres(tm, tr) { const rank = S.teams.slice().sort((a, b) => carPace(b, tr) - carPace(a, tr)).indexOf(tm); return { q1: rank <= 2 && rnd() < 0.5 ? "M" : "S", q2: rank <= 3 && rnd() < 0.7 ? "M" : "S" }; }
   function setupRace(choices) {
     choices = choices || {};
-    const tr = track(), wetStart = rnd() < tr.rain * 0.35 ? 0.3 + rnd() * 0.5 : 0, willRain = !wetStart && rnd() < tr.rain;
+    const tr = track(), wetStart = rnd() < tr.rain * 0.8 * 0.35 ? 0.3 + rnd() * 0.5 : 0, willRain = !wetStart && rnd() < tr.rain * 0.8;
     const R = { tr: tr.id, lap: 0, t: 0, laps: tr.laps, wet: wetStart, rainAt: willRain ? ri(Math.round(tr.laps * 0.2), Math.round(tr.laps * 0.7)) : -1, rainTo: willRain ? 0.35 + rnd() * 0.5 : 0, rainLen: ri(8, 20), sc: null, scCount: 0, finished: false, flag: false, started: false, cars: [], feed: [], alerts: [], quali: null };
     wk(); const all = [];
     S.teams.forEach(tm => tm.drivers.forEach(id => { const d = drv(id); const ch = tm.id === S.my ? (choices[id] || { q1: "S", q2: "S" }) : aiQualiTyres(tm, tr); all.push({ id, tm: tm.id, ch, base: tr.base + perfDelta(tm, d, tr) - (tm.id === S.my ? setupB(id) : 0.02) + (R.wet ? (1 - d.wet / 100) * 4 * R.wet : 0), noise: 0.1 + (100 - d.cons) / 420 }); }));
@@ -569,6 +569,10 @@ const F1 = (() => {
     let grid = q3.concat(q2.slice(cut2), all.slice(cut1));
     // パドックの出来事による降格（PU の交換・指令違反）
     if (S.evNext) { grid.forEach(x => { const p = S.evNext.pen[x.id]; if (p) x.pen = (x.pen || 0) + p; }); (S.evNext.reveal || []).forEach(t => news("{i:warn} " + t)); S.evNext.reveal = []; }
+    // 資料の確率表：CPU の PU 部品交換の降格（10か5）・パルクフェルメ違反のピットレーン発進
+    { const late = 0.4 + 1.2 * (S.round / Math.max(1, S.calendar.length)), cand = grid.filter(x => x.tm !== S.my && !x.pen);
+      for (let k = 0; k < 2; k++) if (cand.length && rnd() < 0.275 * late) { const x = cand.splice(ri(0, cand.length - 1), 1)[0], big = rnd() < 0.6; x.pen = (big ? 10 : 5); say(R, "{i:warn} " + drv(x.id).name + "：PU の部品交換で " + (big ? 10 : 5) + " グリッド降格", false); }
+      if (cand.length && rnd() < 0.22) { const x = cand.splice(ri(0, cand.length - 1), 1)[0]; x.pen = 99; say(R, "{i:warn} " + drv(x.id).name + "：パルクフェルメ違反でピットレーンからスタート（最後尾）", false); } }
     // グリッド降格（後ろへ5つ。降格した車どうしは予選の順）
     if (grid.some(x => x.pen)) grid = grid.map((x, i) => ({ x, k: i + (x.pen || 0) + (x.pen ? 0.5 : 0) })).sort((a, b) => a.k - b.k).map(o => o.x);
     R.qEvents.forEach(e => say(R, e.t, e.mine));
@@ -591,7 +595,10 @@ const F1 = (() => {
   function givePen(R, c, kind, sec, why) {
     const d = drv(c.id), mine = c.tm === S.my, L = "L" + Math.max(1, c.lap);
     c.pens = (c.pens || 0) + 1; R.pens = (R.pens || 0) + 1;
-    if (kind === "dt") {
+    if (kind === "sg") {
+      if (R.laps - c.lap <= 3) { c.penS = (c.penS || 0) + 30; say(R, "{i:warn} " + L + " " + d.name + "：" + why + " → 残りの周が少ないので 30 秒加算", mine); }
+      else { c.sg = true; say(R, "{i:warn} " + L + " " + d.name + "：" + why + " → 10秒ストップ・ゴーペナルティ（次の周にピットで10秒止まる）", mine); }
+    } else if (kind === "dt") {
       if (R.laps - c.lap <= 3) { c.penS = (c.penS || 0) + 20; say(R, "{i:warn} " + L + " " + d.name + "：" + why + " → 残りの周が少ないので 20 秒加算", mine); }
       else { c.dt = true; say(R, "{i:warn} " + L + " " + d.name + "：" + why + " → ドライブスルーペナルティ（次の周にピットレーンを通る）", mine); }
     } else { c.penS = (c.penS || 0) + sec; say(R, "{i:warn} " + L + " " + d.name + "：" + why + " → " + sec + " 秒加算", mine); }
@@ -605,7 +612,7 @@ const F1 = (() => {
     if (rnd() < v.p) givePen(R, c, v.kind, v.sec, v.why); else say(R, "{i:radio} " + d.name + "：審議の結果、お咎めなし", mine);
   }
   // 走り終えた車：審議が残っていれば結論を出し、消化できなかったドライブスルーは 20 秒加算
-  function endPen(R, c) { if (c.inv) resolveInv(R, c); if (c.dt) { c.dt = false; c.penS = (c.penS || 0) + 20; say(R, "{i:warn} " + drv(c.id).name + "：ドライブスルーを消化できず 20 秒加算", c.tm === S.my); } }
+  function endPen(R, c) { if (c.inv) resolveInv(R, c); if (c.sg) { c.sg = false; c.penS = (c.penS || 0) + 30; say(R, "{i:warn} " + drv(c.id).name + "：ストップ・ゴーを消化できず 30 秒加算", c.tm === S.my); } if (c.dt) { c.dt = false; c.penS = (c.penS || 0) + 20; say(R, "{i:warn} " + drv(c.id).name + "：ドライブスルーを消化できず 20 秒加算", c.tm === S.my); } }
   // ピットレーン：速度超過はドライバーのミス（安定感・冷静さ）かリミッターの不具合（車の信頼性）。白線越えと危険なリリースはクルーの腕
   function pitIncident(R, c, tm, d, tr, crew) {
     const wetK = R.wet > 0.2 ? 1.4 : 1, a = (100 - d.cons) * 0.00011 + (100 - d.calm) * 0.00007, b = (100 - tm.car.rel) * 0.00009;
@@ -613,9 +620,10 @@ const F1 = (() => {
     // ピット出口の白線越え：ラインをまたぐのはドライバーの操作（安定感・冷静さ）
     if (rnd() < (0.0008 + (100 - d.cons) * 0.00007 + (100 - d.calm) * 0.00005) * wetK) givePen(R, c, "t", 5, "ピット出口の白線越え");
     // 危険なリリース：車を出す合図を出すのはピットクルー
-    if (rnd() < (0.0013 + Math.max(0, 100 - crew) * 0.00005) * wetK) investigate(R, c, "危険なリリース（クルーが他の車の進路に出した）", 10, rnd() < 0.5 ? "dt" : "t", 0.8);
+    if (rnd() < (0.002 + Math.max(0, 100 - crew) * 0.000075) * wetK) investigate(R, c, "危険なリリース（クルーが他の車の進路に出した）", 10, rnd() < 0.5 ? "dt" : "t", 0.8);
   }
   // 接触の責任：冷静さと安定感が低いほど「原因」にされやすい
+  const pk = () => { const z = rnd(); return z < 0.1 ? "dt" : z < 0.15 ? "sg" : "t"; };
   const atFault = d => rnd() < clamp(0.62 - (d.calm + d.cons) / 2 * 0.005, 0.1, 0.6);
   const carAt = (R, id) => R.cars.find(c => c.id === id);
   const order = R => R.cars.filter(c => !c.out).sort((a, b) => (b.fin - a.fin) || b.lap - a.lap || (a.fin ? a.finT - b.finT : a.tot - b.tot) || a.grid - b.grid).concat(R.cars.filter(c => c.out).sort((a, b) => b.lap - a.lap));
@@ -679,7 +687,7 @@ const F1 = (() => {
       }
     }
     if (pitTo && R.laps - c.lap >= 1) {
-      const crew = tm.staff.crew.skill + (fl(tm, "pit") - 1) * 0.8 + (tm.nat === tr.c ? 5 : 0) + moraleB(tm) * 4, stat = 1.9 + (100 - crew) * 0.025 + Math.abs(gauss()) * 0.25, err = rnd() < (100 - crew) * 0.0012 ? ri(2, 7) : 0;
+      const crew = tm.staff.crew.skill + (fl(tm, "pit") - 1) * 0.8 + (tm.nat === tr.c ? 5 : 0) + moraleB(tm) * 4, stat = 1.9 + (100 - crew) * 0.025 + Math.abs(gauss()) * 0.25, err = rnd() < 0.003 ? ri(8, 15) : rnd() < 0.02 + Math.max(0, 100 - crew) * 0.0014 ? ri(2, 7) : 0;
       const loss = (R.sc ? tr.pit * 0.5 : R.vsc ? tr.pit * 0.6 : tr.pit) + stat + err; extra += loss; pitIncident(R, c, tm, d, tr, crew);
       if (c.sets && !setsLeft(c.sets, pitTo)) { const alt = (["I", "W"].includes(pitTo) ? ["I", "W"] : ["M", "H", "S"]).find(z => setsLeft(c.sets, z)); say(R, "{i:warn} " + d.name + "：" + TYRE[pitTo].n + "のセットが残っていない" + (alt ? " → " + TYRE[alt].n : ""), c.tm === S.my); if (alt) pitTo = alt; }
       const setAge = c.sets ? (takeSet(c.sets, pitTo) || 0) : 0;
@@ -688,6 +696,7 @@ const F1 = (() => {
       if (c.plan.stops[c.stopsDone] && (c.lap >= c.plan.stops[c.stopsDone].lap - 6 || c.scPit)) c.stopsDone++; c.scPit = false;
       say(R, "{i:wrench} L" + c.lap + " " + d.name + " ピットイン → " + TYRE[pitTo].n + "（作業" + (stat + err).toFixed(1) + "秒" + (err ? "・作業ミス" : "") + "）", c.tm === S.my);
     }
+    if (c.sg && !R.sc && !R.vsc) { c.sg = false; extra += tr.pit * 0.9 + 10; say(R, "{i:wrench} L" + c.lap + " " + d.name + "：10秒ストップ・ゴーを消化（ピットで10秒止まる）", c.tm === S.my); }
     if (c.dt && !R.sc && !R.vsc) { c.dt = false; extra += tr.pit * 0.9; say(R, "{i:wrench} L" + c.lap + " " + d.name + "：ドライブスルーペナルティを消化（ピットレーンを通る）", c.tm === S.my); }
     // 乾きかけの路面：乾いているのはライン上だけで、外すと濡れた所に乗る。スリックは滑りやすく、ピットを出たばかりの冷えたタイヤは特に危ない。雨に強いドライバーほど安全
     if (["S", "M", "H"].includes(c.comp) && R.wet > 0.05 && R.wet < 0.5 && !R.sc) {
@@ -743,7 +752,7 @@ const F1 = (() => {
           if (rnd() < 0.005 * (1.6 - (dd.calm + dd.craft) / 150) * (R.wet > 0.2 ? 1.5 : 1) * (tr.street ? 1.4 : 1)) {
             const atk = rnd() < 0.6, la = 1.5 + rnd() * 2.5, lb = 0.5 + rnd(); end += la; ahead.lapEnd += lb;
             say(R, "{i:crash} L" + (c.lap + 1) + " " + dd.name + " と " + da.name + " が接触（" + dd.name + " " + la.toFixed(1) + "秒・" + da.name + " " + lb.toFixed(1) + "秒ロス）", c.tm === S.my || ahead.tm === S.my);
-            if (atFault(atk ? dd : da)) investigate(R, atk ? c : ahead, atk ? "無理な追い抜きで接触" : "押し出して接触", 5, rnd() < 0.15 ? "dt" : "t", 0.75, atk ? ahead : c);
+            if (atFault(atk ? dd : da)) investigate(R, atk ? c : ahead, atk ? "無理な追い抜きで接触" : "押し出して接触", 5, pk(), 0.75, atk ? ahead : c);
           } }
       } else c.stuck = Math.max(0, c.stuck - 1);
     }
@@ -874,12 +883,12 @@ const F1 = (() => {
     if (rnd() < 0.05 * skill) { t += 1.2 + rnd(); if (mine) say(R, "{i:slow} " + d.name + "：スタートで出遅れた", true); }
     else if (t < -0.9 && mine) say(R, "{i:fast} " + d.name + "：好スタート", true);
     // フライング：ランプ消灯前に動いたらドライバーの責任（冷静さが低いほど）。めったに起きない
-    if (rnd() < 0.0006 + (100 - d.calm) * 0.00002) givePen(R, c, "t", 10, "フライング（消灯前に動いた）");
+    if (rnd() < 0.0006 + (100 - d.calm) * 0.00002) givePen(R, c, "sg", 10, "フライング（消灯前に動いた）");
     // 1コーナーの接触（中団ほど起きやすい。抜きにくい市街地は特に）
     if (rnd() < (c.grid <= 3 ? 0.014 : 0.045) * (tr.street ? 1.4 : 1) * (wet ? 1.6 : 1)) {
       if (rnd() < 0.42) { c.out = true; c.why = "1周目の接触"; say(R, "{i:crash} " + d.name + "：1周目の接触でリタイア", mine); if (!R.sc && !R.vsc && rnd() < 0.45) startSC(R); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return 0; }
       const loss = 2 + rnd() * 6; t += loss; say(R, "{i:crash} " + d.name + "：1コーナーで接触（" + loss.toFixed(1) + "秒ロス）", mine);
-      if (atFault(d)) investigate(R, c, "1コーナーの接触の原因", 5, rnd() < 0.15 ? "dt" : "t", 0.7);
+      if (atFault(d)) investigate(R, c, "1コーナーの接触の原因", 5, pk(), 0.7);
     }
     return t;
   }
@@ -910,6 +919,7 @@ const F1 = (() => {
       R.started = true;
       R.cars.forEach(c => { if (c.lockStart || !c.sets) return; const k = setsLeft(c.sets, c.plan.start) ? c.plan.start : ["S", "M", "H", "I", "W"].find(z => setsLeft(c.sets, z)); const a = takeSet(c.sets, k); c.comp = k; c.age = a || 0; c.used = [k]; });
       say(R, "{i:lights} " + TRACKS[R.tr].name + " スタート（" + R.laps + "周）" + (R.wet ? "・ウェット" : ""));
+      if (rnd() < 0.09) { const c = pick(R.cars.filter(x => !x.out)); c.out = true; c.why = "スタートできず（DNS）"; say(R, "{i:x} " + drv(c.id).name + "：スタート前にトラブル、グリッドを離れられない", c.tm === S.my); if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); }
       R.cars.forEach((c, i) => { c.lapEnd = i * 0.25; c.tot = c.lapEnd; c.lap = 0; c.fuel = R.laps * TRACKS[R.tr].fuel * S.regs.fuel + FUEL[c.plan.fuel || "std"].extra; c.lapStart = c.lapEnd; c.lt = lapTime(R, c) + 2.5 + (c.grid - 1) * 0.12 + startDelta(R, c); c.lapEnd += c.lt; });
     }
     const target = R.t + dt;
@@ -925,6 +935,7 @@ const F1 = (() => {
 
   function finishRace(R) {
     const tr = TRACKS[R.tr];
+    if (rnd() < 0.08) { const ok = S.teams.filter(t => R.cars.some(c => c.tm === t.id && !c.out)); if (ok.length) { const t = pick(ok); R.cars.filter(c => c.tm === t.id && !c.out).sort(() => rnd() - 0.5).forEach((c, i) => { if (i === 0 || rnd() < 0.5) { c.out = true; c.dsq = true; c.why = "失格（プランクの摩耗が規定超え）"; news("{i:warn} " + drv(c.id).name + "（" + t.name + "）：レース後の車検でプランクの摩耗が規定を超え、失格"); } }); } }
     const res = R.cars.slice().sort((a, b) => (a.out - b.out) || b.lap - a.lap || a.finT - b.finT || a.lapEnd - b.lapEnd);
     res.forEach((c, i) => { c.pos = i + 1; });
     R.cars.filter(c => !c.out && c.penS).forEach(c => { const raw = R.cars.filter(o => !o.out).sort((a, b) => b.lap - a.lap || (a.finT - (a.penS || 0)) - (b.finT - (b.penS || 0))), was = raw.indexOf(c) + 1; if (was !== c.pos) say(R, "{i:warn} " + drv(c.id).name + "：" + c.penS + " 秒加算で P" + was + " → P" + c.pos, c.tm === S.my); });
@@ -1923,7 +1934,7 @@ function growthHtml(r) {
   const tc = r.teamChange, sg = v => `<b class="${v > 0 ? "good" : v < 0 ? "bad" : ""}">${v > 0 ? "+" : ""}${v}</b>`;
   return `<div class="ctl"><b class="small">1年での変化</b>${g}${tc ? `<div class="small">チームの開発力 ${sg(tc.devp)}・戦略担当 ${sg(tc.strat)}・ピットクルー ${sg(tc.crew)}</div>` : ""}</div>`;
 }
-const penTag = c => (c.penS ? ' <span class="small bad">+' + c.penS + 's</span>' : '') + (c.dt ? ' <span class="small bad">DT</span>' : '') + (c.inv ? ' <span class="small muted">審議中</span>' : '');
+const penTag = c => (c.penS ? ' <span class="small bad">+' + c.penS + 's</span>' : '') + (c.dt ? ' <span class="small bad">DT</span>' : '') + (c.sg ? ' <span class="small bad">SG</span>' : '') + (c.inv ? ' <span class="small muted">審議中</span>' : '');
 function resRow(r) { const d = F1.drv(r.id), tm = F1.team(r.tm); return `<tr class="${r.tm === S().my ? "me" : ""}"><td>${r.out ? "R" : r.pos}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${r.out ? esc(r.why) : r.pos === 1 ? "優勝" : r.lapsDown > 0 ? "+" + r.lapsDown + "周" : "+" + r.gap.toFixed(1)}${r.pen ? ' <span class="bad">（' + r.pen + '秒加算済）</span>' : ""}</td><td class="n small muted">${r.grid}番手</td><td class="n">${r.got ? r.got + "点" : ""}</td></tr>`; }
 
 /* ---------- レース ---------- */
