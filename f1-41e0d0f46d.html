@@ -690,6 +690,8 @@ const F1 = (() => {
   }
   const fuelPerLap = (R, c) => TRACKS[R.tr].fuel * S.regs.fuel * PACE[c.pace].f;
 
+  const MECH_K = 0.0051, ERR_K = 0.0015, CONTACT_DNF = 0.33; // 故障・ミス・接触でリタイアする割合（1レース約0.76・0.34・0.45台に合わせた）
+  const gapNear = (R, c) => { let g = 9; R.cars.forEach(o => { if (o === c || o.out || o.fin) return; if (o.lap === c.lap) g = Math.min(g, Math.abs(c.tot - o.tot)); else if (o.lap === c.lap - 1) g = Math.min(g, Math.abs(o.lapEnd - c.tot)); }); return g; };
   function crossLine(R, c) {
     const tr = TRACKS[R.tr];
     c.lap++; c.age++; c.tot = c.lapEnd; if (c.unlapping) { c.unlapping = false; c.lap++; }
@@ -707,8 +709,17 @@ const F1 = (() => {
     if (c.tm !== S.my || c.autoReact) { if (c.fuel < need - 0.1) c.pace = "lift"; else if (c.pace === "lift" && c.fuel > need + 0.6) c.pace = "norm"; }
     // 故障・ミス（冷静さが低いと、詰まったり抜かれたりした後にミスしやすい）
     const hot = Math.max(0, 60 - d.calm) / 100 * (1 - moraleB(tm) * 0.15) * (c.stuck > 2 ? 0.02 : 0.004) * (c.pace === "push" ? 2 : 1);
-    const pFail = (d.nat === tr.c && d.calm < 50 ? 0.0008 : 0) + (100 - tm.car.rel) / 100 * 0.0055 + (100 - d.cons) / 100 * 0.0018 * (c.pace === "push" ? 2 : 1) + R.wet * 0.0015 + hot;
-    if (rnd() < pFail * (S.evNext && S.evNext.relD[c.id] || 1)) { const crash = rnd() < (hot > 0.002 ? 0.65 : 0.4); if (crash || rnd() < 0.6) { c.out = true; c.why = crash ? "クラッシュ" : "マシントラブル"; say(R, "{i:x} " + d.name + " リタイア（" + c.why + "）", c.tm === S.my); if (crash && !(R.sc && R.sc.red) && R.laps - R.lap > 3 && rnd() < (tr.street ? 0.28 : 0.1) + R.wet * 0.12) startRed(R, d.name); else if (!R.sc && !R.vsc) { if (crash && rnd() < 0.3 + (tr.street ? 0.2 : 0)) startSC(R); else if (rnd() < (crash ? 0.5 : 0.3)) startVSC(R); } if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; } c.spin = ri(4, 9); say(R, "{i:swirl} L" + c.lap + " " + d.name + " がスピン（" + c.spin + "秒ロス）", c.tm === S.my); }
+    // 故障（マシンの信頼性）とドライバーのミス（状況しだい）を分ける。実際のリタイアは 接触≈50%・故障≈35%・単独ミス≈15%（調査メモ §6.1）
+    // ミスは前後1秒以内の競り合い・攻めのペース・タイヤの寿命切れ・ピット直後の冷えたタイヤ・濡れた路面で起きやすく、何もない乾いた路面ではほとんど起きない
+    const forming = !!(R.rs && R.rs.go && R.t < R.rs.go + 1), relD = S.evNext && S.evNext.relD[c.id] || 1, pMech = (100 - tm.car.rel) / 100 * MECH_K * relD;
+    const near = gapNear(R, c), lifeT = TYRE[c.comp].life / (tr.wear * S.regs.wear), why2 = [];
+    if (near < 1.0 && !R.sc && !R.vsc) why2.push(["バトル中のミス", 2.5]); if (c.pace === "push") why2.push(["攻めすぎ", 1.5]); if (["S", "M", "H"].includes(c.comp) && c.age > lifeT) why2.push(["タイヤの寿命切れ", 2]); if (c.lastPit === c.lap - 1) why2.push(["冷えたタイヤ", 1]); if (R.wet > 0.05) why2.push(["濡れた路面", 1 + R.wet * 4]);
+    const ctx = why2.reduce((a, x) => a + x[1], 0), pErr = (((100 - d.cons) / 100 * ERR_K + (d.nat === tr.c && d.calm < 50 ? 0.0003 : 0)) * (ctx || 0.08) + hot) * (R.sc || R.vsc ? 0.2 : 1) * (forming ? 0 : 1);
+    if (rnd() < pMech) { if (rnd() < 0.75) { c.out = true; c.why = "マシントラブル"; say(R, "{i:x} " + d.name + " リタイア（マシントラブル）", c.tm === S.my); if (!R.sc && !R.vsc && !forming && rnd() < 0.3) startVSC(R); if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; }
+      c.spin = ri(3, 8); say(R, "{i:wrench} L" + c.lap + " " + d.name + "：小さなトラブルでペースが落ちた（" + c.spin + "秒ロス）", c.tm === S.my); }
+    else if (rnd() < pErr) { const main = why2.length ? why2.slice().sort((a, b) => b[1] - a[1])[0][0] : hot > 0.002 ? "焦ってミス" : "単独のミス";
+      if (rnd() < 0.35) { c.out = true; c.why = "クラッシュ（" + main + "）"; say(R, "{i:x} " + d.name + " リタイア（" + c.why + "）", c.tm === S.my); if (!(R.sc && R.sc.red) && R.laps - R.lap > 3 && rnd() < (tr.street ? 0.28 : 0.1) + R.wet * 0.12) startRed(R, d.name); else if (!R.sc && !R.vsc) { if (rnd() < 0.3 + (tr.street ? 0.2 : 0)) startSC(R); else if (rnd() < 0.5) startVSC(R); } if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; }
+      c.spin = ri(4, 9); say(R, "{i:swirl} L" + c.lap + " " + d.name + " がスピン（" + main + "・" + c.spin + "秒ロス）", c.tm === S.my); }
     if (R.heat) { const p = c.lap / R.laps, mine = c.tm === S.my;
       if (p >= 0.4 && rnd() < illP(R, c, d) / (0.6 * R.laps)) { c.out = true; c.why = "体調不良（暑さ）"; say(R, "{i:sun} " + d.name + " リタイア（暑さで体調を崩してピットへ）", mine); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return; }
       if (!R.sc && !R.vsc && rnd() < 0.0003 * R.heat * strain(R, c, d, p)) { c.spin = (c.spin || 0) + ri(3, 6); if (mine) say(R, "{i:swirl} L" + c.lap + " " + d.name + "：暑さで集中が切れてコースオフ", true); }
@@ -752,7 +763,7 @@ const F1 = (() => {
     if (c.sg && !R.sc && !R.vsc) { c.sg = false; extra += tr.pit * 0.9 + 10; say(R, "{i:wrench} L" + c.lap + " " + d.name + "：10秒ストップ・ゴーを消化（ピットで10秒止まる）", c.tm === S.my); }
     if (c.dt && !R.sc && !R.vsc) { c.dt = false; extra += tr.pit * 0.9; say(R, "{i:wrench} L" + c.lap + " " + d.name + "：ドライブスルーペナルティを消化（ピットレーンを通る）", c.tm === S.my); }
     // 大雨（立ち水）をインターで走る：アクアプレーニングでスピン・クラッシュ（実際は大雨区間の約33%で誰かが起こしている）。古いインター・雨が苦手なほど危ない
-    if (c.comp === "I" && R.wet >= 0.75 && !R.sc && !R.vsc && c.lastPit !== c.lap) { const mineA = c.tm === S.my, risk = AQ_K * (R.wet - 0.7) / 0.1 * (1 + c.age / 30) * (1.4 - d.wet / 100);
+    if (c.comp === "I" && R.wet >= 0.75 && !R.sc && !R.vsc && c.lastPit !== c.lap && !(R.rs && R.rs.go && R.t < R.rs.go + 1)) { const mineA = c.tm === S.my, risk = AQ_K * (R.wet - 0.7) / 0.1 * (1 + c.age / 30) * (1.4 - d.wet / 100);
       if (rnd() < risk) { if (rnd() < 0.3) { c.out = true; c.why = "クラッシュ（アクアプレーニング）"; R.aqua = (R.aqua || 0) + 1; say(R, "{i:x} " + d.name + "：立ち水でアクアプレーニング、クラッシュしてリタイア", mineA); if (mineA) R.alerts.push({ k: "dnf", id: c.id }); if (!R.sc && !R.vsc) { startSC(R, "大雨の中の事故"); R.sc.rain = true; } return; }
         const l = 4 + rnd() * 6; extra += l; R.aqua = (R.aqua || 0) + 1; say(R, "{i:swirl} L" + c.lap + " " + d.name + "：立ち水でアクアプレーニング、スピン（" + l.toFixed(1) + "秒ロス）", mineA); } }
     // 乾きかけの路面：乾いているのはライン上だけで、外すと濡れた所に乗る。スリックは滑りやすく、ピットを出たばかりの冷えたタイヤは特に危ない。雨に強いドライバーほど安全
@@ -760,7 +771,7 @@ const F1 = (() => {
       const fresh = c.lastPit === c.lap, mine = c.tm === S.my, risk = (R.wet - 0.05) * 0.05 * (1.4 - d.wet / 100) * (fresh ? 2 : 1) * (c.pace === "push" ? 1.5 : 1) * (R.vsc ? 0.4 : 1);
       if (fresh) extra += 0.8 + R.wet * 5; // 冷えたスリックで温まるまで
       if (rnd() < risk) {
-        if (rnd() < 0.25) { c.out = true; c.why = "クラッシュ"; R.dampOff = (R.dampOff || 0) + 1; say(R, "{i:x} " + d.name + " 乾きかけの路面で濡れた所に乗ってクラッシュ、リタイア", mine); if (!R.sc && !R.vsc) { if (rnd() < 0.45) startSC(R); else if (rnd() < 0.5) startVSC(R); } if (mine) R.alerts.push({ k: "dnf", id: c.id }); return; }
+        if (rnd() < 0.25) { c.out = true; c.why = "クラッシュ（乾きかけの路面）"; R.dampOff = (R.dampOff || 0) + 1; say(R, "{i:x} " + d.name + " 乾きかけの路面で濡れた所に乗ってクラッシュ、リタイア", mine); if (!R.sc && !R.vsc) { if (rnd() < 0.45) startSC(R); else if (rnd() < 0.5) startVSC(R); } if (mine) R.alerts.push({ k: "dnf", id: c.id }); return; }
         const l = 3 + rnd() * 6; extra += l; R.dampOff = (R.dampOff || 0) + 1; say(R, "{i:swirl} L" + c.lap + " " + d.name + "：濡れた所に乗ってコースオフ（" + l.toFixed(1) + "秒ロス）", mine);
       }
     }
@@ -806,10 +817,11 @@ const F1 = (() => {
         /* 抜きにくいコースほど、抜くのに要る速さの差（need 秒/周）が大きい。モナコ級は1.4秒近く要る */ const drs = drsOK(R) && gap < 1.0, need = 0.25 + (1 - tr.ovt) * 1.6 - (drs ? drsGain(tr) : 0) - (rsNow ? 0.8 : 0) - (gap < 1.0 ? 0.25 * tr.pw + 0.05 : 0), sig = 1 / (1 + Math.exp(-(adv - need) / 0.35)), p = clamp((0.03 + tr.ovt * 0.75) * sig * (0.75 + (dd.craft - da.craft) / 150) * (rsNow ? 2.2 : 1), 0, 0.9);
         if (drs) R.drsPass = (R.drsPass || 0) + (rnd() < p ? 1 : 0); if (rnd() < p) { R.passes = (R.passes || 0) + 1; if (end > ahead.lapEnd - 0.1) end = ahead.lapEnd - 0.1; ahead.lapEnd += 0.25; ahead.stuck += 2; c.stuck = 0; if (c.tm === S.my || ahead.tm === S.my) say(R, "{i:duel} L" + (c.lap + 1) + " " + dd.name + " が " + da.name + " を抜いた", true); }
         else { end = Math.max(end, ahead.lapEnd + 0.3); c.stuck++;
-          if (rnd() < 0.005 * (1.6 - (dd.calm + dd.craft) / 150) * (R.wet > 0.2 ? 1.5 : 1) * (tr.street ? 1.4 : 1)) {
+          if (rnd() < 0.0075 * (1.6 - (dd.calm + dd.craft) / 150) * (R.wet > 0.2 ? 1.5 : 1) * (tr.street ? 1.4 : 1)) {
             const atk = rnd() < 0.6, la = 1.5 + rnd() * 2.5, lb = 0.5 + rnd(); end += la; ahead.lapEnd += lb;
             say(R, "{i:crash} L" + (c.lap + 1) + " " + dd.name + " と " + da.name + " が接触（" + dd.name + " " + la.toFixed(1) + "秒・" + da.name + " " + lb.toFixed(1) + "秒ロス）", c.tm === S.my || ahead.tm === S.my);
             if (atFault(atk ? dd : da)) investigate(R, atk ? c : ahead, atk ? "無理な追い抜きで接触" : "押し出して接触", 5, pk(), 0.75, atk ? ahead : c);
+            if (rnd() < CONTACT_DNF) { const v = rnd() < 0.6 ? (atk ? c : ahead) : (atk ? ahead : c), dv = drv(v.id), mv = v.tm === S.my; v.out = true; v.why = "接触でリタイア"; say(R, "{i:x} " + dv.name + "：接触のダメージでリタイア", mv || c.tm === S.my || ahead.tm === S.my); if (mv) R.alerts.push({ k: "dnf", id: v.id }); if (!R.sc && !R.vsc) { if (rnd() < 0.35 + (tr.street ? 0.2 : 0)) startSC(R); else if (rnd() < 0.5) startVSC(R); } if (c.out) return; }
           } }
       } else c.stuck = Math.max(0, c.stuck - 1);
     }
@@ -850,15 +862,15 @@ const F1 = (() => {
       else if (R.lap >= R.rainAt + R.rainLen && R.wet > 0) { const was = R.wet; R.wet = Math.max(0, R.wet - 0.05); dry(was); }
     } else if (R.wet > 0) { const was = R.wet; R.wet = Math.max(0, R.wet - 0.04); dry(was); }
     // 大雨（立ち水）：視界が悪いので SC。ひどい大雨が続けば赤旗（実際は大雨の周の約88%が SC・VSC・赤旗）
-    if (R.wet >= 0.75 && !R.sc && !R.vsc && !R.flag && R.laps - R.lap > 1) { const x = rnd();
-      if (x < 0.18) { // 立ち水で誰かがアクアプレーニング（古いインター・雨が苦手なほど起きやすい）
+    if (R.wet >= 0.75 && !R.sc && !R.vsc && !R.flag && R.laps - R.lap > 1 && !(R.rs && R.rs.go && R.t < R.rs.go + 1)) { const x = rnd();
+      if (x < 0.25) { // 立ち水で誰かがアクアプレーニング（古いインター・雨が苦手なほど起きやすい）
         const cand = R.cars.filter(o => !o.out && !o.fin && o.comp !== "W"), wsum = cand.reduce((s, o) => s + (1 + o.age / 30) * (1.4 - drv(o.id).wet / 100), 0); let r = rnd() * wsum, v = cand[0];
         for (const o of cand) { r -= (1 + o.age / 30) * (1.4 - drv(o.id).wet / 100); if (r <= 0) { v = o; break; } }
         if (v) { const dv = drv(v.id), mv = v.tm === S.my; R.aqua = (R.aqua || 0) + 1;
           if (rnd() < 0.3) { v.out = true; v.why = "クラッシュ（アクアプレーニング）"; say(R, "{i:x} " + dv.name + "：立ち水でアクアプレーニング、クラッシュしてリタイア", mv); if (mv) R.alerts.push({ k: "dnf", id: v.id }); }
           else { const l = 4 + rnd() * 6; v.spin = (v.spin || 0) + l; say(R, "{i:swirl} L" + R.lap + " " + dv.name + "：立ち水でアクアプレーニング、スピン（" + l.toFixed(1) + "秒ロス）", mv); }
           startSC(R, "立ち水で " + dv.name + " がアクアプレーニング"); R.sc.rain = true; } }
-      else if (x < 0.75) { startSC(R, "大雨で視界が悪い"); R.sc.rain = true; } }
+      else if (x < 0.75) { startSC(R, "大雨で視界が悪い"); R.sc.rain = true; } } // きっかけ：アクアプレーニング25%・視界50%・まだ続行25%
     else if (R.sc && R.sc.rain && !R.sc.red) { R.sc.rainN = (R.sc.rainN || 0) + 1; if (R.wet >= 0.85 && R.sc.rainN >= 2 && R.laps - R.lap > 3) startRed(R, "大雨", true); }
   }
   // 濡れ具合 w のときのタイヤごとの損（秒/周、新品同士で比べる）
@@ -1094,7 +1106,7 @@ const F1 = (() => {
       d.hist = (d.hist || []).concat([c ? (c.out ? -1 : c.pos) : 0]).slice(-3);
       if (d.fm) { d.fm.left--; if (d.fm.left <= 0) { if (mine) news("{i:go} " + d.name + "：" + FM[d.fm.k].replace(/^[▲▼ ]+/, "") + " が終わり、いつもの調子に戻った"); delete d.fm; } }
       if (!d.fm) {
-        const h = d.hist, gm = d.gt === "streaky" ? 2 : 1, podium = h.length >= 2 && h.slice(-2).every(p => p > 0 && p <= 3), dnf = h[h.length - 1] === -1 && c && c.why === "クラッシュ";
+        const h = d.hist, gm = d.gt === "streaky" ? 2 : 1, podium = h.length >= 2 && h.slice(-2).every(p => p > 0 && p <= 3), dnf = h[h.length - 1] === -1 && c && /^クラッシュ/.test(c.why || "");
         const pH = (0.018 + (podium ? 0.08 : 0)) * sc * gm, pC = (0.018 + (100 - d.calm) / 2500 + (dnf ? 0.05 : 0)) * sc * gm, pS = 0.0015 * sc * gm * (d.calm < 50 ? 2 : 1), r = rnd();
         const k = r < pS ? "slump" : r < pS + pH ? "hot" : r < pS + pH + pC ? "cold" : null;
         if (k) {
