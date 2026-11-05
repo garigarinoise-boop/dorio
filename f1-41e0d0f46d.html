@@ -613,7 +613,7 @@ const F1 = (() => {
     // ピット出口の白線越え：ラインをまたぐのはドライバーの操作（安定感・冷静さ）
     if (rnd() < (0.0008 + (100 - d.cons) * 0.00007 + (100 - d.calm) * 0.00005) * wetK) givePen(R, c, "t", 5, "ピット出口の白線越え");
     // 危険なリリース：車を出す合図を出すのはピットクルー
-    if (rnd() < (0.0013 + Math.max(0, 100 - crew) * 0.00005) * wetK) investigate(R, c, "危険なリリース（クルーが他の車の進路に出した）", 10, rnd() < 0.35 ? "dt" : "t", 0.8);
+    if (rnd() < (0.0013 + Math.max(0, 100 - crew) * 0.00005) * wetK) investigate(R, c, "危険なリリース（クルーが他の車の進路に出した）", 10, rnd() < 0.5 ? "dt" : "t", 0.8);
   }
   // 接触の責任：冷静さと安定感が低いほど「原因」にされやすい
   const atFault = d => rnd() < clamp(0.62 - (d.calm + d.cons) / 2 * 0.005, 0.1, 0.6);
@@ -652,8 +652,8 @@ const F1 = (() => {
     if (c.tm !== S.my || c.autoReact) { if (c.fuel < need - 0.1) c.pace = "lift"; else if (c.pace === "lift" && c.fuel > need + 0.6) c.pace = "norm"; }
     // 故障・ミス（冷静さが低いと、詰まったり抜かれたりした後にミスしやすい）
     const hot = Math.max(0, 60 - d.calm) / 100 * (1 - moraleB(tm) * 0.15) * (c.stuck > 2 ? 0.02 : 0.004) * (c.pace === "push" ? 2 : 1);
-    const pFail = (d.nat === tr.c && d.calm < 50 ? 0.0008 : 0) + (100 - tm.car.rel) / 100 * 0.007 + (100 - d.cons) / 100 * 0.0018 * (c.pace === "push" ? 2 : 1) + R.wet * 0.0015 + hot;
-    if (rnd() < pFail * (S.evNext && S.evNext.relD[c.id] || 1)) { const crash = rnd() < (hot > 0.002 ? 0.65 : 0.4); if (crash || rnd() < 0.6) { c.out = true; c.why = crash ? "クラッシュ" : "マシントラブル"; say(R, "{i:x} " + d.name + " リタイア（" + c.why + "）", c.tm === S.my); if (crash && !(R.sc && R.sc.red) && R.laps - R.lap > 3 && rnd() < (tr.street ? 0.09 : 0.03) + R.wet * 0.05) startRed(R, d.name); else if (!R.sc && !R.vsc) { if (crash && rnd() < 0.4 + (tr.street ? 0.25 : 0)) startSC(R); else if (rnd() < (crash ? 0.5 : 0.3)) startVSC(R); } if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; } c.spin = ri(4, 9); say(R, "{i:swirl} L" + c.lap + " " + d.name + " がスピン（" + c.spin + "秒ロス）", c.tm === S.my); }
+    const pFail = (d.nat === tr.c && d.calm < 50 ? 0.0008 : 0) + (100 - tm.car.rel) / 100 * 0.0055 + (100 - d.cons) / 100 * 0.0018 * (c.pace === "push" ? 2 : 1) + R.wet * 0.0015 + hot;
+    if (rnd() < pFail * (S.evNext && S.evNext.relD[c.id] || 1)) { const crash = rnd() < (hot > 0.002 ? 0.65 : 0.4); if (crash || rnd() < 0.6) { c.out = true; c.why = crash ? "クラッシュ" : "マシントラブル"; say(R, "{i:x} " + d.name + " リタイア（" + c.why + "）", c.tm === S.my); if (crash && !(R.sc && R.sc.red) && R.laps - R.lap > 3 && rnd() < (tr.street ? 0.28 : 0.1) + R.wet * 0.12) startRed(R, d.name); else if (!R.sc && !R.vsc) { if (crash && rnd() < 0.3 + (tr.street ? 0.2 : 0)) startSC(R); else if (rnd() < (crash ? 0.5 : 0.3)) startVSC(R); } if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; } c.spin = ri(4, 9); say(R, "{i:swirl} L" + c.lap + " " + d.name + " がスピン（" + c.spin + "秒ロス）", c.tm === S.my); }
     if (R.rs && c.rsAt != null && c.rsDone === R.rs.id && c.lap === c.rsAt + 1 && c.tm === S.my && R.rs.pos[c.id]) { const a = R.rs.pos[c.id], p = R.cars.filter(o => !o.out && o !== c && (o.lap > c.lap || (o.lap === c.lap && o.tot < c.tot))).length + 1; say(R, "{i:go} リスタート：" + d.name + " は P" + a + " → P" + p + (p < a ? "（" + (a - p) + "つ上げた）" : p > a ? "（" + (p - a) + "つ落とした）" : ""), true); }
     if (c.lap === 1 && c.tm === S.my) { const p = R.cars.filter(o => !o.out && o.lap >= 1).length; say(R, "{i:flag} 1周目：" + d.name + " は P" + c.grid + " → P" + p + (p < c.grid ? "（" + (c.grid - p) + "つ上げた）" : p > c.grid ? "（" + (p - c.grid) + "つ落とした）" : ""), true); }
     if (c.tm === S.my && S.radioStop !== false) radio(R, c, d, tr);
@@ -743,7 +743,7 @@ const F1 = (() => {
           if (rnd() < 0.005 * (1.6 - (dd.calm + dd.craft) / 150) * (R.wet > 0.2 ? 1.5 : 1) * (tr.street ? 1.4 : 1)) {
             const atk = rnd() < 0.6, la = 1.5 + rnd() * 2.5, lb = 0.5 + rnd(); end += la; ahead.lapEnd += lb;
             say(R, "{i:crash} L" + (c.lap + 1) + " " + dd.name + " と " + da.name + " が接触（" + dd.name + " " + la.toFixed(1) + "秒・" + da.name + " " + lb.toFixed(1) + "秒ロス）", c.tm === S.my || ahead.tm === S.my);
-            if (atFault(atk ? dd : da)) investigate(R, atk ? c : ahead, atk ? "無理な追い抜きで接触" : "押し出して接触", 5, "t", 0.75, atk ? ahead : c);
+            if (atFault(atk ? dd : da)) investigate(R, atk ? c : ahead, atk ? "無理な追い抜きで接触" : "押し出して接触", 5, rnd() < 0.15 ? "dt" : "t", 0.75, atk ? ahead : c);
           } }
       } else c.stuck = Math.max(0, c.stuck - 1);
     }
@@ -770,7 +770,7 @@ const F1 = (() => {
       if (R.sc.left <= 0 && !R.sc.red && (R.sc.ext || 0) < 2) { const ends = R.cars.filter(x => !x.out && !x.fin && x.lap < R.lap && x.lastPit !== x.lap).map(x => x.lapEnd).sort((a, b) => a - b); if (ends.some((e, i) => i && e - ends[i - 1] > 2.5)) { R.sc.left = 1; R.sc.ext = (R.sc.ext || 0) + 1; if (R.sc.ext === 1) say(R, "{i:sc} L" + R.lap + " 隊列が整うまでセーフティカーを続ける"); } }
       if (R.sc.left === 1 && !R.sc.unlap && R.cars.some(x => !x.out && !x.fin && x.lap < R.lap - 1)) { R.sc.unlap = true; say(R, "{i:sc} L" + R.lap + " 周回遅れの車は SC を追い越して周回を取り戻してよい（SC はこの周で戻る）", true); }
       if (R.sc.left <= 0) { R.sc0red = !!R.sc.red; R.sc = null; R.drsFrom = R.lap + 2; R.rs = { id: R.neutralId, lap: R.lap, pos: {}, standing: R.sc0red }; R.cars.filter(x => !x.out && !x.fin).sort((a, b) => b.lap - a.lap || a.tot - b.tot).forEach((x, i) => R.rs.pos[x.id] = i + 1); say(R, "{i:go} L" + R.lap + (R.sc0red ? " 赤旗明け：SC の先導のあと、グリッドに並んでスタンディングスタート" : " セーフティカーが戻り、レース再開")); } }
-    else if (!R.vsc && R.lap > 1 && R.lap < R.laps - 2 && rnd() < tr.sc * 0.55) startSC(R);
+    else if (!R.vsc && R.lap > 1 && R.lap < R.laps - 2 && rnd() < tr.sc * SC_K) startSC(R);
     const dry = (was) => { if (was >= 0.2 && R.wet < 0.2) { say(R, "{i:sun} L" + R.lap + " 路面が乾いてきた", true); R.alerts.push({ k: "dry" }); } };
     if (R.rainAt > 0) {
       // 実際の天気は筋書きどおりにいかない：降り出し・止む時期・強さが途中で変わる
@@ -810,6 +810,7 @@ const F1 = (() => {
   function vscScale(R, on) { const base = TRACKS[R.tr].base; R.cars.forEach(c => { if (c.out || c.fin || c.lapEnd <= R.t) return; if (on) { const k = Math.max(1, base * 1.35 / Math.max(1, c.lapEnd - c.lapStart)); c.lapEnd = R.t + (c.lapEnd - R.t) * k; c.vscF = k; } else if (c.vscF) { c.lapEnd = R.t + (c.lapEnd - R.t) / c.vscF; c.vscF = null; } }); }
   // SC が出た瞬間：線を越えた順で差がつかないよう、全車の走っている途中の周の残りを SC のペースまで伸ばす
   function scScale(R) { const base = TRACKS[R.tr].base; R.cars.forEach(c => { if (c.out || c.fin || c.lapEnd <= R.t) return; const k = Math.max(1, base * 1.25 / Math.max(1, c.lapEnd - c.lapStart)); c.lapEnd = R.t + (c.lapEnd - R.t) * k; c.vscF = null; }); }
+  const SC_K = 0.3; // 1周あたりの SC 自然発生の係数（サーキットごとの tr.sc に掛ける）
   function startVSC(R) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => c.drs = false); R.vsc = { left: ri(1, 3) }; vscScale(R, true); R.vscCount = (R.vscCount || 0) + 1; say(R, "{i:sc} L" + R.lap + " バーチャルセーフティカー（全車ペースダウン・差はそのまま）", true); R.alerts.push({ k: "vsc" }); }
   function startRed(R, who) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => { c.drs = false; c.redKeep = false; }); R.drsFrom = 999; R.vsc = null; R.sc = { left: 2, from: R.lap, red: R.neutralId }; scScale(R); R.redN = 0; R.redU = 0; R.redMin = ri(15, 40); R.redGo = Math.max(...R.cars.filter(c => !c.out && !c.fin).map(c => c.lapEnd)) + 25; R.scCount++; R.redCount = (R.redCount || 0) + 1; say(R, "{i:rf} L" + R.lap + " 赤旗：" + who + " の大きな事故でバリアが壊れ、レース中断。全車ゆっくりピットレーンに戻って止まる（タイヤは無料で交換できる）", true); R.redSaid = 0; R.alerts.push({ k: "red", crashBy: who }); }
   function startSC(R) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => c.drs = false); R.drsFrom = 999; R.sc = { left: ri(3, 5), from: R.lap }; scScale(R); R.scCount++; say(R, "{i:sc} L" + R.lap + " セーフティカー出動（ピットの損失が半分）", true); R.alerts.push({ k: "sc" }); }
@@ -875,10 +876,10 @@ const F1 = (() => {
     // フライング：ランプ消灯前に動いたらドライバーの責任（冷静さが低いほど）。めったに起きない
     if (rnd() < 0.0006 + (100 - d.calm) * 0.00002) givePen(R, c, "t", 10, "フライング（消灯前に動いた）");
     // 1コーナーの接触（中団ほど起きやすい。抜きにくい市街地は特に）
-    if (rnd() < (c.grid <= 3 ? 0.012 : 0.035) * (tr.street ? 1.4 : 1) * (wet ? 1.6 : 1)) {
-      if (rnd() < 0.22) { c.out = true; c.why = "1周目の接触"; say(R, "{i:crash} " + d.name + "：1周目の接触でリタイア", mine); if (!R.sc && !R.vsc && rnd() < 0.6) startSC(R); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return 0; }
+    if (rnd() < (c.grid <= 3 ? 0.014 : 0.045) * (tr.street ? 1.4 : 1) * (wet ? 1.6 : 1)) {
+      if (rnd() < 0.42) { c.out = true; c.why = "1周目の接触"; say(R, "{i:crash} " + d.name + "：1周目の接触でリタイア", mine); if (!R.sc && !R.vsc && rnd() < 0.45) startSC(R); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return 0; }
       const loss = 2 + rnd() * 6; t += loss; say(R, "{i:crash} " + d.name + "：1コーナーで接触（" + loss.toFixed(1) + "秒ロス）", mine);
-      if (atFault(d)) investigate(R, c, "1コーナーの接触の原因", 5, "t", 0.7);
+      if (atFault(d)) investigate(R, c, "1コーナーの接触の原因", 5, rnd() < 0.15 ? "dt" : "t", 0.7);
     }
     return t;
   }
@@ -1489,7 +1490,7 @@ const F1 = (() => {
   const drsOK = R => R.lap >= 2 && !R.sc && !R.vsc && R.wet < 0.2 && R.lap >= (R.drsFrom || 0);
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
-  const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * 0.55, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.016 : 0.0095)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
+  const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * SC_K, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.012 : 0.007)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
   return { carRows, FM, formD, ncRoom, gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
