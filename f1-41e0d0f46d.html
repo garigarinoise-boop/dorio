@@ -586,6 +586,37 @@ const F1 = (() => {
   // スタートからの5周の濡れ具合の平均（天気の動きと同じ式で先読み）
   function wetStartAvg(R) { let w = R.wet, s = w; for (let L = 1; L <= 4; L++) { if (R.rainAt > 0) { if (L >= R.rainAt && L < R.rainAt + R.rainLen) w = Math.min(R.rainTo, w + 0.07); else if (L >= R.rainAt + R.rainLen && w > 0) w = Math.max(0, w - 0.05); } else w = Math.max(0, w - 0.04); s += w; } return s / 5; }
   function aiPlan(tr, d, wet, tm, opt) { if (!wet && opt && opt.grid >= 12 && rnd() < 0.3) { const l = planOptions(tr, d, 0, opt).find(x => x.key === "long"); if (l) return l.plan; } const p = recPlan(tr, d, wet, stratSk(tm), opt); p.fuel = stratSk(tm) >= 80 && rnd() < 0.35 ? "light" : "std"; return p; }
+  // ---- ペナルティ ----
+  // 秒加算は完走したときのタイムに足す。ドライブスルーは次の周にピットレーンを通る損（残り3周以内なら 20 秒加算に変える）。審議は2周あとに結果が出る（お咎めなしのこともある）
+  function givePen(R, c, kind, sec, why) {
+    const d = drv(c.id), mine = c.tm === S.my, L = "L" + Math.max(1, c.lap);
+    c.pens = (c.pens || 0) + 1; R.pens = (R.pens || 0) + 1;
+    if (kind === "dt") {
+      if (R.laps - c.lap <= 3) { c.penS = (c.penS || 0) + 20; say(R, "{i:warn} " + L + " " + d.name + "：" + why + " → 残りの周が少ないので 20 秒加算", mine); }
+      else { c.dt = true; say(R, "{i:warn} " + L + " " + d.name + "：" + why + " → ドライブスルーペナルティ（次の周にピットレーンを通る）", mine); }
+    } else { c.penS = (c.penS || 0) + sec; say(R, "{i:warn} " + L + " " + d.name + "：" + why + " → " + sec + " 秒加算", mine); }
+  }
+  function investigate(R, c, why, sec, kind, p, also) {
+    if (c.inv || c.out) return; const d = drv(c.id), mine = c.tm === S.my || (also && also.tm === S.my);
+    c.inv = { left: 2, why, sec, kind, p }; say(R, "{i:warn} L" + Math.max(1, c.lap) + " " + d.name + "：" + why + "。スチュワードが審議中", mine);
+  }
+  function resolveInv(R, c) {
+    const v = c.inv; c.inv = null; if (!v) return; const d = drv(c.id), mine = c.tm === S.my;
+    if (rnd() < v.p) givePen(R, c, v.kind, v.sec, v.why); else say(R, "{i:radio} " + d.name + "：審議の結果、お咎めなし", mine);
+  }
+  // 走り終えた車：審議が残っていれば結論を出し、消化できなかったドライブスルーは 20 秒加算
+  function endPen(R, c) { if (c.inv) resolveInv(R, c); if (c.dt) { c.dt = false; c.penS = (c.penS || 0) + 20; say(R, "{i:warn} " + drv(c.id).name + "：ドライブスルーを消化できず 20 秒加算", c.tm === S.my); } }
+  // ピットレーン：速度超過はドライバーのミス（安定感・冷静さ）かリミッターの不具合（車の信頼性）。白線越えと危険なリリースはクルーの腕
+  function pitIncident(R, c, tm, d, tr, crew) {
+    const wetK = R.wet > 0.2 ? 1.4 : 1, a = (100 - d.cons) * 0.00011 + (100 - d.calm) * 0.00007, b = (100 - tm.car.rel) * 0.00009;
+    if (rnd() < (0.004 + a + b) * wetK) givePen(R, c, "t", 5, rnd() < b / (0.004 + a + b) ? "ピットレーンの速度超過（リミッターの不具合）" : "ピットレーンの速度超過（ドライバーのミス）");
+    if (rnd() < (0.003 + Math.max(0, 100 - crew) * 0.00012) * wetK) {
+      if (rnd() < 0.55) givePen(R, c, "t", 5, "ピット出口の白線越え（クルーの合図が早かった）");
+      else investigate(R, c, "危険なリリース（他の車の進路に出した）", 10, rnd() < 0.35 ? "dt" : "t", 0.8);
+    }
+  }
+  // 接触の責任：冷静さと安定感が低いほど「原因」にされやすい
+  const atFault = d => rnd() < clamp(0.62 - (d.calm + d.cons) / 2 * 0.005, 0.1, 0.6);
   const carAt = (R, id) => R.cars.find(c => c.id === id);
   const order = R => R.cars.filter(c => !c.out).sort((a, b) => (b.fin - a.fin) || b.lap - a.lap || (a.fin ? a.finT - b.finT : a.tot - b.tot) || a.grid - b.grid).concat(R.cars.filter(c => c.out).sort((a, b) => b.lap - a.lap));
 
@@ -608,9 +639,11 @@ const F1 = (() => {
     const tr = TRACKS[R.tr];
     c.lap++; c.age++; c.tot = c.lapEnd; if (c.unlapping) { c.unlapping = false; c.lap++; }
     if (c.lap > 0 && c.lt > 0 && c.lt < c.best) c.best = c.lt;
-    if (R.flag) { c.fin = true; c.finT = c.lapEnd; return; }
-    if (c.lap >= R.laps) { R.flag = true; c.fin = true; c.finT = c.lapEnd; say(R, "{i:flag} " + drv(c.id).name + " がトップでチェッカー"); return; }
+    if (R.flag) { endPen(R, c); c.fin = true; c.finT = c.lapEnd + (c.penS || 0); return; }
+    if (c.lap >= R.laps) { R.flag = true; endPen(R, c); c.fin = true; c.finT = c.lapEnd + (c.penS || 0); say(R, "{i:flag} " + drv(c.id).name + " がトップでチェッカー"); return; }
     const tm = team(c.tm), d = drv(c.id);
+    if (c.inv && --c.inv.left <= 0) resolveInv(R, c);
+    if (!R.sc && !R.vsc && c.lap > 1 && rnd() < 0.01 * (1.6 - d.cons / 100) * (c.pace === "push" ? 1.5 : 1)) { c.tl = (c.tl || 0) + 1; if (c.tl >= 3) { c.tl = 0; givePen(R, c, "t", 5, "トラックリミット違反が3回に達した"); } else if (c.tm === S.my) say(R, "{i:warn} L" + c.lap + " " + d.name + "：トラックリミットで警告（" + c.tl + "/3）", true); }
     // 燃料
     c.fuel -= fuelPerLap(R, c) * (R.sc || R.vsc ? 0.6 : 1);
     if (c.fuel <= 0) { c.out = true; c.why = "燃料切れ"; say(R, "{i:fuel} " + d.name + " 燃料切れでストップ", c.tm === S.my); if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; }
@@ -647,7 +680,7 @@ const F1 = (() => {
     }
     if (pitTo && R.laps - c.lap >= 1) {
       const crew = tm.staff.crew.skill + (fl(tm, "pit") - 1) * 0.8 + (tm.nat === tr.c ? 5 : 0) + moraleB(tm) * 4, stat = 1.9 + (100 - crew) * 0.025 + Math.abs(gauss()) * 0.25, err = rnd() < (100 - crew) * 0.0012 ? ri(2, 7) : 0;
-      const loss = (R.sc ? tr.pit * 0.5 : R.vsc ? tr.pit * 0.6 : tr.pit) + stat + err; extra += loss;
+      const loss = (R.sc ? tr.pit * 0.5 : R.vsc ? tr.pit * 0.6 : tr.pit) + stat + err; extra += loss; pitIncident(R, c, tm, d, tr, crew);
       if (c.sets && !setsLeft(c.sets, pitTo)) { const alt = (["I", "W"].includes(pitTo) ? ["I", "W"] : ["M", "H", "S"]).find(z => setsLeft(c.sets, z)); say(R, "{i:warn} " + d.name + "：" + TYRE[pitTo].n + "のセットが残っていない" + (alt ? " → " + TYRE[alt].n : ""), c.tm === S.my); if (alt) pitTo = alt; }
       const setAge = c.sets ? (takeSet(c.sets, pitTo) || 0) : 0;
       if (c.tm !== S.my && S.rivalStop !== false) { const ord = order(R), i = ord.indexOf(c); [ord[i - 1], ord[i + 1]].forEach((m, j) => { if (m && m.tm === S.my && !m.out && !m.fin && !m.pitReq && !m.cover && m.lap - m.lastPit > 3 && Math.abs(m.tot - c.tot) < 5 && R.laps - m.lap > 3) R.alerts.push({ k: "rivalpit", id: m.id, who: c.id, rel: j === 0 ? "後ろ" : "前" }); }); }
@@ -655,6 +688,7 @@ const F1 = (() => {
       if (c.plan.stops[c.stopsDone] && (c.lap >= c.plan.stops[c.stopsDone].lap - 6 || c.scPit)) c.stopsDone++; c.scPit = false;
       say(R, "{i:wrench} L" + c.lap + " " + d.name + " ピットイン → " + TYRE[pitTo].n + "（作業" + (stat + err).toFixed(1) + "秒" + (err ? "・作業ミス" : "") + "）", c.tm === S.my);
     }
+    if (c.dt && !R.sc && !R.vsc) { c.dt = false; extra += tr.pit * 0.9; say(R, "{i:wrench} L" + c.lap + " " + d.name + "：ドライブスルーペナルティを消化（ピットレーンを通る）", c.tm === S.my); }
     // 乾きかけの路面：乾いているのはライン上だけで、外すと濡れた所に乗る。スリックは滑りやすく、ピットを出たばかりの冷えたタイヤは特に危ない。雨に強いドライバーほど安全
     if (["S", "M", "H"].includes(c.comp) && R.wet > 0.05 && R.wet < 0.5 && !R.sc) {
       const fresh = c.lastPit === c.lap, mine = c.tm === S.my, risk = (R.wet - 0.05) * 0.05 * (1.4 - d.wet / 100) * (fresh ? 2 : 1) * (c.pace === "push" ? 1.5 : 1) * (R.vsc ? 0.4 : 1);
@@ -705,7 +739,12 @@ const F1 = (() => {
         const dd = drv(c.id), da = drv(ahead.id), adv = ahead.lapEnd - end;
         /* 抜きにくいコースほど、抜くのに要る速さの差（need 秒/周）が大きい。モナコ級は1.4秒近く要る */ const drs = drsOK(R) && gap < 1.0, need = 0.25 + (1 - tr.ovt) * 1.6 - (drs ? drsGain(tr) : 0) - (rsNow ? 0.8 : 0) - (gap < 1.0 ? 0.25 * tr.pw + 0.05 : 0), sig = 1 / (1 + Math.exp(-(adv - need) / 0.35)), p = clamp((0.03 + tr.ovt * 0.75) * sig * (0.75 + (dd.craft - da.craft) / 150) * (rsNow ? 2.2 : 1), 0, 0.9);
         if (drs) R.drsPass = (R.drsPass || 0) + (rnd() < p ? 1 : 0); if (rnd() < p) { R.passes = (R.passes || 0) + 1; if (end > ahead.lapEnd - 0.1) end = ahead.lapEnd - 0.1; ahead.lapEnd += 0.25; ahead.stuck += 2; c.stuck = 0; if (c.tm === S.my || ahead.tm === S.my) say(R, "{i:duel} L" + (c.lap + 1) + " " + dd.name + " が " + da.name + " を抜いた", true); }
-        else { end = Math.max(end, ahead.lapEnd + 0.3); c.stuck++; }
+        else { end = Math.max(end, ahead.lapEnd + 0.3); c.stuck++;
+          if (rnd() < 0.005 * (1.6 - (dd.calm + dd.craft) / 150) * (R.wet > 0.2 ? 1.5 : 1) * (tr.street ? 1.4 : 1)) {
+            const atk = rnd() < 0.6, la = 1.5 + rnd() * 2.5, lb = 0.5 + rnd(); end += la; ahead.lapEnd += lb;
+            say(R, "{i:crash} L" + (c.lap + 1) + " " + dd.name + " と " + da.name + " が接触（" + dd.name + " " + la.toFixed(1) + "秒・" + da.name + " " + lb.toFixed(1) + "秒ロス）", c.tm === S.my || ahead.tm === S.my);
+            if (atFault(atk ? dd : da)) investigate(R, atk ? c : ahead, atk ? "無理な追い抜きで接触" : "押し出して接触", 5, "t", 0.75, atk ? ahead : c);
+          } }
       } else c.stuck = Math.max(0, c.stuck - 1);
     }
     if (parkNow) {
@@ -833,10 +872,12 @@ const F1 = (() => {
     let t = gauss() * 0.75 * pack * skill * (wet ? 1.5 : 1) + ({ S: -0.3, M: 0, H: 0.35 }[c.comp] || 0) - (d.craft - 70) / 100;
     if (rnd() < 0.05 * skill) { t += 1.2 + rnd(); if (mine) say(R, "{i:slow} " + d.name + "：スタートで出遅れた", true); }
     else if (t < -0.9 && mine) say(R, "{i:fast} " + d.name + "：好スタート", true);
+    if (rnd() < 0.004 * skill) givePen(R, c, "t", 10, "フライング（動き出しが早かった）");
     // 1コーナーの接触（中団ほど起きやすい。抜きにくい市街地は特に）
     if (rnd() < (c.grid <= 3 ? 0.012 : 0.035) * (tr.street ? 1.4 : 1) * (wet ? 1.6 : 1)) {
       if (rnd() < 0.22) { c.out = true; c.why = "1周目の接触"; say(R, "{i:crash} " + d.name + "：1周目の接触でリタイア", mine); if (!R.sc && !R.vsc && rnd() < 0.6) startSC(R); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return 0; }
       const loss = 2 + rnd() * 6; t += loss; say(R, "{i:crash} " + d.name + "：1コーナーで接触（" + loss.toFixed(1) + "秒ロス）", mine);
+      if (atFault(d)) investigate(R, c, "1コーナーの接触の原因", 5, "t", 0.7);
     }
     return t;
   }
@@ -850,6 +891,7 @@ const F1 = (() => {
     if (rnd() < 0.012 * (tr.street ? 1.5 : 1) * (wet ? 1.5 : 1)) {
       if (rnd() < 0.25) { c.out = true; c.why = "リスタートの接触"; say(R, "{i:crash} " + d.name + "：リスタートで接触してリタイア", mine); if (!R.sc && !R.vsc && rnd() < 0.5) startSC(R); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return 0; }
       const loss = 2 + rnd() * 5; t += loss; say(R, "{i:crash} " + d.name + "：リスタートの1コーナーで接触（" + loss.toFixed(1) + "秒ロス）", mine);
+      if (atFault(d)) investigate(R, c, "リスタートの接触の原因", 5, "t", 0.7);
     }
     return t;
   }
@@ -883,10 +925,11 @@ const F1 = (() => {
     const tr = TRACKS[R.tr];
     const res = R.cars.slice().sort((a, b) => (a.out - b.out) || b.lap - a.lap || a.finT - b.finT || a.lapEnd - b.lapEnd);
     res.forEach((c, i) => { c.pos = i + 1; });
+    R.cars.filter(c => !c.out && c.penS).forEach(c => { const raw = R.cars.filter(o => !o.out).sort((a, b) => b.lap - a.lap || (a.finT - (a.penS || 0)) - (b.finT - (b.penS || 0))), was = raw.indexOf(c) + 1; if (was !== c.pos) say(R, "{i:warn} " + drv(c.id).name + "：" + c.penS + " 秒加算で P" + was + " → P" + c.pos, c.tm === S.my); });
     const fLap = res.filter(c => !c.out && c.pos <= 10).sort((a, b) => a.best - b.best)[0];
     res.forEach(c => { const d = drv(c.id), tm = team(c.tm); d.career.starts++; c.got = 0; if (!c.out && c.pos <= 10) { c.got = POINTS[c.pos - 1]; /* ファステストラップの1点は2025年に廃止（記録だけ残す） */ d.pts += c.got; tm.pts += c.got; } if (c.pos === 1 && !c.out) { d.wins++; d.career.wins++; } if (c.pos <= 3 && !c.out) d.podiums++; });
     const w = res[0];
-    const rec = { passes: R.passes || 0, round: S.round + 1, name: tr.name, winner: drv(w.id).name, wteam: team(w.tm).name, fl: fLap ? drv(fLap.id).name : "-", res: res.map(c => ({ id: c.id, tm: c.tm, pos: c.pos, out: c.out, why: c.why, gap: c.out ? null : c.finT - res[0].finT, lapsDown: res[0].lap - c.lap, pits: c.pits, got: c.got, grid: c.grid })) };
+    const rec = { passes: R.passes || 0, round: S.round + 1, name: tr.name, winner: drv(w.id).name, wteam: team(w.tm).name, fl: fLap ? drv(fLap.id).name : "-", res: res.map(c => ({ id: c.id, tm: c.tm, pos: c.pos, out: c.out, why: c.why, gap: c.out ? null : c.finT - res[0].finT, lapsDown: res[0].lap - c.lap, pits: c.pits, got: c.got, grid: c.grid, pen: c.penS || 0 })) };
     // 自分のチームの出来事（優勝・表彰台・入賞・初記録）とボーナス資金
     { const tm = me(), ev = []; tm.firsts = tm.firsts || {}; tm.milestones = tm.milestones || [];
       const lab = tm.entrant ? "チーム初" : "就任後初", mark = (k, text) => { const was = tm.firsts[k]; if (k === "win") tm.firsts.podium = tm.firsts.points = true; if (k === "podium") tm.firsts.points = true; if (was) return false; tm.firsts[k] = true; tm.milestones.unshift({ season: S.season, round: S.round + 1, gp: tr.name, text }); return true; };
@@ -1878,7 +1921,8 @@ function growthHtml(r) {
   const tc = r.teamChange, sg = v => `<b class="${v > 0 ? "good" : v < 0 ? "bad" : ""}">${v > 0 ? "+" : ""}${v}</b>`;
   return `<div class="ctl"><b class="small">1年での変化</b>${g}${tc ? `<div class="small">チームの開発力 ${sg(tc.devp)}・戦略担当 ${sg(tc.strat)}・ピットクルー ${sg(tc.crew)}</div>` : ""}</div>`;
 }
-function resRow(r) { const d = F1.drv(r.id), tm = F1.team(r.tm); return `<tr class="${r.tm === S().my ? "me" : ""}"><td>${r.out ? "R" : r.pos}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${r.out ? esc(r.why) : r.pos === 1 ? "優勝" : r.lapsDown > 0 ? "+" + r.lapsDown + "周" : "+" + r.gap.toFixed(1)}</td><td class="n small muted">${r.grid}番手</td><td class="n">${r.got ? r.got + "点" : ""}</td></tr>`; }
+const penTag = c => (c.penS ? ' <span class="small bad">+' + c.penS + 's</span>' : '') + (c.dt ? ' <span class="small bad">DT</span>' : '') + (c.inv ? ' <span class="small muted">審議中</span>' : '');
+function resRow(r) { const d = F1.drv(r.id), tm = F1.team(r.tm); return `<tr class="${r.tm === S().my ? "me" : ""}"><td>${r.out ? "R" : r.pos}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${r.out ? esc(r.why) : r.pos === 1 ? "優勝" : r.lapsDown > 0 ? "+" + r.lapsDown + "周" : "+" + r.gap.toFixed(1)}${r.pen ? ' <span class="bad">（' + r.pen + '秒加算済）</span>' : ""}</td><td class="n small muted">${r.grid}番手</td><td class="n">${r.got ? r.got + "点" : ""}</td></tr>`; }
 
 /* ---------- レース ---------- */
 let geo = null;
@@ -2004,7 +2048,7 @@ function drawStrip() {
   el.innerHTML = `<div class="card" style="padding:8px 10px">${weatherHtml(R, false)}${R.cars.filter(c => c.tm === S().my).map(c => { const d = F1.drv(c.id), i = ord.indexOf(c), a = ord[i - 1], b = ord[i + 1];
     if (c.out) return `<div class="small muted">${esc(d.name)}：リタイア（${esc(c.why)}）</div>`;
     const cmp = o => { if (!o || o.out || !o.lt || !c.lt) return ""; const df = c.lt - o.lt; return ` <span class="${df < -0.05 ? "good" : df > 0.05 ? "bad" : "muted"}">${df > 0 ? "+" : ""}${df.toFixed(1)}</span>`; };
-    return `<div class="row small" style="padding:3px 0;border-bottom:1px solid var(--line);gap:6px;flex-wrap:wrap"><b style="min-width:30px">P${i + 1}</b><b>${esc(shortN(d.name))}</b>${ty(c.comp)}<span class="muted">${c.age}周</span>${c.drs ? '<span class="tag gold">DRS</span>' : ""}<span class="sp"></span><span>前周 <b>${lapFmt(c.lt)}</b></span>
+    return `<div class="row small" style="padding:3px 0;border-bottom:1px solid var(--line);gap:6px;flex-wrap:wrap"><b style="min-width:30px">P${i + 1}</b><b>${esc(shortN(d.name))}</b>${penTag(c)}${ty(c.comp)}<span class="muted">${c.age}周</span>${c.drs ? '<span class="tag gold">DRS</span>' : ""}<span class="sp"></span><span>前周 <b>${lapFmt(c.lt)}</b></span>
       <div style="width:100%;display:flex;gap:10px;flex-wrap:wrap">${a && !a.out ? `<span>▲ ${esc(shortN(F1.drv(a.id).name))} ${gapTo(c, a)}秒 ${ty(a.comp)}${a.age}周・前周差${cmp(a)}</span>` : '<span class="muted">▲ トップ</span>'}${b && !b.out ? `<span>▼ ${esc(shortN(F1.drv(b.id).name))} ${gapTo(c, b)}秒 ${ty(b.comp)}${b.age}周・前周差${cmp(b)}</span>` : ""}</div></div>`; }).join("")}<div class="small muted" style="margin-top:3px">前周差：マイナス（緑）＝自分の方が速い</div></div>`;
 }
 // 予選の再生：セッションごとに約15秒（×4で速く）。ノックアウトの線の下は赤
@@ -2111,7 +2155,7 @@ function drawTower() {
   el.innerHTML = `<tr><th>#</th><th>ドライバー</th><th class="n">差</th><th class="n">前周</th><th>タイヤ</th><th class="n">P</th></tr>` + ord.map((c, i) => {
     const d = F1.drv(c.id), tm = F1.team(c.tm);
     const g = gapSec(R, lead, c), gap = c.out ? c.why : i === 0 ? "トップ" : g >= (lead.lt || 90) ? "+" + Math.floor(g / (lead.lt || 90)) + "周" : "+" + g.toFixed(1);
-    return `<tr class="${c.tm === S().my ? "me" : ""}"><td>${c.out ? "R" : i + 1}</td><td>${tbar(tm)}${esc(shortN(d.name))}</td><td class="n">${gap}${c.drs && !c.out ? ' <span class="small drs">DRS</span>' : ""}</td><td class="n small" style="${!c.out && c.lt === fast ? "color:#b04cff;font-weight:700" : ""}">${c.out || !c.lap ? "" : lapFmt(c.lt)}</td><td>${c.out ? "" : ty(c.comp) + ' <span class="small muted">' + c.age + "</span>"}</td><td class="n small">${c.pits}</td></tr>`;
+    return `<tr class="${c.tm === S().my ? "me" : ""}"><td>${c.out ? "R" : i + 1}</td><td>${tbar(tm)}${esc(shortN(d.name))}${penTag(c)}</td><td class="n">${gap}${c.drs && !c.out ? ' <span class="small drs">DRS</span>' : ""}</td><td class="n small" style="${!c.out && c.lt === fast ? "color:#b04cff;font-weight:700" : ""}">${c.out || !c.lap ? "" : lapFmt(c.lt)}</td><td>${c.out ? "" : ty(c.comp) + ' <span class="small muted">' + c.age + "</span>"}</td><td class="n small">${c.pits}</td></tr>`;
   }).join("");
 }
 function drawFeed() { const R = S().race, el = $("#feed"); if (!R || !el) return; el.innerHTML = R.feed.slice(0, 40).map(f => `<div class="${f.mine ? "m" : ""}">${esc(f.t)}</div>`).join("") || '<div class="muted">スタートを待っています</div>'; }
