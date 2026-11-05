@@ -568,6 +568,7 @@ const F1 = (() => {
     const q3 = q2.slice(0, cut2); q3.forEach(x => { if (x.dead) return; x.ch.q3 = useQ(x, x.ch.q3 || "S"); }); session(q3, 2, x => R.wet ? "S" : x.ch.q3, 0.3);
     let grid = q3.concat(q2.slice(cut2), all.slice(cut1));
     // パドックの出来事による降格（PU の交換・指令違反）
+    if (S.puPlan && S.puPlan.round === S.round) { const id = S.puPlan.id; if (grid.some(x => x.id === id)) { evN().pen[id] = (evN().pen[id] || 0) + 10; evN().paceD[id] = (evN().paceD[id] || 0) - 0.15; evN().reveal.push(drv(id).name + " が新しい PU に交換（10グリッド降格・パワーは 0.15 秒速い）"); } S.puPlan = null; }
     if (S.evNext) { grid.forEach(x => { const p = S.evNext.pen[x.id]; if (p) x.pen = (x.pen || 0) + p; }); (S.evNext.reveal || []).forEach(t => news("{i:warn} " + t)); S.evNext.reveal = []; }
     // 資料の確率表：CPU の PU 部品交換の降格（10か5）・パルクフェルメ違反のピットレーン発進
     { const late = 0.4 + 1.2 * (S.round / Math.max(1, S.calendar.length)), cand = grid.filter(x => x.tm !== S.my && !x.pen);
@@ -1083,6 +1084,49 @@ const F1 = (() => {
             ["この勢いで契約を結び直す（愛着 +8・契約 +1年（最大3年））", () => { d.contract = clamp(d.contract + 1, 1, 3); addLoy(d, 8); return d.name + " と契約を延ばした"; }],
             ["気づきをチームで共有する（士気 +3）", () => { addMor(c.tm, 3); return d.name + " の気づきをチームで共有した。士気が上がった"; }]] }; } }
   });
+  // ---- レース間イベント（第2弾・調査メモ「追記2」から）：どの選択肢にも見える得がある。効果は既存の仕組み（愛着・士気・予算・次戦のペース・開発の遅れ）だけ ----
+  Object.assign(EVENTS, {
+    // A1. No.2 ドライバーの待遇不満（ポイント差が開いたとき）
+    no2: { w: 3, when: c => c.ds.length === 2 && S.round >= 4 && c.tm.budget > 5 && Math.abs(c.ds[0].pts - c.ds[1].pts) >= 20, make: (c, x) => {
+      const [a, b] = c.ds.slice().sort((p, q) => q.pts - p.pts); return { title: "No.2 の不満", text: `${b.name} が「いつも ${a.name} が優先される」と不満をこぼしている。ここまでのポイント差は ${a.pts - b.pts} 点。`, ch: [
+        [`次戦は自由に戦わせる（${b.name} の愛着 +6・${b.name} は次戦 0.06秒速い・2台の接触やトラブルの危険が上がる）`, () => { addLoy(b, 6); evN().paceD[b.id] = (evN().paceD[b.id] || 0) - 0.06; c.ds.forEach(d => evN().relD[d.id] = (evN().relD[d.id] || 1) * 1.5); return `${b.name} を自由に戦わせる`; }],
+        [`${a.name} をエースだと明言する（${a.name} の愛着 +4・次戦 0.05秒速い・${b.name} の愛着 −5）`, () => { addLoy(a, 4); addLoy(b, -5); evN().paceD[a.id] = (evN().paceD[a.id] || 0) - 0.05; return `${a.name} をエースだと明言した`; }],
+        [`${b.name} に新パーツを先に回す（$3M・${b.name} の愛着 +8・次戦 0.08秒速い）`, () => { pay(c.tm, 3); addLoy(b, 8); evN().paceD[b.id] = (evN().paceD[b.id] || 0) - 0.08; return `${b.name} に新パーツを先に回した`; }]] }; } },
+    // A4. ピレリのタイヤテスト参加の打診（実例）
+    tyreTest: { w: 2, when: c => S.round >= 2, make: (c, x) => {
+      const ace = c.ds.slice().sort((p, q) => q.pace - p.pace)[0], jr = c.jrs[0], ch = [
+        [`${ace.name} を派遣する（${ace.name} のタイヤ管理 +1・次戦は 0.05秒速い）`, () => { ace.tm = clamp(ace.tm + 1, 40, 98); evN().paceD[ace.id] = (evN().paceD[ace.id] || 0) - 0.05; return `${ace.name} がタイヤテストに参加した`; }]];
+      if (jr) ch.push([`育成の ${jr.name} を派遣する（謝礼 $1M・${jr.name} のタイヤ管理 +1）`, () => { c.tm.budget += 1; jrUp(jr, "tm"); return `${jr.name} がタイヤテストに参加した`; }]);
+      ch.push(["辞退して開発に集中する（次戦は 0.06秒速い）", () => { c.ds.forEach(d => evN().paceD[d.id] = (evN().paceD[d.id] || 0) - 0.03); return "タイヤテストは辞退した"; }]);
+      return { title: "タイヤテストの打診", text: "ピレリから、来週のタイヤテストにドライバーを出してほしいと頼まれた。", ch }; } },
+    // A6. 輸送トラブル（新パーツが次戦までに届くかどうか）
+    freight: { w: 2, when: c => (c.tm.proj || []).some(p => p.due >= S.round && p.due <= S.round + 1), make: (c, x) => {
+      const soon = (c.tm.proj || []).filter(p => p.due >= S.round && p.due <= S.round + 1), delay = k => soon.slice(0, k).forEach(p => p.due += 1); return { title: "輸送トラブル", text: "新パーツを積んだ貨物便が天候で止まっている。次戦に間に合わないかもしれない。", ch: [
+        ["チャーター便で空輸する（$3M・新パーツは予定どおり届く）", () => { pay(c.tm, 3); return "チャーター便で新パーツを空輸した"; }],
+        ["必要な部品だけ空輸する（$1M・遅れるのは1つだけ）", () => { pay(c.tm, 1); delay(1); return "必要な部品だけ空輸した"; }],
+        ["旧仕様で戦う（費用なし・新パーツは全部1戦遅れる）", () => { delay(soon.length); return "新パーツは1戦遅れる。費用はかからなかった"; }]] }; } },
+    // B14. ルーキーのフリー走行義務（年2回）。乗せるレースを自分で選ぶ
+    rookie: { w: 3, when: c => { const n = S.calendar.length, rk = S.rk && S.rk.season === S.season ? S.rk : { n: 0, skip: 0 }; return c.jrs.length > 0 && rk.n < 2 && rk.skip < 3 && S.round >= 2 && S.round <= n - 2; }, data: () => ({ j: pick(academyOf(S.my)) }), make: (c, x) => {
+      const d = drv(x.j) || c.jrs[0], t = nextTr(), st = !!(t && t.street), rk = () => (S.rk && S.rk.season === S.season ? S.rk : (S.rk = { season: S.season, n: 0, skip: 0 }));
+      return { title: "ルーキーのフリー走行義務", text: `今季はフリー走行1回目で、出走2戦以内の新人を2回走らせる義務がある（果たせないと罰金）。次の ${t ? t.name : "レース"} が今回の候補${st ? "。市街地で壁が近い" : "。広くて安全なコース"}。`, ch: [
+        [`${d.name} を乗せる（${d.name} の経験 +1・思い入れ +3・次戦は準備が減って 0.04秒遅い${st ? "・市街地なので20%で壁に当たり、修理 $2M" : ""}）`, () => { rk().n++; jrOf(d).bond += 3; jrUp(d, pick(["craft", "cons", "tm", "wet", "calm"])); c.ds.forEach(q => evN().paceD[q.id] = (evN().paceD[q.id] || 0) + 0.04); if (st && rnd() < 0.2) { pay(c.tm, 2); return `${d.name} が壁に当たった。修理に $2M`; } return `${d.name} がフリー走行 1 回目を走った（今季 ${rk().n} 回目）`; }],
+        ["今回は見送る（次戦は 0.03秒速い・義務は残る）", () => { rk().skip++; c.ds.forEach(q => evN().paceD[q.id] = (evN().paceD[q.id] || 0) - 0.03); return "今回は見送った。義務はあとで果たす"; }]] }; } },
+    // B20. PU 交換の計画：降格を受けるコースを自分で選ぶ（抜きやすいコースで受けるのが定石）
+    puPlan: { w: 5, when: c => { const n = S.calendar.length; return S.round >= Math.round(n * 0.55) && S.round <= n - 3 && S.puPlanSeason !== S.season && !S.puPlan; }, data: () => ({ d: pick(me().drivers) }), make: (c, x) => {
+      const d = drv(x.d) || c.ds[0], lab = t => t.ovt >= 0.6 ? "抜きやすい" : t.ovt >= 0.35 ? "抜きやすさはふつう" : "抜きにくい", opts = [0, 1, 2].map(k => ({ k: S.round + k, tr: TRACKS[S.calendar[S.round + k]] })).filter(o => o.tr);
+      return { title: "PU 交換の計画", text: `${d.name} の PU が部品の上限に近づいた。新しい PU を入れるレースは 10 グリッド降格を受けるが、そのレースは新品のパワーで 0.15 秒速い。降格は抜きやすいコースで受けるのが定石だ。`, ch: opts.map(o => [`${o.k === S.round ? "次戦" : (o.k - S.round + 1) + "戦先"}の ${o.tr.name}（${lab(o.tr)}）で交換する`, () => { S.puPlan = { round: o.k, id: d.id }; S.puPlanSeason = S.season; return `${d.name} の PU 交換は ${o.tr.name} に決めた`; }]).concat([["今季は交換しない（降格なし・パワーは今のまま）", () => { S.puPlanSeason = S.season; return "PU 交換は見送った"; }]]) }; } },
+    // A12. ドライバーのトレーニング合宿（雨かタイヤ管理が低いとき）
+    camp: { w: 2, when: c => c.tm.budget > 6 && c.ds.some(d => d.wet < 68 || d.tm < 68), make: (c, x) => {
+      const d = c.ds.slice().sort((p, q) => Math.min(p.wet, p.tm) - Math.min(q.wet, q.tm))[0], k = d.wet <= d.tm ? "wet" : "tm", kn = k === "wet" ? "雨" : "タイヤ管理"; return { title: "トレーニング合宿の提案", text: `${d.name} の${kn}が弱い。合宿を組むこともできる。`, ch: [
+        [`合宿をする（$3M・${d.name} の${kn} +2）`, () => { pay(c.tm, 3); d[k] = clamp(d[k] + 2, 40, 98); return `${d.name} の${kn}が伸びた`; }],
+        [`シミュレーターで代わりにする（$1M・${d.name} の${kn} +1）`, () => { pay(c.tm, 1); d[k] = clamp(d[k] + 1, 40, 98); return `${d.name} がシミュレーターで練習した`; }],
+        ["休養を優先する（士気 +3）", () => { addMor(c.tm, 3); return "休養を優先した。チームの士気が上がった"; }]] }; } },
+    // A8. 風洞の故障（施設が高いほど起きる）
+    factory: { w: 2, when: c => fl(c.tm, "wt") >= 3 && (c.tm.proj || []).length > 0, make: (c, x) => ({ title: "風洞の故障", text: "風洞の冷却装置が止まった。直さないと開発が進まない。", ch: [
+      ["緊急修理する（$3M・開発は止まらない）", () => { pay(c.tm, 3); return "風洞を緊急修理した。開発は止まらない"; }],
+      ["週末に回す（費用なし・開発中の部品が1戦遅れる）", () => { (c.tm.proj || []).forEach(p => p.due += 1); return "修理を週末に回した。開発中の部品は1戦遅れる"; }],
+      ["この機会に大規模メンテをする（開発中の部品が2戦遅れる・開発力 +2）", () => { (c.tm.proj || []).forEach(p => p.due += 2); c.tm.devp = clamp(c.tm.devp + 2, 0, 99); return "大規模メンテを実施。部品は2戦遅れるが、開発力が上がった"; }]] }) }
+  });
   function evCtx() {
     const tm = me(), rec = S.last, rs = rec ? rec.res.filter(r => r.tm === S.my) : [], fin = rs.filter(r => !r.out).sort((a, b) => a.pos - b.pos), top = fin[0];
     const dnfR = rs.find(r => r.out), tt = teamTable(), myI = tt.findIndex(x => x.id === S.my), rival = tt[myI - 1] || tt[myI + 1];
@@ -1355,6 +1399,7 @@ const F1 = (() => {
   function endSeason() { backup("第" + S.season + "シーズン 全戦終了時");
     const dt = driverTable(), tt = teamTable(), myDevp0 = me().devp, myStaff0 = { strat: me().staff.strat.skill, crew: me().staff.crew.skill }, rec = { season: S.season, champ: dt[0].name, champTeam: teamOf(dt[0].id).name, cons: tt[0].name, myRank: tt.indexOf(me()) + 1, myPts: me().pts, my: me().name, reg: null };
     S.history.push(rec); dt[0].career.titles++;
+    if (S.rk && S.rk.season === S.season && S.rk.skip > 0 && S.rk.n < 2) { const f = r1(1.5 * (2 - S.rk.n)); me().budget -= f; news("{i:warn} ルーキーのフリー走行義務を果たせず、罰金 $" + f + "M"); }
     // お金：スポンサー＋賞金＋ペイドライバー − 給料 − PU代
     tt.forEach((tm, i) => { const sal = tm.drivers.reduce((t, id) => t + drv(id).salary, 0) + tm.staff.strat.salary + tm.staff.crew.salary, fee = tm.works ? 0 : pu(tm.pu).fee, pay = tm.drivers.reduce((t, id) => t + drv(id).sponsor, 0); const carry = Math.max(0, tm.budget) * 0.25; tm.lastYear = { owner: tm.owner, sponsor: tm.sponsor, prize: (S.teams.length - i) * 4, pay, sal, fee, carry: r1(carry) }; tm.budget = Math.max(60, Math.round(tm.owner + tm.sponsor + (S.teams.length - i) * 4 + pay - sal - fee + carry)); { const sp0 = tm.sponsor; tm.sponsor = clamp(Math.round(tm.sponsor + (6 - i) * 1.5), 30, 130); tm.lastYear.spUp = tm.sponsor - sp0; } tm.hist.push(i + 1); tm.pts = 0; });
     // 規則変更
