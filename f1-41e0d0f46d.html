@@ -779,7 +779,7 @@ const F1 = (() => {
       R.cars.forEach(o => { if (o !== c && o.unlapping && !o.out) end = Math.max(end, o.lapEnd + 0.6); });
       R.unlaps = (R.unlaps || 0) + 1; if (c.tm === S.my) say(R, "↻ L" + c.lap + " " + d.name + "：SC を追い越して周回遅れを取り戻す（隊列の最後尾へ）", true);
     }
-    else if (R.sc && !scLead) { const at = R.cars.filter(o => o !== c && !o.out && !o.fin && o.lastPit !== o.lap && !o.unlapping).reduce((x, y) => !x || y.tot > x.tot ? y : x, null); if (at) end = Math.max(end, at.lapEnd + 0.6); }
+    else if (R.sc && !scLead) { const at = R.cars.filter(o => o !== c && !o.out && !o.fin && !o.unlapping).reduce((x, y) => !x || y.tot > x.tot ? y : x, null); if (at) end = Math.max(end, at.lapEnd - (at.qOff || 0) + 0.6 + extra); }
     const rsNow = !R.sc && !R.vsc && R.rs && c.rsDone !== R.rs.id && !scLead;
     if (rsNow) { c.rsDone = R.rs.id; c.rsAt = c.lap; const dl = rsDelta(R, c, false); if (c.out) return; end += dl; }
     const ahead = unlap ? null : R.cars.filter(o => o !== c && !o.out && !o.fin && !o.unlapping && o.lap === c.lap && o.tot <= c.tot).sort((a, b) => b.tot - a.tot)[0];
@@ -812,10 +812,10 @@ const F1 = (() => {
     if (parkNow) {
       const live = R.cars.filter(o => !o.out && !o.fin).length, rk = c.unlapping ? live + (R.redU = (R.redU || 0) + 1) : (R.redN = (R.redN || 0) + 1) - 1;
       const st = R.redGo + rk * 0.6; c.lt = st - c.lapEnd + tr.base * 1.38; c.lapStart = st; c.lapEnd = st + tr.base * 1.38;
-      if (isLeader(R, c)) leaderLap(R);
+      c.qOff = 0; if (isLeader(R, c)) leaderLap(R);
       return;
     }
-    c.lt = end - c.lapEnd; c.lapStart = c.lapEnd; c.lapEnd = end;
+    c.qOff = R.sc ? extra : 0; c.lt = end - c.lapEnd; c.lapStart = c.lapEnd; c.lapEnd = end;
     if (isLeader(R, c)) { leaderLap(R); if (scLead && !R.sc && R.rs && R.rs.lap === R.lap) { c.rsDone = R.rs.id; c.rsAt = c.lap; c.lapEnd = c.lapStart + ltRace + rsDelta(R, c, true); c.lt = c.lapEnd - c.lapStart; } }
   }
   const isLeader = (R, c) => R.cars.filter(x => !x.out).every(x => x === c || x.lap < c.lap || (x.lap === c.lap && x.tot > c.tot));
