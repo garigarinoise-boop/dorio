@@ -1017,18 +1017,21 @@ const F1 = (() => {
   function finishRace(R) {
     const tr = TRACKS[R.tr];
     if (rnd() < 0.08) { const ok = S.teams.filter(t => R.cars.some(c => c.tm === t.id && !c.out)); if (ok.length) { const t = pick(ok); R.cars.filter(c => c.tm === t.id && !c.out).sort(() => rnd() - 0.5).forEach((c, i) => { if (i === 0 || rnd() < 0.5) { c.out = true; c.dsq = true; c.why = "失格（プランクの摩耗が規定超え）"; news("{i:warn} " + drv(c.id).name + "（" + t.name + "）：レース後の車検でプランクの摩耗が規定を超え、失格"); } }); } }
-    const res = R.cars.slice().sort((a, b) => (a.out - b.out) || b.lap - a.lap || a.finT - b.finT || a.lapEnd - b.lapEnd);
+    const W = Math.max(0, ...R.cars.filter(c => !c.out).map(c => c.lap)), need = Math.floor(W * 0.9); // 規定周回：優勝者の周回数の90%（切り捨て）
+    R.cars.forEach(c => { c.cls = !c.out || (!c.dsq && need > 0 && c.lap >= need); });
+    const tAt = c => c.out ? c.tot + (c.penS || 0) : c.finT; // 同じ周回数なら、その周に線を越えた時刻の順
+    const res = R.cars.slice().sort((a, b) => (b.cls - a.cls) || b.lap - a.lap || tAt(a) - tAt(b) || a.lapEnd - b.lapEnd);
     res.forEach((c, i) => { c.pos = i + 1; });
     S.nRace = (S.nRace || 0) + 1; restoreAbs(res);
     R.cars.filter(c => !c.out && c.penS).forEach(c => { const raw = R.cars.filter(o => !o.out).sort((a, b) => b.lap - a.lap || (a.finT - (a.penS || 0)) - (b.finT - (b.penS || 0))), was = raw.indexOf(c) + 1; if (was !== c.pos) say(R, "{i:warn} " + drv(c.id).name + "：" + c.penS + " 秒加算で P" + was + " → P" + c.pos, c.tm === S.my); });
     const fLap = res.filter(c => !c.out && c.pos <= 10).sort((a, b) => a.best - b.best)[0];
-    res.forEach(c => { const d = drv(c.id), tm = team(c.tm); d.career.starts++; c.got = 0; if (!c.out && c.pos <= 10) { c.got = POINTS[c.pos - 1]; /* ファステストラップの1点は2025年に廃止（記録だけ残す） */ d.pts += c.got; tm.pts += c.got; } if (c.pos === 1 && !c.out) { d.wins++; d.career.wins++; } if (c.pos <= 3 && !c.out) d.podiums++; });
+    res.forEach(c => { const d = drv(c.id), tm = team(c.tm); d.career.starts++; c.got = 0; if (c.cls && c.pos <= 10) { c.got = POINTS[c.pos - 1]; /* ファステストラップの1点は2025年に廃止（記録だけ残す） */ d.pts += c.got; tm.pts += c.got; } if (c.pos === 1 && !c.out) { d.wins++; d.career.wins++; } if (c.pos <= 3 && c.cls) d.podiums++; });
     const w = res[0];
-    const rec = { passes: R.passes || 0, round: S.round + 1, name: tr.name, winner: drv(w.id).name, wteam: team(w.tm).name, fl: fLap ? drv(fLap.id).name : "-", res: res.map(c => ({ id: c.id, tm: c.tm, pos: c.pos, out: c.out, why: c.why, gap: c.out ? null : c.finT - res[0].finT, lapsDown: res[0].lap - c.lap, pits: c.pits, got: c.got, grid: c.grid, pen: c.penS || 0 })) };
+    const rec = { passes: R.passes || 0, round: S.round + 1, name: tr.name, winner: drv(w.id).name, wteam: team(w.tm).name, fl: fLap ? drv(fLap.id).name : "-", res: res.map(c => ({ id: c.id, tm: c.tm, pos: c.pos, out: c.out, cls: c.cls, why: c.why, gap: c.out ? null : c.finT - res[0].finT, lapsDown: res[0].lap - c.lap, pits: c.pits, got: c.got, grid: c.grid, pen: c.penS || 0 })) };
     // 自分のチームの出来事（優勝・表彰台・入賞・初記録）とボーナス資金
     { const tm = me(), ev = []; tm.firsts = tm.firsts || {}; tm.milestones = tm.milestones || [];
       const lab = tm.entrant ? "チーム初" : "就任後初", mark = (k, text) => { const was = tm.firsts[k]; if (k === "win") tm.firsts.podium = tm.firsts.points = true; if (k === "podium") tm.firsts.points = true; if (was) return false; tm.firsts[k] = true; tm.milestones.unshift({ season: S.season, round: S.round + 1, gp: tr.name, text }); return true; };
-      res.filter(c => c.tm === tm.id && !c.out).sort((a, b) => a.pos - b.pos).forEach(c => { const d = drv(c.id);
+      res.filter(c => c.tm === tm.id && c.cls).sort((a, b) => a.pos - b.pos).forEach(c => { const d = drv(c.id);
         if (c.pos === 1) { const first = mark("win", d.name + " が" + lab + "優勝"), dFirst = d.career.wins === 1, bonus = r1(3 * perRace()) + (first ? 5 : 0); tm.budget += bonus; tm.sponsor = clamp(tm.sponsor + 1, 30, 140); ev.push({ k: "win", id: c.id, pos: 1, grid: c.grid, teamFirst: first, drvFirst: dFirst, bonus }); if (dFirst && !first) tm.milestones.unshift({ season: S.season, round: S.round + 1, gp: tr.name, text: d.name + " が初優勝" }); }
         else if (c.pos <= 3) { const first = mark("podium", d.name + " が" + lab + "表彰台（" + c.pos + "位）"), bonus = r1(1.5 * perRace()) + (first ? 2 : 0); tm.budget += bonus; ev.push({ k: "podium", id: c.id, pos: c.pos, grid: c.grid, teamFirst: first, bonus }); }
         else if (c.got > 0) { const first = mark("points", d.name + " が" + lab + "入賞（" + c.pos + "位）"); if (first) tm.budget += 1; ev.push({ k: "points", id: c.id, pos: c.pos, grid: c.grid, teamFirst: first, bonus: first ? 1 : 0 }); } });
@@ -2215,7 +2218,7 @@ function growthHtml(r) {
 const penTag = c => (c.penS ? ' <span class="small bad">+' + c.penS + 's</span>' : '') + (c.dt ? ' <span class="small bad">DT</span>' : '') + (c.sg ? ' <span class="small bad">SG</span>' : '') + (c.inv ? ' <span class="small muted">審議中</span>' : '');
 // 次戦の欠場と代役（自分のチームだけ）
 const absCard = () => { const l = (S().abs || []).filter(a => a.on && a.tm === S().my); return l.length ? '<div class="card"><h3>{i:swap} 次戦の代役</h3>' + l.map(a => '<p class="small"><b>' + esc(F1.drv(a.out).name) + '</b> は' + esc(a.why) + 'で欠場。代役は <b>' + esc(F1.drv(a.sub).name) + '</b>（速さ ' + F1.drv(a.sub).pace + '・' + (a.kind === "res" ? "指名のリザーブ。準備ができている" : a.kind === "acad" ? "育成のドライバー。慣れていない分 0.25秒遅い" : "契約のないドライバー。慣れていない分 0.25秒遅い") + '）</p>').join("") + '<p class="hint">次戦が終わるまで、ドライバーの入れ替えや契約の操作はできません。</p></div>' : ""; };
-function resRow(r) { const d = F1.drv(r.id), tm = F1.team(r.tm); return `<tr class="${r.tm === S().my ? "me" : ""}"><td>${r.out ? "R" : r.pos}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${r.out ? esc(r.why) : r.pos === 1 ? "優勝" : r.lapsDown > 0 ? "+" + r.lapsDown + "周" : "+" + r.gap.toFixed(1)}${r.pen ? ' <span class="bad">（' + r.pen + '秒加算済）</span>' : ""}</td><td class="n small muted">${r.grid}番手</td><td class="n">${r.got ? r.got + "点" : ""}</td></tr>`; }
+function resRow(r) { const d = F1.drv(r.id), tm = F1.team(r.tm); return `<tr class="${r.tm === S().my ? "me" : ""}"><td>${r.out && !r.cls ? "R" : r.pos}</td><td>${tbar(tm)}${esc(d.name)}</td><td class="n small">${r.out ? esc(r.why) + (r.cls ? "（リタイア・完走扱い）" : "") : r.pos === 1 ? "優勝" : r.lapsDown > 0 ? "+" + r.lapsDown + "周" : "+" + r.gap.toFixed(1)}${r.pen ? ' <span class="bad">（' + r.pen + '秒加算済）</span>' : ""}</td><td class="n small muted">${r.grid}番手</td><td class="n">${r.got ? r.got + "点" : ""}</td></tr>`; }
 
 /* ---------- レース ---------- */
 let geo = null;
@@ -2580,7 +2583,7 @@ function celebrate(rec, after) {
 }
 function raceDone() {
   const rec = S().last; U.paused = true; cancelAnimationFrame(U.raf); render();
-  if (rec) celebrate(rec, () => { const mine = rec.res.filter(r => r.tm === S().my); modal(`<h3>{i:flag} ${esc(rec.name)}</h3><p>優勝：<b>${esc(rec.winner)}</b>（${esc(rec.wteam)}）・ファステストラップ ${esc(rec.fl)}（点はなし）</p>${mine.map(r => `<p>${esc(F1.drv(r.id).name)}：<b>${r.out ? "リタイア（" + esc(r.why) + "）" : r.pos + "位"}</b>（${r.grid}番手から）${r.got ? "・" + r.got + "点" : ""}</p>`).join("")}${(rec.train || []).length ? `<p class="small">{i:pad} シミュレーター練習：${rec.train.map(x => esc(shortN(F1.drv(x.id).name)) + " " + ({ pace: "速さ", craft: "バトル", cons: "安定感", tm: "タイヤ管理", wet: "雨", calm: "冷静さ" })[x.k] + " +1").join("・")}</p>` : ""}${rec.morale ? `<p class="small">{i:bolt} チームの士気 ${rec.morale.from} → ${rec.morale.to}${rec.morale.why && rec.morale.why.length ? `<span class="muted">（${rec.morale.why.join("・")}）</span>` : ""}</p>` : ""}<button class="b p big" data-x>閉じる</button>`); });
+  if (rec) celebrate(rec, () => { const mine = rec.res.filter(r => r.tm === S().my); modal(`<h3>{i:flag} ${esc(rec.name)}</h3><p>優勝：<b>${esc(rec.winner)}</b>（${esc(rec.wteam)}）・ファステストラップ ${esc(rec.fl)}（点はなし）</p>${mine.map(r => `<p>${esc(F1.drv(r.id).name)}：<b>${r.out ? (r.cls ? r.pos + "位（リタイア・完走扱い：" + esc(r.why) + "）" : "リタイア（" + esc(r.why) + "）") : r.pos + "位"}</b>（${r.grid}番手から）${r.got ? "・" + r.got + "点" : ""}</p>`).join("")}${(rec.train || []).length ? `<p class="small">{i:pad} シミュレーター練習：${rec.train.map(x => esc(shortN(F1.drv(x.id).name)) + " " + ({ pace: "速さ", craft: "バトル", cons: "安定感", tm: "タイヤ管理", wet: "雨", calm: "冷静さ" })[x.k] + " +1").join("・")}</p>` : ""}${rec.morale ? `<p class="small">{i:bolt} チームの士気 ${rec.morale.from} → ${rec.morale.to}${rec.morale.why && rec.morale.why.length ? `<span class="muted">（${rec.morale.why.join("・")}）</span>` : ""}</p>` : ""}<button class="b p big" data-x>閉じる</button>`); });
 }
 
 /* ---------- マシン ---------- */
