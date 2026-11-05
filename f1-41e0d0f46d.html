@@ -2277,7 +2277,7 @@ function vRace() {
   $("#main").innerHTML = `
   <div class="card"><div class="row"><b class="sp">${esc(tr.name)}</b><span class="small muted" id="lapc"></span></div><div id="flag"></div>
     <canvas id="trk" width="640" height="380"></canvas>
-    <div class="row" style="margin-top:8px"><button class="b ${U.paused ? "p" : ""}" id="pp">${U.paused ? (started ? "{i:play} 再開" : "{i:play} スタート") : "{i:pause} 一時停止"}</button>${[1, 3, 10].map(k => `<button class="b ${U.speed === k ? "on" : ""}" data-sp="${k}">×${k}</button>`).join("")}<span class="sp"></span><button class="b" id="toEnd">最後まで</button></div><details class="small" style="margin-top:6px"><summary class="muted">一時停止の設定（無線・近くの車のピット・予定のピット）</summary><label class="small" style="display:block"><input type="checkbox" id="startSeq" ${S().startSeq !== false ? "checked" : ""}> スタート前にフォーメーションラップとライト消灯を見る（見ないと、すぐスタート）</label><label class="small" style="display:block"><input type="checkbox" id="radioStop" ${S().radioStop !== false ? "checked" : ""}> ドライバーの無線で止める（タイヤが限界・前を抜けない・後ろが速い）</label><label class="small" style="display:block"><input type="checkbox" id="rivalStop" ${S().rivalStop !== false ? "checked" : ""}> すぐ前・後ろの車がピットに入ったら止める</label><label class="small" style="display:block"><input type="checkbox" id="pitStop" ${S().pitStop !== false ? "checked" : ""}> 予定のピットの1周前に止める</label><label class="small" style="display:block"><input type="checkbox" id="autoOrder" ${S().autoOrder ? "checked" : ""}> 速いチームメイトが2周詰まったら自動で譲らせる（譲った方は少し不満・譲られた方は少し喜ぶ）</label></details></div>
+    <div class="row" style="margin-top:8px"><button class="b ${U.paused ? "p" : ""}" id="pp">${U.paused ? (started ? "{i:play} 再開" : "{i:play} スタート") : "{i:pause} 一時停止"}</button>${[1, 3, 10].map(k => `<button class="b ${U.speed === k ? "on" : ""}" data-sp="${k}">×${k}</button>`).join("")}<span class="sp"></span><button class="b" id="toEnd">最後まで</button></div><details class="small" style="margin-top:6px"><summary class="muted">一時停止の設定（無線・近くの車のピット・予定のピット）</summary><label class="small" style="display:block"><input type="checkbox" id="startSeq" ${S().startSeq !== false ? "checked" : ""}> スタート前にスタートのライト消灯を見る（見ないと、すぐスタート）</label><label class="small" style="display:block"><input type="checkbox" id="radioStop" ${S().radioStop !== false ? "checked" : ""}> ドライバーの無線で止める（タイヤが限界・前を抜けない・後ろが速い）</label><label class="small" style="display:block"><input type="checkbox" id="rivalStop" ${S().rivalStop !== false ? "checked" : ""}> すぐ前・後ろの車がピットに入ったら止める</label><label class="small" style="display:block"><input type="checkbox" id="pitStop" ${S().pitStop !== false ? "checked" : ""}> 予定のピットの1周前に止める</label><label class="small" style="display:block"><input type="checkbox" id="autoOrder" ${S().autoOrder ? "checked" : ""}> 速いチームメイトが2周詰まったら自動で譲らせる（譲った方は少し不満・譲られた方は少し喜ぶ）</label></details></div>
   <div id="strip"></div>
   ${(() => { const sub = U.rsub || (started ? "tower" : "ctls"); return `<div class="seg">${[["tower", "タイミング"], ["ctls", started ? "指示" : "戦略"], ["feed", "実況"]].map(([k, l]) => `<button class="${sub === k ? "on" : ""}" data-rs="${k}">${l}</button>`).join("")}</div>
   ${sub === "ctls" ? `<div id="ctls"></div>${!started ? `<div class="card"><h3>予選結果</h3>${gridTable(R)}</div>` : ""}` : sub === "tower" ? `<div class="card"><div style="overflow-x:auto"><table class="tower" id="tower"></table></div></div>${!started ? `<div class="card"><h3>予選結果</h3>${gridTable(R)}</div>` : ""}` : `<div class="card"><div class="feed" id="feed"></div></div>`}`; })()}`;
@@ -2439,8 +2439,8 @@ function drawFeed() { const R = S().race, el = $("#feed"); if (!R || !el) return
 // グリッドの位置：2列（奇数番が左・偶数番が右にずれる）、後ろの車ほど線の後ろ
 const gridSlot = c => { const i = c.grid - 1; return -((i >> 1) * 0.011 + (i & 1 ? 0.005 : 0) + 0.004); };
 const gridSide = c => ((c.grid - 1) & 1 ? 1 : -1);
-// スタート演出の進み（秒）：フォーメーションラップ 7.5・ライト点灯 0.9 ずつ 5 つ・消灯までの間 U.seq.hold・消灯の表示 0.7
-const SEQ = { form: 7.5, light: 0.9, out: 0.7 };
+// スタート演出の進み（秒）：グリッドに並んで 0.8・ライト点灯 0.9 ずつ 5 つ・消灯までの間 U.seq.hold・消灯の表示 0.7（フォーメーションラップは 2026-11-05 に外した）
+const SEQ = { form: 0.8, light: 0.9, out: 0.7 };
 function drawTrack() {
   const R = S().race, cv = $("#trk"); if (!R || !cv) return;
   const ctx = cv.getContext("2d"), W = cv.width, H = cv.height, m = 26, X = p => m + p[0] * (W - 2 * m), Y = p => m + p[1] * (H - 2 * m);
@@ -2456,7 +2456,7 @@ function drawTrack() {
   live.slice().reverse().forEach(c => {
     let f = 0;
     let side = 0;
-    if (!started) { f = gridSlot(c); side = gridSide(c) * 4; if (U.seq && U.seq.t < SEQ.form) { const q = U.seq.t / SEQ.form; f = gridSlot(c) - (1 - q); side = gridSide(c) * 4 * q + Math.sin(U.seq.t * 5 + c.grid) * 3 * (1 - q); } } else if (c.fin) f = 0.02 + ord.indexOf(c) * 0.002; else if (R.sc && R.sc.red && c.redTyre === R.sc.red && R.t < c.lapStart) f = -Math.min(0.12, (c.lapStart - R.redGo) / 0.6 * 0.005 + 0.004); else { const pr = Math.max(0, Math.min(0.999, (R.t - c.lapStart) / ((c.lapEnd - c.lapStart) || 1)));
+    if (!started) { f = gridSlot(c); side = gridSide(c) * 4; } else if (c.fin) f = 0.02 + ord.indexOf(c) * 0.002; else if (R.sc && R.sc.red && c.redTyre === R.sc.red && R.t < c.lapStart) f = -Math.min(0.12, (c.lapStart - R.redGo) / 0.6 * 0.005 + 0.004); else { const pr = Math.max(0, Math.min(0.999, (R.t - c.lapStart) / ((c.lapEnd - c.lapStart) || 1)));
       if (c.lap === 0 && !(R.rs && R.rs.standing)) { const g = gridSlot(c); f = g + (1 - g) * pr; side = gridSide(c) * 4 * Math.max(0, 1 - pr / 0.06); } else f = pr; }
     const p0 = posAt(geo, f), tm = F1.team(c.tm), mine = c.tm === S().my;
     let p = p0; if (side) { const q1 = posAt(geo, f + 0.002), ddx = X(q1) - X(p0), ddy = Y(q1) - Y(p0), dl2 = Math.hypot(ddx, ddy) || 1; p = [p0[0] + (-ddy / dl2 * side) / (W - 2 * m), p0[1] + (ddx / dl2 * side) / (H - 2 * m)]; }
@@ -2466,7 +2466,7 @@ function drawTrack() {
   if (U.seq && !started) { const sq = U.seq, n = sq.t < SEQ.form ? 0 : Math.min(5, Math.floor((sq.t - SEQ.form) / SEQ.light) + 1), out = sq.t >= SEQ.form + 5 * SEQ.light + sq.hold;
     const bw = 5 * 34 + 20, bx = (W - bw) / 2, by = 10; ctx.fillStyle = "rgba(0,0,0,0.75)"; ctx.fillRect(bx, by, bw, 44);
     for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.arc(bx + 27 + i * 34, by + 22, 13, 0, Math.PI * 2); ctx.fillStyle = !out && i < n ? "#ff1a1a" : "#2a1010"; ctx.fill(); }
-    const fl0 = $("#flag"); if (fl0) fl0.innerHTML = out ? '<div class="flag fin">{i:lights} ライト消灯！ スタート</div>' : n ? '<div class="flag red">{i:lights} ライト点灯（5つ点いて、全部消えたらスタート）</div>' : '<div class="flag sc">{i:flag} フォーメーションラップ（タイヤと車を温めながらグリッドへ）</div>'; return; }
+    const fl0 = $("#flag"); if (fl0) fl0.innerHTML = out ? '<div class="flag fin">{i:lights} ライト消灯！ スタート</div>' : n ? '<div class="flag red">{i:lights} ライト点灯（5つ点いて、全部消えたらスタート）</div>' : '<div class="flag red">{i:lights} 全車がグリッドに並んだ。まもなくライト点灯（5つ点いて、全部消えたらスタート）</div>'; return; }
   const lapEl = $("#lapc"); if (lapEl) lapEl.textContent = R.finished ? "終了" : started ? "L" + Math.min(R.laps, R.lap + 1) + " / " + R.laps : "スタート前";
   const fl = $("#flag"); if (fl) fl.innerHTML = R.finished ? '<div class="flag fin">{i:flag} チェッカー</div>' : R.sc && R.sc.red ? (R.t < R.redGo ? '<div class="flag red">{i:rf} 赤旗中断：全車ピットレーンに戻って停止</div>' : '<div class="flag red">{i:rf} 赤旗明け・SC の先導（このあとスタンディングスタート）</div>') : R.sc ? '<div class="flag sc">{i:sc} セーフティカー（全車が整列・ピットの損失が半分）</div>' : R.vsc ? '<div class="flag sc">{i:sc} バーチャルセーフティカー（差はそのまま・ピットの損失は約6割）</div>' : R.wet > 0.15 ? `<div class="flag rain">{i:rain} 路面がウェット（${Math.round(R.wet * 100)}%）</div>` : "";
 }
