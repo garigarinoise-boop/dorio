@@ -2442,7 +2442,8 @@ function drawTrack() {
   live.slice().reverse().forEach(c => {
     let f = 0;
     let side = 0;
-    if (!started) { f = gridSlot(c); side = gridSide(c) * 4; if (U.seq && U.seq.t < SEQ.form) { const q = U.seq.t / SEQ.form; f = gridSlot(c) - (1 - q); side = gridSide(c) * 4 * q + Math.sin(U.seq.t * 5 + c.grid) * 3 * (1 - q); } } else if (c.fin) f = 0.02 + ord.indexOf(c) * 0.002; else if (R.sc && R.sc.red && c.redTyre === R.sc.red && R.t < c.lapStart) f = -Math.min(0.12, (c.lapStart - R.redGo) / 0.6 * 0.005 + 0.004); else f = Math.max(0, Math.min(0.999, (R.t - c.lapStart) / ((c.lapEnd - c.lapStart) || 1)));
+    if (!started) { f = gridSlot(c); side = gridSide(c) * 4; if (U.seq && U.seq.t < SEQ.form) { const q = U.seq.t / SEQ.form; f = gridSlot(c) - (1 - q); side = gridSide(c) * 4 * q + Math.sin(U.seq.t * 5 + c.grid) * 3 * (1 - q); } } else if (c.fin) f = 0.02 + ord.indexOf(c) * 0.002; else if (R.sc && R.sc.red && c.redTyre === R.sc.red && R.t < c.lapStart) f = -Math.min(0.12, (c.lapStart - R.redGo) / 0.6 * 0.005 + 0.004); else { const pr = Math.max(0, Math.min(0.999, (R.t - c.lapStart) / ((c.lapEnd - c.lapStart) || 1)));
+      if (c.lap === 0 && !(R.rs && R.rs.standing)) { const g = gridSlot(c); f = g + (1 - g) * pr; side = gridSide(c) * 4 * Math.max(0, 1 - pr / 0.06); } else f = pr; }
     const p0 = posAt(geo, f), tm = F1.team(c.tm), mine = c.tm === S().my;
     let p = p0; if (side) { const q1 = posAt(geo, f + 0.002), ddx = X(q1) - X(p0), ddy = Y(q1) - Y(p0), dl2 = Math.hypot(ddx, ddy) || 1; p = [p0[0] + (-ddy / dl2 * side) / (W - 2 * m), p0[1] + (ddx / dl2 * side) / (H - 2 * m)]; }
     ctx.beginPath(); ctx.arc(X(p), Y(p), mine ? 8 : 6, 0, Math.PI * 2); ctx.fillStyle = tm.color; ctx.fill(); ctx.lineWidth = mine ? 3 : 1.5; ctx.strokeStyle = mine ? paint : tm.color2; ctx.stroke();
