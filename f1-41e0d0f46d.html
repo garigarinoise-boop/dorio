@@ -610,10 +610,10 @@ const F1 = (() => {
   function pitIncident(R, c, tm, d, tr, crew) {
     const wetK = R.wet > 0.2 ? 1.4 : 1, a = (100 - d.cons) * 0.00011 + (100 - d.calm) * 0.00007, b = (100 - tm.car.rel) * 0.00009;
     if (rnd() < (0.004 + a + b) * wetK) givePen(R, c, "t", 5, rnd() < b / (0.004 + a + b) ? "ピットレーンの速度超過（リミッターの不具合）" : "ピットレーンの速度超過（ドライバーのミス）");
-    if (rnd() < (0.003 + Math.max(0, 100 - crew) * 0.00012) * wetK) {
-      if (rnd() < 0.55) givePen(R, c, "t", 5, "ピット出口の白線越え（クルーの合図が早かった）");
-      else investigate(R, c, "危険なリリース（他の車の進路に出した）", 10, rnd() < 0.35 ? "dt" : "t", 0.8);
-    }
+    // ピット出口の白線越え：ラインをまたぐのはドライバーの操作（安定感・冷静さ）
+    if (rnd() < (0.0008 + (100 - d.cons) * 0.00007 + (100 - d.calm) * 0.00005) * wetK) givePen(R, c, "t", 5, "ピット出口の白線越え");
+    // 危険なリリース：車を出す合図を出すのはピットクルー
+    if (rnd() < (0.0013 + Math.max(0, 100 - crew) * 0.00005) * wetK) investigate(R, c, "危険なリリース（クルーが他の車の進路に出した）", 10, rnd() < 0.35 ? "dt" : "t", 0.8);
   }
   // 接触の責任：冷静さと安定感が低いほど「原因」にされやすい
   const atFault = d => rnd() < clamp(0.62 - (d.calm + d.cons) / 2 * 0.005, 0.1, 0.6);
@@ -872,7 +872,8 @@ const F1 = (() => {
     let t = gauss() * 0.75 * pack * skill * (wet ? 1.5 : 1) + ({ S: -0.3, M: 0, H: 0.35 }[c.comp] || 0) - (d.craft - 70) / 100;
     if (rnd() < 0.05 * skill) { t += 1.2 + rnd(); if (mine) say(R, "{i:slow} " + d.name + "：スタートで出遅れた", true); }
     else if (t < -0.9 && mine) say(R, "{i:fast} " + d.name + "：好スタート", true);
-    if (rnd() < 0.004 * skill) givePen(R, c, "t", 10, "フライング（動き出しが早かった）");
+    // フライング：ランプ消灯前に動いたらドライバーの責任（冷静さが低いほど）。めったに起きない
+    if (rnd() < 0.0006 + (100 - d.calm) * 0.00002) givePen(R, c, "t", 10, "フライング（消灯前に動いた）");
     // 1コーナーの接触（中団ほど起きやすい。抜きにくい市街地は特に）
     if (rnd() < (c.grid <= 3 ? 0.012 : 0.035) * (tr.street ? 1.4 : 1) * (wet ? 1.6 : 1)) {
       if (rnd() < 0.22) { c.out = true; c.why = "1周目の接触"; say(R, "{i:crash} " + d.name + "：1周目の接触でリタイア", mine); if (!R.sc && !R.vsc && rnd() < 0.6) startSC(R); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return 0; }
