@@ -334,7 +334,7 @@ const F1 = (() => {
     tm.budget += old.fee - p.fee; tm.pu = id; news("来季から " + p.name + " の PU を使う（年間 " + money(p.fee) + "）"); save(); return { ok: true, msg: p.name + " と契約しました" }; }
   function offStep(dir) { const o = S.off; if (!o) return { ok: false }; if (dir > 0 && o.step === 1) { const tm = me(); if (tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "契約が切れるドライバーを、延長か放出か決めてくれ" }; if ((o.offers || []).some(x => !x.done && tm.drivers.includes(x.id))) return { ok: false, msg: "移籍の打診に答えてくれ" }; if (tm.drivers.length < 2) return { ok: false, msg: "ドライバーを2人そろえてくれ" }; }
     o.step = clamp(o.step + dir, 0, 6); save(); return { ok: true }; }
-  function startSeason() { const tm = me(); if (tm.drivers.length < 2 || tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "ドライバーが決まっていません" }; backup("第" + S.season + "シーズン 開幕直前（オフの準備のあと）"); S.off = null; S.phase = "season"; rollAbs(true); save(); return { ok: true }; }
+  function startSeason() { const tm = me(); if (tm.drivers.length < 2 || tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "ドライバーが決まっていません" }; backup("第" + S.season + "シーズン 開幕直前（オフの準備のあと）"); S.off = null; S.phase = "season"; S.ncBonus = 0; rollAbs(true); msLaunch(); save(); return { ok: true }; }
   function migrate() {
     if (!S.nations) initWorld();
     S.teams.forEach(initFac);
@@ -1232,6 +1232,54 @@ const F1 = (() => {
     const data = DRAMA[id].data ? DRAMA[id].data() : {}, v = evBuild(id, data).v;
     S.ev = { id, data, title: v.title, text: v.text, ch: v.ch.map(x => x[0]) }; S.evLast = [id].concat(S.evLast || []).slice(0, 4); dr.done = true; return true;
   }
+  // ---- 節目イベント（調査メモ「追記2」B）：カレンダーの決まった時期に、シーズンごとに決まった回数だけ ----
+  const MS = {
+    // 13. 新車発表会（シーズン開幕時）
+    launch: { when: c => true, make: (c, x) => ({ title: "新車発表会の評判", text: "新しいシーズンの新車発表会。どんな形でやるか決めてくれ。", ch: [
+      ["派手にやる（$4M・F1熱 +3・士気 +2）", () => { pay(c.tm, 4); const n = S.nations[c.tm.nat]; if (n) n.fever = clamp(n.fever + 3, 0, 100); addMor(c.tm, 2); return "派手な発表会でファンの期待が高まった"; }],
+      ["地味にやる（費用なし・開発中の部品が1戦早く届く）", () => { (c.tm.proj || []).forEach(p => p.due = Math.max(S.round, p.due - 1)); return "発表会は簡素に済ませ、開発に時間を回した"; }]] }) },
+    // 15. ATR（風洞・CFD の使える量）の見直し：年2回。順位が低いほど枠が大きい
+    atr: { when: c => true, make: (c, x) => { const rank = teamTable().findIndex(q => q.id === S.my) + 1, bonus = 4 + Math.max(0, rank - 6), half = x.k === "atr2" ? "後半" : "前半";
+      return { title: `風洞・CFD の枠の見直し（${half}）`, text: `順位に応じて、風洞と CFD の使える量が見直された（いまの順位 ${rank}位。低いほど枠は大きい）。この枠をどう使うか決めてくれ。`, ch: [
+        ["目先の開発に使う（開発中の部品のうち最大2つが1戦早く届く）", () => { let n = 0; (c.tm.proj || []).slice().sort((p, q) => p.due - q.due).forEach(p => { if (n < 2 && p.due > S.round) { p.due -= 1; n++; } }); return n ? `枠を目先の開発に使い、${n}つの部品が1戦早まった` : "枠を目先の開発に使った（早められる部品はなかった）"; }],
+        [`来季の新車に貯める（来季の新車に使える額 +$${bonus}M）`, () => { S.ncBonus = (S.ncBonus || 0) + bonus; return `枠を来季の新車に回した（新車に使える額 +$${bonus}M）`; }],
+        ["風洞をフル回転させる（$3M・次戦は 0.05秒速い）", () => { pay(c.tm, 3); evN().paceT[c.tm.id] = (evN().paceT[c.tm.id] || 0) - 0.05; return "風洞をフル回転させた"; }]] }; } },
+    // 16. コストキャップの中間監査（支出ペースが速いとき）
+    audit: { when: c => spent(c.tm) / S.regs.cap > S.round / Math.max(1, S.calendar.length) + 0.1, make: (c, x) => ({ title: "コストキャップの中間監査", text: `支出のペースが速いと指摘された（ここまでで上限の ${Math.round(spent(c.tm) / S.regs.cap * 100)}%）。どう対応するか決めてくれ。`, ch: [
+      ["申告して調整する（$2M・模範と評価され、上限の余裕 +$5M）", () => { pay(c.tm, 2); S.spent[c.tm.id] = Math.max(0, spent(c.tm) - 5); return "自主的に申告して調整した。上限に余裕ができた"; }],
+      ["このまま押す（費用なし・50%で指摘され、罰金 $4M と開発中の部品が1戦遅れる）", () => { if (rnd() < 0.5) { pay(c.tm, 4); (c.tm.proj || []).forEach(p => p.due += 1); return "監査で指摘された。罰金と、部品の遅れ"; } return "監査は問題なく通った"; }],
+      ["施設など対象外の支出に付け替える（$3M・上限の余裕 +$6M）", () => { pay(c.tm, 3); S.spent[c.tm.id] = Math.max(0, spent(c.tm) - 6); return "対象外の支出に付け替え、上限に余裕ができた"; }]] }) },
+    // 18. シリーシーズンの本格化：契約が切れる他チームのドライバーが見える
+    silly: { when: c => S.teams.some(t => t.id !== S.my && t.drivers.some(id => drv(id).contract <= 1)), make: (c, x) => {
+      const list = S.teams.filter(t => t.id !== S.my).flatMap(t => t.drivers.map(id => ({ d: drv(id), t }))).filter(o => o.d.contract <= 1).sort((a, b) => b.d.pace - a.d.pace).slice(0, 3), bd = p => p >= 88 ? "S級" : p >= 82 ? "A級" : p >= 76 ? "B級" : p >= 70 ? "C級" : "D級", mine = c.ds.slice().sort((a, b) => a.contract - b.contract)[0];
+      return { title: "夏のシート争い", text: `来季のシートをめぐる動きが本格化してきた。契約が切れそうな他チームのドライバー：${list.map(o => o.d.name + "（" + o.t.short + "）").join("、")}。`, ch: [
+        ["情報を集める（$2M・3人の速さと契約の状況がニュースに出る）", () => { pay(c.tm, 2); list.forEach(o => news("{i:mail} 夏のシート争い：" + o.d.name + "（" + o.t.name + "）速さ " + o.d.pace + "・契約あと " + o.d.contract + "年")); return "3人の能力と契約を調べた（ニュースを見てくれ）"; }],
+        ["スカウトに任せる（費用なし・速さのランクだけ分かる）", () => { list.forEach(o => news("{i:mail} 夏のシート争い：" + o.d.name + "（" + o.t.name + "）は " + bd(o.d.pace))); return "スカウトの見立てがニュースに出た"; }],
+        [`${mine.name} と先に交渉する（契約 +1年（最大3年）・愛着 +6）`, () => { mine.contract = clamp(mine.contract + 1, 1, 3); addLoy(mine, 6); return `${mine.name} と契約を延ばした`; }]] }; } },
+    // 19. 開催の中止（低確率・シーズンに0〜1回）：次戦がなくなる
+    cancel: { when: c => !!nextTr() && S.round < S.calendar.length - 2, make: (c, x) => { const t = nextTr(), cut = () => { const i = S.round; if (S.calendar[i] != null) { S.calendar.splice(i, 1); news("{i:warn} " + t.name + " GP は中止になった（カレンダーから外れた）"); } };
+      return { title: "開催中止の通達", text: `${t.name} GP が、大雨の被害で開催できなくなった。レースが1つなくなる（賞金収入もなくなる）。空いた時間の使い方を決めてくれ。`, ch: [
+        ["開発に専念する（開発中の部品が全部1戦早く届く）", () => { cut(); (c.tm.proj || []).forEach(p => p.due = Math.max(S.round, p.due - 1)); return "開発に専念する"; }],
+        ["ファンイベントに切り替える（+$3M・F1熱 +2）", () => { cut(); c.tm.budget += 3; const n = S.nations[c.tm.nat]; if (n) n.fever = clamp(n.fever + 2, 0, 100); return "ファンイベントに切り替えた"; }],
+        ["休養にあてる（士気 +4）", () => { cut(); addMor(c.tm, 4); return "チーム全員で休養した"; }]] }; } }
+  };
+  Object.keys(MS).forEach(k => { EVENTS[k] = { w: 0, when: () => false, make: MS[k].make }; });
+  const msEv = (id, data) => { const v = evBuild(id, data).v; S.ev = { id, data, title: v.title, text: v.text, ch: v.ch.map(x => x[0]) }; S.evLast = [id].concat(S.evLast || []).slice(0, 4); };
+  // 開幕：新車発表会
+  function msLaunch() { if (S.ev || S.my == null || !S.calendar) return; try { msEv("launch", {}); } catch (er) { S.ev = null; } }
+  // 各戦のあと：決まった時期（前後2戦の猶予）に条件が合えば1つ出す
+  function msTry() {
+    if (S.ev || S.my == null || !S.calendar) return false; const len = S.calendar.length;
+    if (!S.ms || S.ms.season !== S.season) S.ms = { season: S.season, done: {}, cancelAt: rnd() < 0.08 && len > 14 ? ri(4, len - 4) : -1 };
+    const at = { atr1: 2, audit: Math.round(len * 0.4), atr2: Math.round(len * 0.5), silly: Math.round(len * 0.6) }; if (S.ms.cancelAt >= 0) at.cancel = S.ms.cancelAt;
+    const c = evCtx();
+    for (const k of Object.keys(at)) {
+      if (S.ms.done[k] || S.round < at[k]) continue; if (S.round > at[k] + 2) { S.ms.done[k] = true; continue; }
+      const id = k === "atr1" || k === "atr2" ? "atr" : k; let ok = false; try { ok = MS[id].when(c); } catch (er) { }
+      if (!ok) continue; S.ms.done[k] = true; msEv(id, { k }); return true;
+    }
+    return false;
+  }
   function evCtx() {
     const tm = me(), rec = S.last, rs = rec ? rec.res.filter(r => r.tm === S.my) : [], fin = rs.filter(r => !r.out).sort((a, b) => a.pos - b.pos), top = fin[0];
     const dnfR = rs.find(r => r.out), tt = teamTable(), myI = tt.findIndex(x => x.id === S.my), rival = tt[myI - 1] || tt[myI + 1];
@@ -1241,6 +1289,7 @@ const F1 = (() => {
   // レースのあとに出来事を1つ（だいたい8割）。同じ出来事は続けない
   function genEvent() {
     if (!S.ev && S.awk != null && S.my != null) { const data = S.awk, v = evBuild("awake", data).v; S.awk = null; S.ev = { id: "awake", data, title: v.title, text: v.text, ch: v.ch.map(x => x[0]) }; S.evLast = ["awake"].concat(S.evLast || []).slice(0, 4); return; }
+    if (msTry()) return;
     if (dramaTry()) return;
     if (S.ev || S.my == null || rnd() > 0.8) return;
     const c = evCtx(), last = S.evLast || [], pool = Object.entries(EVENTS).filter(([k, E]) => !last.includes(k) && (() => { try { return E.when(c); } catch (e) { return false; } })());
@@ -1416,7 +1465,7 @@ const F1 = (() => {
   const spent = tm => S.spent[tm.id] || 0;
   const capLeft = tm => S.regs.cap - spent(tm);
   // 新車に使える額：前のシーズンの上限の使い残し（最低でも上限の3割）。古いセーブで前季の記録が無いときは上限いっぱい
-  const ncRoom = tm => { const cap = S.lastCap || S.regs.cap, left = S.lastSpent ? cap - (S.lastSpent[tm.id] || 0) : cap; return Math.max(Math.round(cap * 0.3), Math.round(left)); };
+  const ncRoom = tm => { const cap = S.lastCap || S.regs.cap, left = S.lastSpent ? cap - (S.lastSpent[tm.id] || 0) : cap; return Math.max(Math.round(cap * 0.3), Math.round(left)) + (tm.id === S.my ? (S.ncBonus || 0) : 0); };
   const devCost = (tm, k) => k === "pu" ? Math.round(6 + Math.max(0, pu(tm.pu).lvl - 70) * 0.3) : Math.round(4 + Math.max(0, tm.car[k] - 60) * 0.3);
   const driverDev = tm => tm.drivers.reduce((t, id) => t + drv(id).dev, 0) / Math.max(1, tm.drivers.length);
   function devRoll(tm, cur) { const skill = tm.devp * 0.7 + driverDev(tm) * 0.3, pOk = clamp(0.45 + skill / 200 - Math.max(0, cur - 85) / 60, 0.15, 0.95); if (rnd() > pOk) return 0; return rnd() < skill / 140 ? 2 : 1; }
