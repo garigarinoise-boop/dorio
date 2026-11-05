@@ -591,7 +591,8 @@ const F1 = (() => {
     if (grid.some(x => x.pen)) grid = grid.map((x, i) => ({ x, k: i + (x.pen || 0) + (x.pen ? 0.5 : 0) })).sort((a, b) => a.k - b.k).map(o => o.x);
     R.qEvents.forEach(e => say(R, e.t, e.mine));
     { const base = tr.rain * 100, p = R.wet ? 90 : willRain ? clamp(base * 1.6 + 20 + gauss() * 10, 25, 90) : clamp(base * 0.6 + gauss() * 8, 0, 60); R.fc = { p: Math.round(p / 5) * 5, from: willRain ? clamp(R.rainAt + ri(-8, 8), 3, R.laps - 3) : ri(Math.round(R.laps * 0.2), Math.round(R.laps * 0.7)) }; }
-    { const hi = tr.temp + (HUMID[tr.c] || 0) + gauss() * HI_SD - (R.wet || willRain ? 3 : 0); R.hi = Math.round(hi * 10) / 10; R.heat = R.hi > 31 ? Math.round((R.hi - 30) * 10) / 10 : 0; if (R.heat && S.heatCare) { R.heatCare = true; S.heatCare = false; } }
+    { const rain = R.wet || willRain, hi = tr.temp + hum(tr) + gauss() * hiSd(tr) - (rain ? 3 : 0), hf = hi + (rain ? 2 : 0) + gauss() * FC_SD, r1 = x => Math.round(x * 10) / 10;
+      R.hi = r1(hi); R.hiF = r1(hf); R.hz = R.hiF > 31; R.heat = R.hi > 30 ? r1(R.hi - 30) : 0; if (R.hz && S.heatCare) { R.heatCare = true; S.heatCare = false; } }
     R.quali = grid.map((x, i) => ({ id: x.id, tm: x.tm, pos: i + 1, note: x.note, pen: x.pen || 0, t1: x.t1, t2: x.t2 == null ? null : x.t2, t3: x.t3 == null ? null : x.t3, q2t: x.ch.q2, q1t: x.ch.q1, q3t: x.ch.q3 }));
     grid.forEach((x, i) => {
       const d = drv(x.id), tm = team(x.tm), top10 = false, opt = top10 ? { start: x.ch.q2, age: x.q2Age || QTYRE_LAPS, sets: x.sets, est: x.est, grid: i + 1 } : { sets: x.sets, est: x.est, grid: i + 1 };
@@ -600,8 +601,9 @@ const F1 = (() => {
       const plan = x.tm === S.my ? recPlan(tr, d, wetE, stratSk(tm), opt) : aiPlan(tr, d, wetE, tm, opt);
       R.cars.push({ id: x.id, tm: x.tm, grid: i + 1, q: x.t3 != null ? x.t3 : x.t2 != null ? x.t2 : x.t1, lap: 0, lapStart: 0, lapEnd: 0, lt: 0, tot: 0, comp: plan.start, age: top10 ? (x.q2Age || QTYRE_LAPS) : 0, lockStart: top10, sets: x.sets, est: x.est, pace: "norm", plan, stopsDone: 0, pitReq: null, out: false, why: "", pits: 0, best: 999, fin: false, finT: 0, used: [plan.start], lastPit: -9, fuel: 0, fuelWarned: false, stuck: 0, autoReact: x.tm !== S.my });
     });
-    if (R.heat) { R.cars.forEach(c => { const k = vestPref(drv(c.id)); c.vest = c.tm === S.my ? !(k === 2 && R.heat < 4) : k === 0 ? true : k === 1 ? (R.heat >= 3 || rnd() < 0.6) : (R.heat >= 5 || rnd() < 0.25); });
-      say(R, "{i:sun} ヒートハザード宣言（暑さ指数の予報 " + R.hi + "℃）。全車が冷却装置を積む。ベストを着るかはドライバーしだい", true); }
+    if (R.hz) { const hF = R.hiF - 30; R.cars.forEach(c => { const k = vestPref(drv(c.id)); c.vest = c.tm === S.my ? (k !== 2 || hF >= 5) : rnd() < [hF >= 4 ? 1 : 0.9, hF >= 4 ? 0.85 : 0.6, hF >= 5 ? 0.5 : 0.2][k];
+        c.vestF = rnd() < 0.04 ? { at: Math.round((0.03 + rnd() * 0.3) * 100) / 100, k: rnd() < 0.5 ? "stop" : "hot" } : null; });
+      say(R, "{i:sun} ヒートハザード宣言（暑さ指数の予報 " + R.hiF + "℃）。全車が冷却装置を積み、最低重量は+5kg。ベストを着るかはドライバーしだい", true); }
     S.race = R; return R;
   }
   // スタートからの5周の濡れ具合の平均（天気の動きと同じ式で先読み）
@@ -648,23 +650,30 @@ const F1 = (() => {
 
   // ---- ヒートハザード ----
   // 暑さ指数＝気温＋湿度の分（湿気の多い国ほど上がる）＋日ごとのぶれ。雨なら下がる。31.0℃を超えたら宣言
-  const HUMID = { sgp: 2.5, tha: 2.5, ind: 1.5, qat: 1.5, bra: 1, hun: 0.5, are: 0.5, usa: 0.5, arg: 0.5, mex: -2 }, HI_SD = 1.6;
+  // 暑さ指数＝気温＋湿度の分（書いていないコースは +1）。決勝の日のぶれ（標準偏差）は 熱帯1.2・砂漠2・それ以外4（熱波）。予報の誤差は1
+  const HUMID = { sgp: 2.5, tha: 2.5, ind: 1.5, qat: 1.5, sau: 1.5, bra: 1, hun: 0.5, are: 0.5, usa: 0.5, arg: 0.5, bhr: 0, mex: -2 }, HI_SD = { sgp: 1.2, tha: 1.2, bhr: 2, sau: 2, qat: 2, are: 2 }, FC_SD = 1;
+  const hum = tr => HUMID[tr.c] != null ? HUMID[tr.c] : 1, hiSd = tr => HI_SD[tr.c] || 4;
+  const heatDecl = R => R.hz != null ? R.hz : R.heat > 0; // 古いセーブは「暑さあり＝宣言」
   // ベストの着心地（着たときの損 秒/周）。ドライバーごとに決まっている
-  const VEST = [{ n: "ベストは平気", c: 0.01 }, { n: "ふつう", c: 0.025 }, { n: "ベストが苦手", c: 0.05 }];
+  // d：冷たさが持つ長さ（レースの何割か）。ドライバーの申告は5周〜1時間とばらつく
+  const VEST = [{ n: "ベストは平気", c: 0.01, d: 0.4 }, { n: "ふつう", c: 0.025, d: 0.25 }, { n: "ベストが苦手", c: 0.05, d: 0.12 }];
   const vestPref = d => { const h = (d.id * 37 + 11) % 8; return h < 2 ? 0 : h < 6 ? 1 : 2; };
-  // ベストの効き（暑さの何割が残るか）：前半は 35% だけ。レースの45%を過ぎると水がぬるくなり、最後は 85%
-  const vestCool = p => p < 0.45 ? 0.35 : 0.35 + (p - 0.45) / 0.55 * 0.5;
+  // 暑さが体に入る割合（ベストなし＝1）。冷たいうちは 0.35、ぬるくなると0.1かけて1に戻り、そのあとは 1.05（温水ボトル）。故障：止まる＝1／温まる＝1.4
+  function heatRate(c, d, q) { if (!c.vest) return 1; const f = c.vestF; if (f && q >= f.at) return f.k === "hot" ? 1.4 : 1; const D = VEST[vestPref(d)].d; return q < D ? 0.35 : q < D + 0.1 ? 0.35 + 0.65 * (q - D) / 0.1 : 1.05; }
+  // 体にたまった暑さ（ベストなしでレースの終わりに 1）
+  function strain(R, c, d, p) { const L = R.laps, n = Math.min(L, Math.round(p * L)); let s = 0; for (let l = 0; l < n; l++) s += heatRate(c, d, (l + 0.5) / L); return s / L; }
+  function vestState(R, c) { if (!c.vest) return ""; const d = drv(c.id), q = c.lap / R.laps, f = c.vestF; if (f && q >= f.at) return f.k === "hot" ? "故障・中の水が熱い" : "故障で止まった"; return q < VEST[vestPref(d)].d ? "冷たい" : "水がぬるくなった"; }
   const heatTol = d => 0.75 + (100 - d.cons) / 200; // 安定感が高いほど暑さに強い
-  function heatLoss(R, c, d) { if (!R.heat) return 0; const p = Math.min(1, c.lap / R.laps); return 0.035 * R.heat * Math.pow(p, 1.4) * (c.vest ? vestCool(p) : 1) * heatTol(d || drv(c.id)); }
-  // 体調不良でリタイアする確率（レース全体）：暑さの2乗。ベストで3割に、暑さ対策の約束で半分に
-  const illP = (R, c, d, vest) => R.heat ? 0.0012 * R.heat * R.heat * (vest ? 0.3 : 1) * heatTol(d) * (c.tm === S.my && R.heatCare ? 0.5 : 1) : 0;
-  // 宣言される確率（雨は考えない）
-  function heatChance(tr) { const z = (tr.temp + (HUMID[tr.c] || 0) - 31) / HI_SD; return Math.round(100 / (1 + Math.exp(-1.702 * z))); }
+  function heatLoss(R, c, d) { if (!R.heat) return 0; d = d || drv(c.id); const p = Math.min(1, c.lap / R.laps); return 0.035 * R.heat * Math.pow(strain(R, c, d, p), 1.4) * heatTol(d); }
+  // 体調不良でリタイアする確率（レース全体）：0.05×(暑さ/8)⁴（暑さ指数38℃・ベストなしで1台5%＝20台で1件前後、34℃で0.3%）。たまった暑さの4乗・暑さ対策の約束で半分
+  const illP = (R, c, d) => R.heat ? Math.min(0.5, 0.05 * Math.pow(R.heat / 8, 4)) * Math.pow(strain(R, c, d, 1), 4) * heatTol(d) * (c.tm === S.my && R.heatCare ? 0.5 : 1) : 0;
+  // 宣言される確率（予報が31℃を超える確率。雨は考えない）
+  function heatChance(tr) { const z = (tr.temp + hum(tr) - 31) / Math.hypot(hiSd(tr), FC_SD); return Math.round(100 / (1 + Math.exp(-1.702 * z))); }
   // 画面用：着る／着ないの見込み
-  function heatView(R, c) { const d = drv(c.id), k = vestPref(d), E = R.heat || 0, L = R.laps, tl = heatTol(d); let a = 0, b = 0;
-    for (let l = 1; l <= L; l++) { const h = 0.035 * E * Math.pow(l / L, 1.4) * tl; a += h * vestCool(l / L); b += h; }
-    const r = x => Math.round(x * 10) / 10, pc = x => Math.round(x * 1000) / 10;
-    return { pref: k, prefN: VEST[k].n, comfort: VEST[k].c, comfortT: r(VEST[k].c * L), wear: r(a + VEST[k].c * L), no: r(b), endNo: Math.round(0.035 * E * tl * 100) / 100, illWear: pc(illP(R, c, d, true)), illNo: pc(illP(R, c, d, false)) }; }
+  function heatView(R, c) { const d = drv(c.id), k = vestPref(d), E = R.heat || 0, L = R.laps, tl = heatTol(d), cw = { id: c.id, tm: c.tm, vest: true }, cn = { id: c.id, tm: c.tm, vest: false }; let a = 0, b = 0;
+    for (let l = 1; l <= L; l++) { a += 0.035 * E * Math.pow(strain(R, cw, d, l / L), 1.4) * tl; b += 0.035 * E * Math.pow(l / L, 1.4) * tl; }
+    const r = x => Math.round(x * 10) / 10, pc = x => Math.round(x * 10000) / 100;
+    return { pref: k, prefN: VEST[k].n, comfort: VEST[k].c, comfortT: r(VEST[k].c * L), coolLaps: Math.max(1, Math.round(VEST[k].d * L)), wear: r(a + VEST[k].c * L), no: r(b), endNo: Math.round(0.035 * E * tl * 100) / 100, illWear: pc(illP(R, cw, d)), illNo: pc(illP(R, cn, d)) }; }
   function lapTime(R, c) {
     const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[c.comp], pm = PACE[c.pace];
     const wearMul = tr.wear * S.regs.wear * pm.w * (1.12 - d.tm / 250) * carWear(tm) * (c.comp === "I" || c.comp === "W" ? (R.wet < 0.25 ? 3 : 1) : 1);
@@ -701,10 +710,11 @@ const F1 = (() => {
     const pFail = (d.nat === tr.c && d.calm < 50 ? 0.0008 : 0) + (100 - tm.car.rel) / 100 * 0.0055 + (100 - d.cons) / 100 * 0.0018 * (c.pace === "push" ? 2 : 1) + R.wet * 0.0015 + hot;
     if (rnd() < pFail * (S.evNext && S.evNext.relD[c.id] || 1)) { const crash = rnd() < (hot > 0.002 ? 0.65 : 0.4); if (crash || rnd() < 0.6) { c.out = true; c.why = crash ? "クラッシュ" : "マシントラブル"; say(R, "{i:x} " + d.name + " リタイア（" + c.why + "）", c.tm === S.my); if (crash && !(R.sc && R.sc.red) && R.laps - R.lap > 3 && rnd() < (tr.street ? 0.28 : 0.1) + R.wet * 0.12) startRed(R, d.name); else if (!R.sc && !R.vsc) { if (crash && rnd() < 0.3 + (tr.street ? 0.2 : 0)) startSC(R); else if (rnd() < (crash ? 0.5 : 0.3)) startVSC(R); } if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); return; } c.spin = ri(4, 9); say(R, "{i:swirl} L" + c.lap + " " + d.name + " がスピン（" + c.spin + "秒ロス）", c.tm === S.my); }
     if (R.heat) { const p = c.lap / R.laps, mine = c.tm === S.my;
-      if (p >= 0.4 && rnd() < illP(R, c, d, c.vest) / (0.6 * R.laps)) { c.out = true; c.why = "体調不良（暑さ）"; say(R, "{i:sun} " + d.name + " リタイア（暑さで体調を崩してピットへ）", mine); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return; }
-      if (!R.sc && !R.vsc && rnd() < 0.0003 * R.heat * p * (c.vest ? vestCool(p) : 1)) { c.spin = (c.spin || 0) + ri(3, 6); if (mine) say(R, "{i:swirl} L" + c.lap + " " + d.name + "：暑さで集中が切れてコースオフ", true); }
+      if (p >= 0.4 && rnd() < illP(R, c, d) / (0.6 * R.laps)) { c.out = true; c.why = "体調不良（暑さ）"; say(R, "{i:sun} " + d.name + " リタイア（暑さで体調を崩してピットへ）", mine); if (mine) R.alerts.push({ k: "dnf", id: c.id }); return; }
+      if (!R.sc && !R.vsc && rnd() < 0.0003 * R.heat * strain(R, c, d, p)) { c.spin = (c.spin || 0) + ri(3, 6); if (mine) say(R, "{i:swirl} L" + c.lap + " " + d.name + "：暑さで集中が切れてコースオフ", true); }
       if (mine && !c.saidHeat && heatLoss(R, c, d) >= 0.06) { c.saidHeat = true; say(R, "{i:radio} " + d.name + "：「暑い……コックピットが蒸し風呂だ」（暑さで約" + heatLoss(R, c, d).toFixed(2) + "秒/周 落ちている）", true); }
-      if (mine && c.vest && !c.saidVest && p >= 0.5) { c.saidVest = true; say(R, "{i:radio} " + d.name + "：「ベストの水がぬるくなってきた」（ここから冷却が効きにくくなる）", true); } }
+      if (mine && c.vest && c.vestF && !c.saidVF && p >= c.vestF.at) { c.saidVF = c.saidVest = true; say(R, "{i:radio} L" + c.lap + " " + d.name + (c.vestF.k === "hot" ? "：「ベストの水が熱い！ 逆に温まってる」（ここから暑さが1.4倍・体調不良に注意）" : "：「ベストが止まった」（ここから冷却なし）"), true); }
+      if (mine && c.vest && !c.saidVest && p >= VEST[vestPref(d)].d) { c.saidVest = true; say(R, "{i:radio} L" + c.lap + " " + d.name + "：「ベストの水がぬるくなってきた」（ここから冷却は効かない。最初に下げた体温の分は残る）", true); } }
     if (R.rs && c.rsAt != null && c.rsDone === R.rs.id && c.lap === c.rsAt + 1 && c.tm === S.my && R.rs.pos[c.id]) { const a = R.rs.pos[c.id], p = R.cars.filter(o => !o.out && o !== c && (o.lap > c.lap || (o.lap === c.lap && o.tot < c.tot))).length + 1; say(R, "{i:go} リスタート：" + d.name + " は P" + a + " → P" + p + (p < a ? "（" + (a - p) + "つ上げた）" : p > a ? "（" + (p - a) + "つ落とした）" : ""), true); }
     if (c.lap === 1 && c.tm === S.my) { const p = R.cars.filter(o => !o.out && o.lap >= 1).length; say(R, "{i:flag} 1周目：" + d.name + " は P" + c.grid + " → P" + p + (p < c.grid ? "（" + (c.grid - p) + "つ上げた）" : p > c.grid ? "（" + (p - c.grid) + "つ落とした）" : ""), true); }
     if (c.tm === S.my && S.radioStop !== false) radio(R, c, d, tr);
@@ -962,6 +972,8 @@ const F1 = (() => {
       R.started = true;
       R.cars.forEach(c => { if (c.lockStart || !c.sets) return; const k = setsLeft(c.sets, c.plan.start) ? c.plan.start : ["S", "M", "H", "I", "W"].find(z => setsLeft(c.sets, z)); const a = takeSet(c.sets, k); c.comp = k; c.age = a || 0; c.used = [k]; });
       say(R, "{i:lights} " + TRACKS[R.tr].name + " スタート（" + R.laps + "周）" + (R.wet ? "・ウェット" : ""));
+      if (R.hz && R.hi < 31) say(R, "{i:sun} 決勝の暑さ指数は " + R.hi + "℃で、予報より涼しい。宣言は前日の予報で決まるのでそのまま");
+      else if (R.hz === false && R.hi > 31) say(R, "{i:sun} 予報は " + R.hiF + "℃で宣言なし。だが決勝の暑さ指数は " + R.hi + "℃まで上がった（ベストは無し）", true);
       if (rnd() < 0.09) { const c = pick(R.cars.filter(x => !x.out)); c.out = true; c.why = "スタートできず（DNS）"; say(R, "{i:x} " + drv(c.id).name + "：スタート前にトラブル、グリッドを離れられない", c.tm === S.my); if (c.tm === S.my) R.alerts.push({ k: "dnf", id: c.id }); }
       R.scDefer = true;
       R.cars.forEach((c, i) => { c.lapEnd = i * 0.25; c.tot = c.lapEnd; c.lap = 0; c.fuel = R.laps * TRACKS[R.tr].fuel * S.regs.fuel + FUEL[c.plan.fuel || "std"].extra; c.lapStart = c.lapEnd; c.lt = lapTime(R, c) + 2.5 + (c.grid - 1) * 0.12 + startDelta(R, c); c.lapEnd += c.lt; });
@@ -1744,7 +1756,7 @@ const F1 = (() => {
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
   const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * SC_K, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.012 : 0.007)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
-  return { heatChance, heatView, heatLoss, VEST, vestPref, licPts, LIC_MAX, setReserve, carRows, FM, formD, ncRoom, gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { heatChance, heatView, heatLoss, heatDecl, vestState, strain, VEST, vestPref, licPts, LIC_MAX, setReserve, carRows, FM, formD, ncRoom, gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -2349,7 +2361,7 @@ function drawCtls() {
     const fl = fuelLeft(R, c);
     return `<div class="card"><div class="row"><b class="sp">${esc(d.name)}　P${posOf(R, c)}${c.drs ? ' <span class="tag gold">DRS</span>' : ""}${c.dirty ? ' <span class="tag">乱気流</span>' : ""}</b>${ty(c.comp)}<span class="small">${c.age}周目（崖まで約${Math.max(0, Math.round(life - c.age - (c.dw || 0)))}周${c.dw >= 0.5 ? "・乱気流で" + c.dw.toFixed(1) + "周ぶん余計に減った" : ""}${c.est ? "" : "・データなし"}）</span></div>
 ${ucHtml(R, c)}
-      ${R.heat ? `<div class="small" style="margin-top:4px">{i:sun} 暑さ：<b>+${F1.heatLoss(R, c, d).toFixed(2)}秒/周</b>${c.vest ? "（ベスト着用" + (c.lap / R.laps >= 0.45 ? "・水がぬるくなってきた" : "") + "）" : "（ベストなし）"}</div>` : ""}
+      ${R.heat && (F1.heatDecl(R) || F1.heatLoss(R, c, d) >= 0.01) ? `<div class="small" style="margin-top:4px">{i:sun} 暑さ：<b>+${F1.heatLoss(R, c, d).toFixed(2)}秒/周</b>${c.vest ? "（ベスト：" + F1.vestState(R, c) + "）" : "（ベストなし）"}</div>` : ""}
       <div class="small" style="margin-top:4px">燃料：<b class="${fl < 0 ? "bad" : ""}">${fl < 0 ? "約" + (-fl).toFixed(1) + "周分たりない" : "余裕 " + fl.toFixed(1) + "周分"}</b></div>
       <div class="row small" style="margin-top:6px"><span class="muted">ペース</span>${Object.keys(F1.PACE).map(k => `<button class="b ${c.pace === k ? "on" : ""}" data-pace="${c.id}:${k}">${F1.PACE[k].n}</button>`).join("")}</div>
       <div class="row small" style="margin-top:6px"><span class="muted">次の周でピット</span>${["S", "M", "H", "I", "W"].map(k => `<button class="b ${c.pitReq === k ? "on" : ""}" data-pit="${c.id}:${k}" ${c.sets && !stockN(c, k) ? "disabled" : ""}>${F1.TYRE[k].n}${stockTxt(c, k)}</button>`).join("")}${c.pitReq ? `<button class="b" data-pit="${c.id}:x">取消</button>` : ""}</div>
@@ -2375,14 +2387,14 @@ function raceData(R) {
   const rows = ["S", "M", "H"].map(k => { const measured = has && w.meas.some(m => m.comp === k), gap = F1.TYRE[k].off + (est ? est.off[k] : 0); return `<tr><td>${ty(k)} ${F1.TYRE[k].n}</td><td class="n">${est ? (est.wf[k] >= 1 ? "+" : "") + Math.round((est.wf[k] - 1) * 100) + "%" : "?"}</td><td class="n">${k === "M" ? "基準" : (gap > 0 ? "+" : "") + gap.toFixed(2) + "秒"}</td><td class="n">約${F1.estLife(k, tr, est)}周</td><td class="small">${measured ? "実測" : est ? "推定" : "想定"}</td></tr>`; }).join("");
   return `<div class="card"><h3>このレースのデータ</h3><div style="font-size:15px;margin-bottom:4px"><b>全${R.laps}周</b>・ピットロス約${tr.pit}秒・抜くには1周あたり約${F1.passNeed(tr)}秒の差が要る</div>${(() => { const p = F1.scChance(tr); return `<div class="small" style="margin-bottom:4px">{i:sc} セーフティカーが出る確率 <b>約${p.sc}%</b>（${p.sc >= 65 ? "出やすい" : p.sc >= 45 ? "ふつう" : "出にくい"}）・VSC 約${p.vsc}%${tr.street ? "・市街地で壁が近い" : ""}<br><span class="muted">SC が出やすいなら、ハードで引っ張って SC を待つ作戦が活きる。出にくいなら予定どおりのピットが無難。</span></div>`; })()}
     <div class="small">${R.wet ? "{i:rain} <b>雨のスタート</b>" : `{i:cloud} 天気予報：雨の確率 <b>${fc.p}%</b>${fc.p >= 30 ? `（降るなら${fc.from}周目ごろから）` : ""}`}・気温 約${tr.temp}℃${S().regs.wear !== 1 ? "・今の規則はタイヤが" + (S().regs.wear > 1 ? "減りやすい" : "減りにくい") : ""}</div>${R.wet ? weatherHtml(R, true) : ""}
-    ${R.heat ? `<div class="small" style="margin-top:4px">{i:sun} <b class="bad">ヒートハザード宣言</b>（暑さ指数の予報 ${R.hi}℃・31℃を超えると宣言）<br><span class="muted">後半ほど暑さでドライバーが疲れてタイムが落ち、ミスや体調不良（リタイア）が起きやすい。冷却ベストを着るかは各ドライバーの欄で決める。</span></div>` : R.hi >= 29 ? `<div class="small muted">暑さ指数の予報 ${R.hi}℃（31℃を超えるとヒートハザード宣言）</div>` : ""}
+    ${F1.heatDecl(R) ? `<div class="small" style="margin-top:4px">{i:sun} <b class="bad">ヒートハザード宣言</b>（暑さ指数の予報 ${R.hiF != null ? R.hiF : R.hi}℃・31℃を超えると宣言）<br><span class="muted">後半ほど暑さでドライバーが疲れてタイムが落ち、ミスが起きやすい（体調不良でのリタイアは極端な暑さでだけ）。最低重量は全車+5kg。冷却ベストを着るかは各ドライバーの欄で決める。予報なので、決勝の日の暑さはずれることがある。</span></div>` : (R.hiF != null ? R.hiF : R.hi) >= 29 ? `<div class="small muted">暑さ指数の予報 ${R.hiF != null ? R.hiF : R.hi}℃（31℃を超えるとヒートハザード宣言。予報なので外れることもある）</div>` : ""}
     <div style="overflow-x:auto;margin-top:6px"><table><tr><th>タイヤ</th><th class="n">減り（想定比）</th><th class="n">ペース差</th><th class="n">崖</th><th></th></tr>${rows}</table></div>
     <p class="hint">${has ? "フリー走行で測った値。「推定」は測ったタイヤからの推測。" : "フリー走行のデータなし（いつもの想定の値）。"}崖は新品から数えた周回。予報は当たるとは限らない。</p></div>`;
 }
 // 冷却ベスト（ヒートハザードのレースだけ）：着るとミスと体調不良が減る。着ないと着心地の損がない
-function vestRow(c) { const R = S().race, v = F1.heatView(R, c);
+function vestRow(c) { const R = S().race, v = F1.heatView(R, c), ill = x => x < 0.1 ? "ほぼなし（0.1%未満）" : "約" + x + "%";
   return `<div class="stop" style="flex-wrap:wrap"><span class="small" style="width:64px">冷却ベスト</span><button class="b ${c.vest ? "on" : ""}" data-vest="${c.id}:1">着る</button><button class="b ${!c.vest ? "on" : ""}" data-vest="${c.id}:0">着ない</button><span class="small muted">本人：${v.prefN}</span></div>
-    <p class="hint" style="margin-top:2px"><b>着る</b>：暑さの損 レース全体で約${v.wear}秒${v.comfortT ? "（うち着心地の分 " + v.comfortT + "秒）" : ""}・体調不良でリタイア 約${v.illWear}%・ミスが減る。前半はよく効くが、半分を過ぎると中の水がぬるくなって効きが落ちる。<br><b>着ない</b>：暑さの損 約${v.no}秒（終盤は約${v.endNo}秒/周）・体調不良 約${v.illNo}%・ミスが増える。着心地の損はない。代わりに0.5kgの重りを積む（重さは同じ）。</p>`; }
+    <p class="hint" style="margin-top:2px"><b>着る</b>：暑さの損 レース全体で約${v.wear}秒${v.comfortT ? "（うち着心地の分 " + v.comfortT + "秒）" : ""}・体調不良でリタイア ${ill(v.illWear)}・ミスが減る。冷たさが持つのは最初の約${v.coolLaps}周で、そのあとは中の水がぬるくなって少し逆効果。それでも最初に下げた体温の分は最後まで残る。まれに故障する（約4%：止まる／逆に温まる）。<br><b>着ない</b>：暑さの損 約${v.no}秒（終盤は約${v.endNo}秒/周）・体調不良 ${ill(v.illNo)}・ミスが増える。着心地の損と故障の心配はない。代わりに0.5kgの重りを積む（重さは同じ）。</p>`; }
 function planEditor(c, tr) {
   const d = F1.drv(c.id), R = S().race, po = { age: c.age, lock: c.lockStart, sets: c.sets, est: c.est }, opt = c.lockStart ? { start: c.comp, age: c.age, sets: c.sets, est: c.est } : { sets: c.sets, est: c.est }, cost = F1.planCost(c.plan, tr, d, po), best = F1.bestPlan(tr, d, R.wet, opt), bc = F1.planCost(best, tr, d, po), sk = ME().staff.strat.skill;
   const sel = (v, attr) => `<select ${attr}>${(R.wet ? ["I", "W", "S", "M", "H"] : ["S", "M", "H", "I", "W"]).map(k => `<option value="${k}" ${v === k ? "selected" : ""}>${F1.TYRE[k].n}</option>`).join("")}</select>`;
@@ -2392,7 +2404,7 @@ function planEditor(c, tr) {
     <div class="stop"><span class="small" style="width:64px">燃料</span><select data-plan="${c.id}:fuel">${Object.keys(F1.FUEL).map(k => `<option value="${k}" ${(c.plan.fuel || "std") === k ? "selected" : ""}>${F1.FUEL[k].n}</option>`).join("")}</select><span class="small muted">少なめは軽くて速いが、途中で燃料セーブが要る</span></div>
     <div class="stop"><span class="small" style="width:64px">SCが出たら</span><select data-sc="${c.id}:mode">${[["auto", "その時に決める"], ["stay", "入らない（ステイアウト）"], ["wait", "待っていた：入る"]].map(([k, l]) => `<option value="${k}" ${(c.plan.sc || "auto") === k ? "selected" : ""}>${l}</option>`).join("")}</select>${c.plan.sc === "wait" ? `<input type="number" value="${c.plan.scFrom || 10}" data-sc="${c.id}:from" style="width:52px;text-align:center"><span class="small">周目以降</span>` : ""}</div>
     <p class="hint" style="margin-top:2px">${c.plan.sc === "wait" ? "指定の周回より後に SC が出たら、次の予定のピットを前倒しして入る（ピットの損が半分）。それより前の SC では入らない。出なければ予定どおり。" : c.plan.sc === "stay" ? "SC が出ても入らない。前の車が入れば順位が上がる。" : "SC が出たら止まるので、その時に決める（「おまかせ」なら戦略担当が判断）。"}</p>
-    ${R.heat ? vestRow(c) : ""}
+    ${F1.heatDecl(R) ? vestRow(c) : ""}
     <div class="row" style="margin-top:6px"><button class="b" data-pa="${c.id}:add">ピットを足す</button><button class="b" data-pa="${c.id}:rec">戦略担当の案にする</button></div>
     ${(() => { const o = F1.planOptions(tr, d, R.wet, opt); if (!o.length) return ""; const fmt = p => F1.TYRE[p.start].n + p.stops.map(x => " → " + x.lap + "周 " + F1.TYRE[x.comp].n).join(""); return `<div style="margin-top:8px"><b class="small">戦略の候補</b>${o.map(x => `<div class="spec ${x.plan.start === c.plan.start && JSON.stringify(x.plan.stops) === JSON.stringify(c.plan.stops) && (x.plan.sc || "") === (c.plan.sc || "") ? "on" : ""}" data-opt="${c.id}:${x.key}"><div class="row"><b class="sp small">${esc(x.n)}</b><span class="small ${x.diff > 3 ? "bad" : x.diff === 0 ? "good" : ""}">${x.diff === 0 ? "最速" : "+" + x.diff + "秒"}</span></div><div class="small">${fmt(x.plan)}${x.plan.sc === "wait" ? "（" + x.plan.scFrom + "周目以降の SC で前倒し）" : ""}</div></div>`).join("")}<p class="hint">タップでその案にする。秒は SC が出ない場合の見積もり。耐えの作戦は SC が遅く出ると得をする賭け。</p></div>`; })()}
     ${stockLine(c)}
