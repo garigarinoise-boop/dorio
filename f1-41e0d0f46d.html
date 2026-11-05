@@ -398,7 +398,7 @@ const F1 = (() => {
   function bestPlan(tr, d, wet, opt) { const p = EST; EST = opt && opt.est || null; try { return bestPlan0(tr, d, wet, opt); } finally { EST = p; } }
   function bestPlan0(tr, d, wet, opt) {
     opt = opt || {};
-    if (wet) return { start: wet > 0.65 ? "W" : "I", stops: [], fuel: "std" };
+    if (wet) return { start: wet > 0.72 ? "W" : "I", stops: [], fuel: "std" };
     const L = tr.laps, tmF = (1.12 - d.tm / 250) * (teamOf(d.id) ? carWear(teamOf(d.id)) : 1), cands = [], C = ["S", "M", "H"], A = opt.start ? [opt.start] : C, lock = opt.start ? (opt.age || 0) : null;
     for (const a of A) for (const b of C) { if (a === b) continue; const g = planAges({ start: a, stops: [{ comp: b }] }, opt.sets, lock); if (!g) continue; for (let x = 6; x <= L - 8; x++) cands.push({ cost: stintCost(a, x, tr, tmF, g[0]) + stintCost(b, L - x, tr, tmF, g[1]) + tr.pit + stopPen(tr), plan: { start: a, stops: [{ lap: x, comp: b }] } }); }
     for (const a of A) for (const b of C) for (const c of C) { if (a === b && b === c) continue; const g = planAges({ start: a, stops: [{ comp: b }, { comp: c }] }, opt.sets, lock); if (!g) continue; for (let x = 5; x <= L - 14; x += 2) for (let y = x + 7; y <= L - 7; y += 2) cands.push({ cost: stintCost(a, x, tr, tmF, g[0]) + stintCost(b, y - x, tr, tmF, g[1]) + stintCost(c, L - y, tr, tmF, g[2]) + (tr.pit + stopPen(tr)) * 2, plan: { start: a, stops: [{ lap: x, comp: b }, { lap: y, comp: c }] } }); }
@@ -576,11 +576,15 @@ const F1 = (() => {
     R.quali = grid.map((x, i) => ({ id: x.id, tm: x.tm, pos: i + 1, note: x.note, pen: x.pen || 0, t1: x.t1, t2: x.t2 == null ? null : x.t2, t3: x.t3 == null ? null : x.t3, q2t: x.ch.q2, q1t: x.ch.q1, q3t: x.ch.q3 }));
     grid.forEach((x, i) => {
       const d = drv(x.id), tm = team(x.tm), top10 = false, opt = top10 ? { start: x.ch.q2, age: x.q2Age || QTYRE_LAPS, sets: x.sets, est: x.est, grid: i + 1 } : { sets: x.sets, est: x.est, grid: i + 1 };
-      const plan = x.tm === S.my ? recPlan(tr, d, R.wet, stratSk(tm), opt) : aiPlan(tr, d, R.wet, tm, opt);
+      // 雨のスタート：今の濡れ具合ではなく、最初の数周の見込み（雨が弱まるなら早めにインター寄り）で選ぶ
+      const wetE = R.wet ? Math.max(0.05, wetStartAvg(R) + gauss() * 0.03) : 0;
+      const plan = x.tm === S.my ? recPlan(tr, d, wetE, stratSk(tm), opt) : aiPlan(tr, d, wetE, tm, opt);
       R.cars.push({ id: x.id, tm: x.tm, grid: i + 1, q: x.t3 != null ? x.t3 : x.t2 != null ? x.t2 : x.t1, lap: 0, lapStart: 0, lapEnd: 0, lt: 0, tot: 0, comp: plan.start, age: top10 ? (x.q2Age || QTYRE_LAPS) : 0, lockStart: top10, sets: x.sets, est: x.est, pace: "norm", plan, stopsDone: 0, pitReq: null, out: false, why: "", pits: 0, best: 999, fin: false, finT: 0, used: [plan.start], lastPit: -9, fuel: 0, fuelWarned: false, stuck: 0, autoReact: x.tm !== S.my });
     });
     S.race = R; return R;
   }
+  // スタートからの5周の濡れ具合の平均（天気の動きと同じ式で先読み）
+  function wetStartAvg(R) { let w = R.wet, s = w; for (let L = 1; L <= 4; L++) { if (R.rainAt > 0) { if (L >= R.rainAt && L < R.rainAt + R.rainLen) w = Math.min(R.rainTo, w + 0.07); else if (L >= R.rainAt + R.rainLen && w > 0) w = Math.max(0, w - 0.05); } else w = Math.max(0, w - 0.04); s += w; } return s / 5; }
   function aiPlan(tr, d, wet, tm, opt) { if (!wet && opt && opt.grid >= 12 && rnd() < 0.3) { const l = planOptions(tr, d, 0, opt).find(x => x.key === "long"); if (l) return l.plan; } const p = recPlan(tr, d, wet, stratSk(tm), opt); p.fuel = stratSk(tm) >= 80 && rnd() < 0.35 ? "light" : "std"; return p; }
   const carAt = (R, id) => R.cars.find(c => c.id === id);
   const order = R => R.cars.filter(c => !c.out).sort((a, b) => (b.fin - a.fin) || b.lap - a.lap || (a.fin ? a.finT - b.finT : a.tot - b.tot) || a.grid - b.grid).concat(R.cars.filter(c => c.out).sort((a, b) => b.lap - a.lap));
