@@ -763,7 +763,7 @@ const F1 = (() => {
     let lt = lapTime(R, c) + extra; const ltRace = lt;
     // SC 中：先頭は SC の後ろをゆっくり、ほかは列に追いつくまで少し速く走り、追いついたら前の車の 0.6 秒後ろに並ぶ（周回遅れも含めて、コース上の並び順で）
     const scLead = R.sc && isLeader(R, c);
-    if (R.sc) lt = Math.max(lt - extra, tr.base * (scLead ? 1.38 : 1.2)) + extra;
+    if (R.sc) lt = Math.max(lt - extra, tr.base * (scLead && c.lastPit !== c.lap ? 1.38 : 1.2)) + extra; // ピットに入る周の1位は SC に押さえられない
     else if (R.vsc) { const v = Math.max(lt - extra, tr.base * 1.35); c.vscF = v / Math.max(1, ltRace - extra); lt = v + extra; }
     if (!R.vsc) c.vscF = null;
     let end = c.lapEnd + lt;
