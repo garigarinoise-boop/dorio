@@ -1189,6 +1189,49 @@ const F1 = (() => {
       return { title: "ドライバーの病気", text: `${d.name} が体調を崩し、医師が次戦の出場を止めている。代役を決めてくれ。`, ch };
     } }
   });
+  // ---- ドラマ枠（調査メモ「追記2」C）：シーズンに最大1回。開幕時に起きるレースを抽選し、条件が合う出来事から1つだけ。どの選択肢にも見える得がある ----
+  const DRAMA = {
+    // 22. 技術責任者の電撃離脱（ライバルへ移る。ガーデニング休暇で相手の開発が数戦効かない）
+    techChief: { w: 3, when: c => !!c.rival && c.tm.budget > 12, make: (c, x) => { const r = c.rival; const gl = () => (r.proj || []).forEach(p => p.due += 2); return { title: "技術責任者の電撃離脱", text: `技術責任者が、${r.name} に移りたいと言い出した。引き抜かれれば、うちの開発の知識も一緒に持っていかれる。`, ch: [
+      ["引き止める（$6M・開発力はそのまま・士気 +2）", () => { pay(c.tm, 6); addMor(c.tm, 2); return "技術責任者を引き止めた"; }],
+      [`送り出す（費用なし・開発力 −2・ガーデニング休暇で ${r.name} の開発中の部品が2戦遅れる）`, () => { c.tm.devp = clamp(c.tm.devp - 2, 0, 99); gl(); return `技術責任者は ${r.name} へ。向こうの開発は2戦止まる`; }],
+      [`送り出して、有名な後任を迎える（$10M・開発力 +3・${r.name} の開発中の部品が2戦遅れる）`, () => { pay(c.tm, 10); c.tm.devp = clamp(c.tm.devp + 3, 0, 99); gl(); return "有名な技術者を後任に迎えた"; }]] }; } },
+    // 23. タイトルスポンサーの動き（成績が上なら新規の大型契約、下なら撤退の動き）
+    sponsorSwing: { w: 3, when: c => true, make: (c, x) => { const tt = teamTable(), top = tt.findIndex(q => q.id === S.my) <= 2;
+      return top ? { title: "新しい大型スポンサーの申し出", text: "好調なうちに、新しい大手のスポンサーが名乗りを上げた。条件が3つある。", ch: [
+        ["高額契約を結ぶ（今すぐ $18M・現場への口出しがあり士気 −2）", () => { c.tm.budget += 18; addMor(c.tm, -2); return "高額のスポンサー契約を結んだ。現場は少し不満そうだ"; }],
+        ["長期契約にする（今は $6M・来季から収入 +5）", () => { c.tm.budget += 6; c.tm.sponsor = clamp(c.tm.sponsor + 5, 30, 140); return "長期のスポンサー契約を結んだ"; }],
+        ["成功報酬だけ受ける（次戦で入賞したら $14M・入賞できなければ $0）", () => { evN().cond.push({ k: "top10", v: 14, by: "新しいスポンサー" }); return "成功報酬の契約。次戦で入賞すれば $14M"; }]] }
+      : { title: "タイトルスポンサーの撤退の動き", text: "成績が伸びず、タイトルスポンサーが契約の見直しを言ってきた。", ch: [
+        ["値引きして残ってもらう（今季の収入 −$3M・来季の収入は守る）", () => { pay(c.tm, 3); return "値引きして契約を続けてもらう"; }],
+        ["成績を条件に再契約する（次戦で入賞したら $10M）", () => { evN().cond.push({ k: "top10", v: 10, by: "タイトルスポンサー" }); return "成績連動で再契約。次戦で入賞すれば $10M"; }],
+        ["撤退を受け入れて別のスポンサーを探す（今すぐ $5M・来季の収入 −3）", () => { c.tm.budget += 5; c.tm.sponsor = clamp(c.tm.sponsor - 3, 30, 140); return "撤退を受け入れ、すぐ別のスポンサーから $5M を得た"; }]] }; } },
+    // 25. ライバルの身売りの噂（優秀なエンジニアが放出される）
+    sale: { w: 2, when: c => c.tm.budget > 8, data: () => ({ r: S.teams.filter(t => t.id !== S.my).sort((a, b) => a.budget - b.budget)[0].id }), make: (c, x) => { const r = team(x.r) || c.rival; return { title: "ライバルの身売りの噂", text: `${r.name} が資金難で、身売りの噂が出ている。優秀なエンジニアが放出されそうだ。`, ch: [
+      ["エンジニアを獲得する（$6M・開発力 +3）", () => { pay(c.tm, 6); c.tm.devp = clamp(c.tm.devp + 3, 0, 99); return "放出されたエンジニアを獲得した"; }],
+      ["静観する（費用なし・士気 +1）", () => { addMor(c.tm, 1); return "静観した"; }],
+      [`噂を広めて ${r.name} を揺さぶる（${r.name} の士気 −6・次戦は ${r.name} が 0.05秒遅い）`, () => { addMor(r, -6); evN().paceT[r.id] = (evN().paceT[r.id] || 0) + 0.05; return `${r.name} が動揺している`; }]] }; } },
+    // 26. レギュレーション解釈の対立（自分の部品が抗議される側）
+    dispute: { w: 2, when: c => !!c.rival, make: (c, x) => { const r = c.rival; return { title: "レギュレーション解釈の対立", text: `${r.name} が、うちのフロアの形状は規則違反だと抗議してきた。`, ch: [
+      ["争う（60%で勝って次戦 0.05秒速い・F1熱 +3 ／ 40%で負けて部品禁止、次戦 0.15秒遅い・$2M）", () => { if (rnd() < 0.6) { evN().paceT[c.tm.id] = (evN().paceT[c.tm.id] || 0) - 0.05; const n = S.nations[c.tm.nat]; if (n) n.fever = clamp(n.fever + 3, 0, 100); return "審査で勝った。今の形状を使える"; } pay(c.tm, 2); evN().paceT[c.tm.id] = (evN().paceT[c.tm.id] || 0) + 0.15; return "審査で負けた。部品を禁止され、損失が出た"; }],
+      ["先に自分で直す（次戦は 0.05秒遅い・士気 +2・費用なし）", () => { evN().paceT[c.tm.id] = (evN().paceT[c.tm.id] || 0) + 0.05; addMor(c.tm, 2); return "先に直して、関係を保った"; }]] }; } },
+    // 27. ドライバーの電撃移籍の噂（自分のエースが他チームと交渉）
+    transfer: { w: 3, when: c => c.ds.some(d => d.pace >= 76 && loyalOf(d) < 60), data: () => ({ d: me().drivers.map(drv).filter(d => d.pace >= 76 && loyalOf(d) < 60).sort((a, b) => b.pace - a.pace)[0].id }), make: (c, x) => { const d = drv(x.d) || c.ds[0]; return { title: "電撃移籍の噂", text: `${d.name} が、他のチームと移籍の交渉をしていると報じられた。`, ch: [
+      [`慰留金を出す（$4M・${d.name} の愛着 +15）`, () => { pay(c.tm, 4); addLoy(d, 15); return `${d.name} を慰留した`; }],
+      [`契約を延ばす（契約 +1年（最大3年）・愛着 +6・年俸 +$1M）`, () => { d.contract = clamp(d.contract + 1, 1, 3); addLoy(d, 6); d.salary = r1(d.salary + 1); return `${d.name} と契約を延ばした`; }],
+      [`受け流す（費用なし・愛着 −5・本人は結果で示そうとして次戦 0.06秒速い）`, () => { addLoy(d, -5); evN().paceD[d.id] = (evN().paceD[d.id] || 0) - 0.06; return `${d.name} の噂は受け流した`; }]] }; } }
+  };
+  Object.keys(DRAMA).forEach(k => { EVENTS[k] = { w: 0, when: () => false, data: DRAMA[k].data, make: DRAMA[k].make }; });
+  // シーズンに1回、決めたレースの後に条件が合う出来事を1つだけ出す（条件が合わなければ次のレースで再挑戦）
+  function dramaTry() {
+    if (S.ev || S.my == null || !S.calendar) return false;
+    if (!S.drama || S.drama.season !== S.season) S.drama = { season: S.season, at: ri(3, Math.max(4, S.calendar.length - 4)), done: rnd() > 0.7 };
+    const dr = S.drama; if (dr.done || S.round < dr.at || S.round >= S.calendar.length) return false;
+    const c = evCtx(), pool = Object.entries(DRAMA).filter(([k, E]) => { try { return E.when(c); } catch (er) { return false; } }); if (!pool.length) return false;
+    let q = rnd() * pool.reduce((a, [, E]) => a + E.w, 0), id = pool[0][0]; for (const [k, E] of pool) { q -= E.w; if (q <= 0) { id = k; break; } }
+    const data = DRAMA[id].data ? DRAMA[id].data() : {}, v = evBuild(id, data).v;
+    S.ev = { id, data, title: v.title, text: v.text, ch: v.ch.map(x => x[0]) }; S.evLast = [id].concat(S.evLast || []).slice(0, 4); dr.done = true; return true;
+  }
   function evCtx() {
     const tm = me(), rec = S.last, rs = rec ? rec.res.filter(r => r.tm === S.my) : [], fin = rs.filter(r => !r.out).sort((a, b) => a.pos - b.pos), top = fin[0];
     const dnfR = rs.find(r => r.out), tt = teamTable(), myI = tt.findIndex(x => x.id === S.my), rival = tt[myI - 1] || tt[myI + 1];
@@ -1198,6 +1241,7 @@ const F1 = (() => {
   // レースのあとに出来事を1つ（だいたい8割）。同じ出来事は続けない
   function genEvent() {
     if (!S.ev && S.awk != null && S.my != null) { const data = S.awk, v = evBuild("awake", data).v; S.awk = null; S.ev = { id: "awake", data, title: v.title, text: v.text, ch: v.ch.map(x => x[0]) }; S.evLast = ["awake"].concat(S.evLast || []).slice(0, 4); return; }
+    if (dramaTry()) return;
     if (S.ev || S.my == null || rnd() > 0.8) return;
     const c = evCtx(), last = S.evLast || [], pool = Object.entries(EVENTS).filter(([k, E]) => !last.includes(k) && (() => { try { return E.when(c); } catch (e) { return false; } })());
     if (!pool.length) return;
