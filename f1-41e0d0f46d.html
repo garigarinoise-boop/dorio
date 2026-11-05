@@ -191,9 +191,9 @@ const F1 = (() => {
     ["ノースダイク", 72, 71.5, 0.35, 0.2, 1.05, 21, 0.010, 0.3, 0.95], ["アルティプラーノ", 71, 77.5, 0.7, 0.55, 0.9, 22, 0.008, 0.15, 0.95], ["メープルアイランド", 70, 73.5, 0.7, 0.65, 0.9, 19, 0.020, 0.35, 1.1], ["ドナウリンク", 70, 77.5, 0.25, 0.2, 1.05, 20, 0.008, 0.25, 0.95], ["カスピ市街地", 51, 103.0, 0.85, 0.7, 0.8, 20, 0.020, 0.05, 1.05],
     ["ネオンストリップ", 50, 93.0, 0.85, 0.7, 0.8, 20, 0.016, 0.0, 1.0], ["ラインラント", 60, 89.0, 0.5, 0.5, 1.0, 21, 0.009, 0.35, 1.0], ["プロヴァンス", 53, 92.0, 0.55, 0.45, 1.0, 21, 0.007, 0.2, 1.0], ["ケープ高原", 72, 74.0, 0.45, 0.4, 1.05, 21, 0.008, 0.1, 0.95], ["アルガルヴェ", 66, 80.0, 0.5, 0.45, 1.05, 21, 0.008, 0.1, 1.0],
     ["パンパス", 72, 88.0, 0.45, 0.5, 1.0, 21, 0.008, 0.2, 1.0], ["ガンジス", 60, 86.0, 0.6, 0.55, 1.05, 21, 0.009, 0.05, 1.0], ["ハンガン", 55, 99.0, 0.6, 0.55, 0.95, 22, 0.010, 0.2, 1.0], ["チャオプラヤ市街地", 56, 95.0, 0.5, 0.45, 1.0, 21, 0.016, 0.4, 1.0]
-  ].map((t, i) => Object.assign({ id: i, name: t[0] + " GP", laps: t[1], base: t[2], pw: t[3], ovt: t[4], wear: t[5], pit: t[6], sc: t[7], rain: t[8], fuel: t[9], seed: 1000 + i * 37 }, TRX[i]));
+  ].map((t, i) => Object.assign({ id: i, name: t[0] + " GP", laps: t[1], base: t[2], pw: t[3], ovt: t[4], wear: 1 + (t[5] - 1) * 1.6, pit: t[6], sc: t[7], rain: t[8], fuel: t[9], seed: 1000 + i * 37 }, TRX[i]));
 
-  const TYRE = { S: { n: "ソフト", off: -0.55, deg: 0.075, life: 20, col: "#e10600" }, M: { n: "ミディアム", off: 0, deg: 0.044, life: 32, col: "#ffd200" }, H: { n: "ハード", off: 0.45, deg: 0.026, life: 48, col: "#f2f2f2" }, I: { n: "インター", off: 0, deg: 0.04, life: 30, col: "#2bb24c" }, W: { n: "ウェット", off: 0, deg: 0.03, life: 35, col: "#1f6fe0" } };
+  const TYRE = { S: { n: "ソフト", off: -0.45, deg: 0.13, life: 11, col: "#e10600" }, M: { n: "ミディアム", off: 0, deg: 0.08, life: 26, col: "#ffd200" }, H: { n: "ハード", off: 0.3, deg: 0.05, life: 38, col: "#f2f2f2" }, I: { n: "インター", off: 0, deg: 0.04, life: 30, col: "#2bb24c" }, W: { n: "ウェット", off: 0, deg: 0.03, life: 35, col: "#1f6fe0" } };
   // ペース：t＝タイム差、w＝タイヤの減り、f＝燃料の使い方
   const PACE = { push: { t: -0.3, w: 1.4, f: 1.05, n: "攻める" }, norm: { t: 0, w: 1, f: 1, n: "普通" }, save: { t: 0.35, w: 0.68, f: 0.97, n: "タイヤを守る" }, lift: { t: 0.22, w: 0.85, f: 0.85, n: "燃料セーブ" } };
   const FUEL = { full: { n: "多め", extra: 1.5 }, std: { n: "標準", extra: 0.3 }, light: { n: "少なめ", extra: -1.6 } };
@@ -405,7 +405,13 @@ const F1 = (() => {
     for (const a of A) for (const b of C) for (const c of C) { if (a === b && b === c) continue; const g = planAges({ start: a, stops: [{ comp: b }, { comp: c }] }, opt.sets, lock); if (!g) continue; for (let x = 5; x <= L - 14; x += 2) for (let y = x + 7; y <= L - 7; y += 2) cands.push({ cost: stintCost(a, x, tr, tmF, g[0]) + stintCost(b, y - x, tr, tmF, g[1]) + stintCost(c, L - y, tr, tmF, g[2]) + (tr.pit + stopPen(tr)) * 2, plan: { start: a, stops: [{ lap: x, comp: b }, { lap: y, comp: c }] } }); }
     const only = opt.only; if (only) { const f = cands.filter(x => (!only.stops || x.plan.stops.length === only.stops) && (!only.start || x.plan.start === only.start) && (!only.last || x.plan.stops[x.plan.stops.length - 1].comp === only.last)); if (!f.length) return null; cands.length = 0; f.forEach(x => cands.push(x)); }
     if (!cands.length) return { start: A[0], stops: [{ lap: Math.round(L / 2), comp: A[0] === "H" ? "M" : "H" }], fuel: "std" };
-    cands.sort((p, q) => p.cost - q.cost); return Object.assign({ fuel: "std" }, cands[0].plan);
+    cands.sort((p, q) => p.cost - q.cost);
+    if (opt.sample) { // 組み合わせごとのいちばん良い案を集めて、費用の差が小さいものほど選ばれやすく
+      const fam = {}; cands.forEach(c => { const k = c.plan.start + c.plan.stops.map(s => s.comp).join(""); if (!fam[k] || c.cost < fam[k].cost) fam[k] = c; });
+      const list = Object.values(fam).sort((p, q) => p.cost - q.cost), b0 = list[0].cost, ws = list.map(c => Math.exp(-(c.cost - b0) / opt.sample.tau) * (c.plan.start === "S" ? opt.sample.sb : c.plan.start === "H" ? opt.sample.hb : 1) * (c.plan.stops.length >= 2 ? opt.sample.s2 : 1));
+      let q = rnd() * ws.reduce((a, v) => a + v, 0), i = 0; for (; i < ws.length - 1; i++) { q -= ws[i]; if (q <= 0) break; } return Object.assign({ fuel: "std" }, list[i].plan);
+    }
+    return Object.assign({ fuel: "std" }, cands[0].plan);
   }
   // 金曜のフリー走行で S2・M1 を5周ずつ使った状態で予選へ
   const ALLOC = { S: 8, M: 3, H: 2, I: 5, W: 2 }, FP_USED = { S: 2, M: 1 }, FP_LAPS = 5;
@@ -597,7 +603,7 @@ const F1 = (() => {
   }
   // スタートからの5周の濡れ具合の平均（天気の動きと同じ式で先読み）
   function wetStartAvg(R) { let w = R.wet, s = w; for (let L = 1; L <= 4; L++) { if (R.rainAt > 0) { if (L >= R.rainAt && L < R.rainAt + R.rainLen) w = Math.min(R.rainTo, w + 0.07); else if (L >= R.rainAt + R.rainLen && w > 0) w = Math.max(0, w - 0.05); } else w = Math.max(0, w - 0.04); s += w; } return s / 5; }
-  function aiPlan(tr, d, wet, tm, opt) { if (!wet && opt && opt.grid >= 12 && rnd() < 0.3) { const l = planOptions(tr, d, 0, opt).find(x => x.key === "long"); if (l) return l.plan; } const p = recPlan(tr, d, wet, stratSk(tm), opt); p.fuel = stratSk(tm) >= 80 && rnd() < 0.35 ? "light" : "std"; return p; }
+  function aiPlan(tr, d, wet, tm, opt) { if (!wet && opt && opt.grid >= 12 && rnd() < 0.2) { const l = planOptions(tr, d, 0, opt).find(x => x.key === "long"); if (l) return l.plan; } const p = recPlan(tr, d, wet, stratSk(tm), Object.assign({}, opt, { sample: { tau: 3 + (100 - stratSk(tm)) / 40, sb: 0.5, hb: 0.1, s2: 1 } })); p.fuel = stratSk(tm) >= 80 && rnd() < 0.35 ? "light" : "std"; return p; }
   // ---- ペナルティ ----
   // 秒加算は完走したときのタイムに足す。ドライブスルーは次の周にピットレーンを通る損（残り3周以内なら 20 秒加算に変える）。審議は2周あとに結果が出る（お咎めなしのこともある）
   function givePen(R, c, kind, sec, why) {
