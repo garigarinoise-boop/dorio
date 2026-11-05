@@ -546,21 +546,27 @@ const F1 = (() => {
     const qTrouble = (x, si) => {
       const d = drv(x.id), tm = team(x.tm), mine = x.tm === S.my, nm = d.name;
       if (x.dead) { x.note[si] = "出走できず"; return null; }
-      const pC = (0.004 + (100 - d.cons) / 100 * 0.01 + Math.max(0, 60 - d.calm) / 100 * 0.01 + R.wet * 0.025) * (tr.street ? 1.6 : 1), pM = (100 - tm.car.rel) / 100 * 0.015;
+      const pC = (0.004 + (100 - d.cons) / 100 * 0.01 + Math.max(0, 60 - d.calm) / 100 * 0.01 + R.wet * 0.025) * (tr.street ? 1.7 : 1), pM = (100 - tm.car.rel) / 100 * 0.015;
       if (rnd() < pC) { x.dead = true; const keep = rnd() < 0.4, gb = rnd() < 0.3; if (gb) x.pen = 5; x.note[si] = "{i:crash}クラッシュ"; R.qEvents.push({ si, id: x.id, tm: x.tm, mine, t: "{i:crash} " + qName[si] + "：" + nm + " がクラッシュ（赤旗）" + (keep ? "。それまでのタイムは残る" : "。タイムなし") + "。この後のセッションは走れない" + (gb ? "。ギアボックス交換で5グリッド降格" : "") }); x.red = si; return keep ? 0.45 : null; }
-      if (rnd() < pM) { const stop = rnd() < 0.5; if (stop) x.dead = true; x.note[si] = "{i:wrench}トラブル"; R.qEvents.push({ si, id: x.id, tm: x.tm, mine, t: "{i:wrench} " + qName[si] + "：" + nm + (stop ? " がマシントラブルでコース上にストップ。タイムなし。この後のセッションは走れない" : " にマシントラブル（パワーが落ちたまま走り切る）") }); return stop ? null : 0.6 + rnd() * 1.2; }
+      if (rnd() < pM) { const stop = rnd() < 0.5; if (stop) { x.dead = true; x.red = si; } x.note[si] = "{i:wrench}トラブル"; R.qEvents.push({ si, id: x.id, tm: x.tm, mine, t: "{i:wrench} " + qName[si] + "：" + nm + (stop ? " がマシントラブルでコース上にストップ（赤旗）。タイムなし。この後のセッションは走れない" : " にマシントラブル（パワーが落ちたまま走り切る）") }); return stop ? null : 0.6 + rnd() * 1.2; }
       return 0;
     };
     // 赤旗：同じセッションの最後のアタックが乱れる（ほかの車のタイムが少しぶれる）
     const session = (list, si, comp, evo) => { list.forEach(x => { const k = ["t1", "t2", "t3"][si], tb = qTrouble(x, si); x[k] = tb == null ? null : lap(x, comp(x), evo) + tb; });
-      if (list.some(x => x.red === si)) list.forEach(x => { const k = ["t1", "t2", "t3"][si]; if (x.red !== si && x[k] != null) x[k] += Math.abs(gauss()) * 0.15; });
+      list.forEach(x => { x.a1 = 0.1 + rnd() * 0.35; x.a2 = 0.66 + rnd() * 0.3; x.d1 = 0.05 + Math.abs(gauss()) * 0.35; x.lost = false; });
+      const rc = list.find(x => x.red === si);
+      if (rc) { const rt = 0.5 + rnd() * 0.4; rc.a2 = rt; rc.a1 = Math.min(rc.a1, rt - 0.05); let lost = 0;
+        list.forEach(x => { const k = ["t1", "t2", "t3"][si]; if (x.red === si || x[k] == null || x.dead) return;
+          if (x.a2 > rt && rnd() < 0.6) { x[k] += x.d1; x.lost = true; lost++; x.note[si] = x.note[si] || "{i:rf}赤旗でアタック減";
+            if (x.tm === S.my) R.qEvents.push({ si, id: x.id, tm: x.tm, mine: true, t: "{i:rf} " + qName[si] + "：赤旗でラストアタックができなかった（" + drv(x.id).name + "）" }); } });
+        R.qEvents.push({ si, id: rc.id, tm: rc.tm, mine: false, t: "{i:rf} " + qName[si] + "：赤旗で " + lost + " 台が最後のアタックを走れなかった" }); }
       // 経過の記録（再生用）。at＝セッションの中の時刻 0〜1。1回目のアタックは最後のアタックより少し遅い
       R.qLists[si] = list.map(x => x.id);
-      list.forEach(x => { const t = x[["t1", "t2", "t3"][si]], nt = x.note[si], a1 = 0.1 + rnd() * 0.35, a2 = 0.66 + rnd() * 0.3, slow = /トラブル/.test(nt);
+      list.forEach(x => { const t = x[["t1", "t2", "t3"][si]], nt = x.note[si], a1 = x.a1, a2 = x.a2, slow = /トラブル/.test(nt);
         if (/出走できず/.test(nt)) return R.qLog.push({ si, at: 0.02, id: x.id, k: "dns" });
         if (/クラッシュ/.test(nt)) { if (t != null) { R.qLog.push({ si, at: a1, id: x.id, k: "lap", t }); R.qLog.push({ si, at: a2, id: x.id, k: "crash" }); } else R.qLog.push({ si, at: a1, id: x.id, k: "crash" }); return; }
         if (slow && t == null) return R.qLog.push({ si, at: a1, id: x.id, k: "stop" });
-        R.qLog.push({ si, at: a1, id: x.id, k: "lap", t: t + 0.05 + Math.abs(gauss()) * 0.35, slow }); R.qLog.push({ si, at: a2, id: x.id, k: "lap", t, slow }); });
+        if (x.lost) return R.qLog.push({ si, at: a1, id: x.id, k: "lap", t, slow }); R.qLog.push({ si, at: a1, id: x.id, k: "lap", t: t + x.d1, slow }); R.qLog.push({ si, at: a2, id: x.id, k: "lap", t, slow }); });
       R.qLog.sort((a, b) => a.si - b.si || a.at - b.at);
       list.sort((a, b) => (a[["t1", "t2", "t3"][si]] ?? 1e9) - (b[["t1", "t2", "t3"][si]] ?? 1e9)); };
     all.forEach(x => x.note = ["", "", ""]); R.qLists = []; R.qLog = [];
