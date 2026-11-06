@@ -933,6 +933,16 @@ const F1 = (() => {
     }
     return out;
   }
+  // 予定にないピット：最後まで走る場合と、あと1回入る場合（いつ・どのタイヤ）を比べ、一番得な周が今なら入る
+  function extraPit(R, c, left, sk) {
+    const tr = TRACKS[R.tr], loss = (R.sc ? tr.pit * 0.5 : R.vsc ? tr.pit * 0.6 : tr.pit) + 2.4;
+    const old = [0]; for (let j = 1; j <= left; j++) old[j] = old[j - 1] + tyreTime(R, c, c.comp, c.age + j); // 今のタイヤで j 周走ったときの合計
+    const nw = {}; ["S", "M", "H"].forEach(k => { const a = [0]; for (let j = 1; j <= left; j++) a[j] = a[j - 1] + tyreTime(R, c, k, j); nw[k] = a; });
+    let best = null; for (let p = 0; p <= left - 2; p++) ["S", "M", "H"].forEach(k => { const v = old[p] + nw[k][left - p]; if (!best || v < best.v) best = { v, p, k }; });
+    if (!best || best.p > 0) return null; // 入るならもっと後の方が得（または入らない方が得）
+    const lost = R.cars.filter(o => o !== c && !o.out && !o.fin && o.lap === c.lap - 1 && o.lapEnd - R.t < loss).length; // ピットの間に前に出る車
+    return old[left] - best.v > loss + lost * (2 + passNeed(tr)) + gauss() * 1.5 * (100 - sk) / 50 ? best.k : null;
+  }
   function aiReact(R, c, pitTo) {
     const left = R.laps - c.lap, T = TYRE[c.comp], dry = c.comp === "S" || c.comp === "M" || c.comp === "H", sk = stratSk(team(c.tm));
     const neut = R.sc || R.vsc, heavyLeft = R.rainAt > 0 && R.lap >= R.rainAt ? R.rainAt + R.rainLen - R.lap : 0; // 大雨があと何周続くか（予報）
@@ -947,7 +957,7 @@ const F1 = (() => {
     else if ((R.sc || R.vsc) && c.scSeen !== R.neutralId && (c.scSeen = R.neutralId, true) && (R.sc || rnd() < 0.6) && dry && left > 8 && c.lap - c.lastPit > 4 && c.age > T.life * (0.25 + (100 - sk) / 200) && rnd() < 0.4 + sk / 160) { const nc = left > 30 ? "H" : left > 18 ? "M" : "S"; return nc === c.comp && c.used.length < 2 ? (nc === "H" ? "M" : "H") : nc; }
     if (!pitTo && dry && !R.wet && left <= 3 && c.used.length < 2 && c.lap > 3) return c.comp === "S" ? "M" : "S";
     // 予定のピットが残っていないのに崖が近い（雨で予定が崩れたとき等）：残り周回に合わせてもう一度入る
-    if (!pitTo && dry && R.wet < 0.18 && !c.plan.stops[c.stopsDone] && left > 3 && c.age >= lifeOf(c.comp) * (0.9 + (sk - 70) / 500)) return fitDry(left);
+    if (!pitTo && dry && R.wet < 0.18 && !c.plan.stops[c.stopsDone] && left > 3 && c.lap - c.lastPit > 2) { const x = extraPit(R, c, left, sk); if (x) return x; }
     return pitTo;
   }
   function radio(R, c, d, tr) {
