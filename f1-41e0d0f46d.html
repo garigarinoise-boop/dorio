@@ -814,7 +814,9 @@ const F1 = (() => {
       }
       else if (gap < 1.2 && end < ahead.lapEnd + 0.25 && !extra) {
         const dd = drv(c.id), da = drv(ahead.id), adv = ahead.lapEnd - end;
-        /* 抜きにくいコースほど、抜くのに要る速さの差（need 秒/周）が大きい。モナコ級は1.4秒近く要る */ const drs = drsOK(R) && gap < 1.0, need = 0.25 + (1 - tr.ovt) * 1.6 - (drs ? drsGain(tr) : 0) - (rsNow ? 0.8 : 0) - (gap < 1.0 ? 0.25 * tr.pw + 0.05 : 0), sig = 1 / (1 + Math.exp(-(adv - need) / 0.35)), p = clamp((0.03 + tr.ovt * 0.75) * sig * (0.75 + (dd.craft - da.craft) / 150) * (rsNow ? 2.2 : 1), 0, 0.9);
+        /* 抜きにくいコースほど、抜くのに要る速さの差（need 秒/周）が大きい。モナコ級は1.4秒近く要る */ const drs = drsOK(R) && gap < 1.0, blk = endBlock(R, c, rsNow), need = 0.25 + (1 - tr.ovt) * 1.6 - (drs ? drsGain(tr) : 0) - (rsNow ? 0.8 : 0) - (gap < 1.0 ? 0.25 * tr.pw + 0.05 : 0) + blk, sig = 1 / (1 + Math.exp(-(adv - need) / 0.35)), p = clamp((0.03 + tr.ovt * 0.75) * sig * (0.75 + (dd.craft - da.craft) / 150) * (rsNow ? 2.2 : 1), 0, 0.9);
+        if (blk && adv > 0) { ahead.lapEnd += blk * 0.5; end = Math.max(end, ahead.lapEnd - adv); R.blocks = (R.blocks || 0) + 1; // 守る側もラインを外す分遅くなる
+          const key = c.id + ">" + ahead.id; R.blkSaid = R.blkSaid || {}; if ((c.tm === S.my || ahead.tm === S.my) && !R.blkSaid[key]) { R.blkSaid[key] = 1; say(R, "{i:duel} L" + (c.lap + 1) + " 終盤：" + da.name + " がレコードラインを外して " + dd.name + " をブロック（抜くのに要る差 +" + blk.toFixed(1) + "秒・守る側も約" + (blk * 0.5).toFixed(1) + "秒遅くなる）", true); } }
         if (drs) R.drsPass = (R.drsPass || 0) + (rnd() < p ? 1 : 0); if (rnd() < p) { R.passes = (R.passes || 0) + 1; if (end > ahead.lapEnd - 0.1) end = ahead.lapEnd - 0.1; ahead.lapEnd += 0.25; ahead.stuck += 2; c.stuck = 0; if (c.tm === S.my || ahead.tm === S.my) say(R, "{i:duel} L" + (c.lap + 1) + " " + dd.name + " が " + da.name + " を抜いた", true); }
         else { end = Math.max(end, ahead.lapEnd + 0.3); c.stuck++;
           if (rnd() < 0.0075 * (1.6 - (dd.calm + dd.craft) / 150) * (R.wet > 0.2 ? 1.5 : 1) * (tr.street ? 1.4 : 1)) {
@@ -1005,6 +1007,9 @@ const F1 = (() => {
     return t;
   }
   // 譲るか：自分のチームは「先に行かせる」の指示か自動設定、CPU は速い方が2周以上詰まっていれば7割で出す
+  // 終盤のブロック：残り5周から前の車はラインを外して守る（抜くのに要る差 残り5周 +0.16秒 → 最終周 +0.8秒）。リスタート直後は除く
+  const BLK_MAX = Number(typeof process !== "undefined" && process.env && process.env.BLK || 0.8);
+  const endBlock = (R, c, rsNow) => { const rem = R.laps - c.lap; return !rsNow && rem >= 1 && rem <= 5 ? Math.round(BLK_MAX * (6 - rem) / 5 * 100) / 100 : 0; };
   function orderYield(R, c, ahead, adv) {
     if (ahead.letBy) return true;
     if (c.tm === S.my && !S.autoOrder) return false;
@@ -2181,7 +2186,7 @@ function gpCard(tr, round) {
 }
 function trackInfo(tr) {
   const lv = (v, a) => a[v < 0.35 ? 0 : v < 0.65 ? 1 : 2];
-  return `<div class="small muted">${tr.laps}周・ピットロス約${tr.pit}秒・${lv(tr.pw, ["曲がりの多いコース", "バランス型", "直線の長いコース"])}・抜きやすさ ${lv(tr.ovt, ["低", "中", "高"])}（抜くには1周あたり約${F1.passNeed(tr)}秒速さが要る・DRSゾーン${F1.drsZones(tr)}か所で約${F1.drsGain(tr)}秒楽になる）・1秒以内のスリップで約${(0.25*tr.pw+0.05).toFixed(1)}秒楽、1.2秒以内は乱気流でコーナー約${(0.3*(1-tr.pw)).toFixed(1)}秒遅れてタイヤも少し減る・タイヤの減り ${tr.wear * S().regs.wear < 0.9 ? "少" : tr.wear * S().regs.wear < 1.1 ? "中" : "多"}・燃料 ${tr.fuel >= 1.08 ? "厳しい" : "普通"}・雨の確率 ${Math.round(tr.rain * 100)}%</div>`;
+  return `<div class="small muted">${tr.laps}周・ピットロス約${tr.pit}秒・${lv(tr.pw, ["曲がりの多いコース", "バランス型", "直線の長いコース"])}・抜きやすさ ${lv(tr.ovt, ["低", "中", "高"])}（抜くには1周あたり約${F1.passNeed(tr)}秒速さが要る。残り5周からは前の車がブロックするので最終周は最大+0.8秒・DRSゾーン${F1.drsZones(tr)}か所で約${F1.drsGain(tr)}秒楽になる）・1秒以内のスリップで約${(0.25*tr.pw+0.05).toFixed(1)}秒楽、1.2秒以内は乱気流でコーナー約${(0.3*(1-tr.pw)).toFixed(1)}秒遅れてタイヤも少し減る・タイヤの減り ${tr.wear * S().regs.wear < 0.9 ? "少" : tr.wear * S().regs.wear < 1.1 ? "中" : "多"}・燃料 ${tr.fuel >= 1.08 ? "厳しい" : "普通"}・雨の確率 ${Math.round(tr.rain * 100)}%</div>`;
 }
 function regCard() {
   const s = S(), r = s.regs, nx = s.nextReg, RT = F1.REG_TYPES;
