@@ -334,7 +334,7 @@ const F1 = (() => {
     tm.budget += old.fee - p.fee; tm.pu = id; news("来季から " + p.name + " の PU を使う（年間 " + money(p.fee) + "）"); save(); return { ok: true, msg: p.name + " と契約しました" }; }
   function offStep(dir) { const o = S.off; if (!o) return { ok: false }; if (dir > 0 && o.step === 1) { const tm = me(); if (tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "契約が切れるドライバーを、延長か放出か決めてくれ" }; if ((o.offers || []).some(x => !x.done && tm.drivers.includes(x.id))) return { ok: false, msg: "移籍の打診に答えてくれ" }; if (tm.drivers.length < 2) return { ok: false, msg: "ドライバーを2人そろえてくれ" }; }
     o.step = clamp(o.step + dir, 0, 6); save(); return { ok: true }; }
-  function startSeason() { const tm = me(); if (tm.drivers.length < 2 || tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "ドライバーが決まっていません" }; backup("第" + S.season + "シーズン 開幕直前（オフの準備のあと）"); S.off = null; S.phase = "season"; S.ncBonus = 0; rollAbs(true); msLaunch(); save(); return { ok: true }; }
+  function startSeason() { const tm = me(); if (tm.drivers.length < 2 || tm.drivers.some(id => drv(id).expiring)) return { ok: false, msg: "ドライバーが決まっていません" }; backup("第" + S.season + "シーズン 開幕直前（オフの準備のあと）"); S.off = null; S.phase = "season"; S.ncBonus = 0; setATR(true); news("{i:swirl} ATR（風洞・CFD の枠）：今季前半は " + atrPct(tm) + "%（昨季のコンストラクターズ順位で決まる。1位70%〜最下位115%。空力の開発の伸びにそのまま、シャシーには半分かかる）"); rollAbs(true); msLaunch(); save(); return { ok: true }; }
   function migrate() {
     if (!S.nations) initWorld();
     S.teams.forEach(initFac);
@@ -1074,6 +1074,7 @@ const F1 = (() => {
     // 国のF1熱：勝った人の国、地元での勝利は特に
     const wd = drv(w.id); if (S.nations[wd.nat]) S.nations[wd.nat].fever = clamp(S.nations[wd.nat].fever + (wd.nat === tr.c ? 1 : 0.15), 5, 100);
     S.round++; S.race = null;
+    if (S.round === Math.floor(S.calendar.length / 2)) { setATR(false); if (S.my != null) news("{i:swirl} ATR の見直し（中盤）：後半の風洞・CFD の枠は " + atrPct(me()) + "%（いまのコンストラクターズ順位 " + (teamTable().findIndex(t => t.id === S.my) + 1) + "位）"); }
     S.teams.forEach(tm => { if (tm.id !== S.my) aiDevelop(tm); });
     deliverAll(); finishBuilds(); evAfterRace(res); formAfterRace(res); licCheck(); rollAbs(); genEvent();
     save(); return rec;
@@ -1332,11 +1333,11 @@ const F1 = (() => {
       ["派手にやる（$4M・F1熱 +3・士気 +2）", () => { pay(c.tm, 4); const n = S.nations[c.tm.nat]; if (n) n.fever = clamp(n.fever + 3, 0, 100); addMor(c.tm, 2); return "派手な発表会でファンの期待が高まった"; }],
       ["地味にやる（費用なし・開発中の部品が1戦早く届く）", () => { (c.tm.proj || []).forEach(p => p.due = Math.max(S.round, p.due - 1)); return "発表会は簡素に済ませ、開発に時間を回した"; }]] }) },
     // 15. ATR（風洞・CFD の使える量）の見直し：年2回。順位が低いほど枠が大きい
-    atr: { when: c => true, make: (c, x) => { const rank = teamTable().findIndex(q => q.id === S.my) + 1, bonus = 4 + Math.max(0, rank - 6), half = x.k === "atr2" ? "後半" : "前半";
-      return { title: `風洞・CFD の枠の見直し（${half}）`, text: `順位に応じて、風洞と CFD の使える量が見直された（いまの順位 ${rank}位。低いほど枠は大きい）。この枠をどう使うか決めてくれ。`, ch: [
+    atr: { when: c => true, make: (c, x) => { const rank = teamTable().findIndex(q => q.id === S.my) + 1, ap = atrPct(c.tm), bonus = Math.max(2, Math.round(6 * ap / 100)), boost = Math.round(5 * ap / 100) / 100, half = x.k === "atr2" ? "後半" : "前半";
+      return { title: `風洞・CFD の枠の見直し（${half}）`, text: `順位に応じて、風洞と CFD の使える量が見直された（いまの順位 ${rank}位・ATR ${ap}%。1位70%〜最下位115%で、低いほど枠は大きい）。この枠をどう使うか決めてくれ。`, ch: [
         ["目先の開発に使う（開発中の部品のうち最大2つが1戦早く届く）", () => { let n = 0; (c.tm.proj || []).slice().sort((p, q) => p.due - q.due).forEach(p => { if (n < 2 && p.due > S.round) { p.due -= 1; n++; } }); return n ? `枠を目先の開発に使い、${n}つの部品が1戦早まった` : "枠を目先の開発に使った（早められる部品はなかった）"; }],
         [`来季の新車に貯める（来季の新車に使える額 +$${bonus}M）`, () => { S.ncBonus = (S.ncBonus || 0) + bonus; return `枠を来季の新車に回した（新車に使える額 +$${bonus}M）`; }],
-        ["風洞をフル回転させる（$3M・次戦は 0.05秒速い）", () => { pay(c.tm, 3); evN().paceT[c.tm.id] = (evN().paceT[c.tm.id] || 0) - 0.05; return "風洞をフル回転させた"; }]] }; } },
+        [`風洞をフル回転させる（$3M・次戦は ${boost}秒速い）`, () => { pay(c.tm, 3); evN().paceT[c.tm.id] = (evN().paceT[c.tm.id] || 0) - boost; return "風洞をフル回転させた"; }]] }; } },
     // 16. コストキャップの中間監査（支出ペースが速いとき）
     audit: { when: c => spent(c.tm) / S.regs.cap > S.round / Math.max(1, S.calendar.length) + 0.1, make: (c, x) => ({ title: "コストキャップの中間監査", text: `支出のペースが速いと指摘された（ここまでで上限の ${Math.round(spent(c.tm) / S.regs.cap * 100)}%）。どう対応するか決めてくれ。`, ch: [
       ["申告して調整する（$2M・模範と評価され、上限の余裕 +$5M）", () => { pay(c.tm, 2); S.spent[c.tm.id] = Math.max(0, spent(c.tm) - 5); return "自主的に申告して調整した。上限に余裕ができた"; }],
@@ -1502,8 +1503,13 @@ const F1 = (() => {
     return { ok: true, msg: "発注しました：" + dueName(p.due) + " から使えます" };
   }
   const dueName = r => r >= S.calendar.length ? "来季" : "第" + (r + 1) + "戦 " + TRACKS[S.calendar[r]].name;
-  // 開発の伸び：開発力とドライバーのフィードバック、上の方ほど伸びにくい。マイナスもある
-  function rollGain(tm, base, size) { const Z = SIZE[size], skill = (tm.devp * 0.7 + driverDev(tm) * 0.3) * (1 + moraleB(tm) * 0.06) * (1 + (fl(tm, "wt") - 1) * 0.02), room = clamp((99 - base) / 22, 0.25, 1.2); return (Z.gain * (0.55 + skill / 110) * room) + gauss() * Z.sd - 0.25; }
+  // ATR（空力テストの制限）：7位が100%、チャンピオン70%、最下位115%、5%刻み。年2回見直し（調査メモ §1.8）
+  const ATR_PCT = r => clamp(70 + (r - 1) * 5, 70, 115);
+  function setATR(fromLast) { const n = S.teams.length, last = t => t.hist && t.hist.length ? t.hist[t.hist.length - 1] : n, order = fromLast ? S.teams.slice().sort((a, b) => last(a) - last(b)) : teamTable(); S.atr = {}; order.forEach((t, i) => S.atr[t.id] = ATR_PCT(i + 1)); }
+  const atrPct = tm => { if (S.noATR) return 100; if (!S.atr) setATR(S.round < 2); return S.atr[tm.id] || 100; };
+  const atrMul = (tm, part) => { const k = atrPct(tm) / 100; return part === "aero" ? k : part === "chassis" ? 1 + (k - 1) * 0.5 : 1; }; // 空力は全部、シャシーは半分
+  // 開発の伸び：開発力とドライバーのフィードバック、上の方ほど伸びにくい。マイナスもある。ATR の倍率がかかる
+  function rollGain(tm, base, size, part) { const Z = SIZE[size], skill = (tm.devp * 0.7 + driverDev(tm) * 0.3) * (1 + moraleB(tm) * 0.06) * (1 + (fl(tm, "wt") - 1) * 0.02), room = clamp((99 - base) / 22, 0.25, 1.2); return (Z.gain * (0.55 + skill / 110) * room) * (part ? atrMul(tm, part) : 1) + gauss() * Z.sd - 0.25; }
   // ---- 新車（オフ）：空力・シャシー・信頼性ごとに力の入れ具合を選ぶ。費用は「前のシーズンの予算上限の使い残し」から出す（現実では来年の車の開発費も使った年の上限に入る）。新しいシーズンの上限には数えない ----
   const NC = [{ n: "作らない", cost: 0, m: 0 }, { n: "控えめ", cost: 12, m: 0.6 }, { n: "標準", cost: 25, m: 1.0 }, { n: "攻め", cost: 40, m: 1.45 }];
   const NC_REL = [0, 6, 12, 20];
@@ -1513,7 +1519,7 @@ const F1 = (() => {
   const focusUp = (g, v, base) => Math.max(g * 1.3 * Math.min(1.15, clamp((99 - v) / 22, 0.25, 1.2) / clamp((99 - base) / 22, 0.25, 1.2)), 0.6);
   function newCarSpec(tm, part, focus, m, mine, base0) {
     const cur = base0 || specOf(tm, part), keys = part === "aero" ? AERO_K : CHAS_K, base = projBase(tm, part), v = {};
-    const g = rollGain(tm, base, "b") * m; keys.forEach(k => { let d; if (focus === "bal") d = g * 0.6 + gauss() * 0.6; else if (k === focus) d = focusUp(g, cur[k], base) + gauss() * 0.5; else if (part === "aero") d = -g * 0.3 + gauss() * 0.7; else d = g * 0.2 + gauss() * 0.7; v[k] = cur[k] + d; });
+    const g = rollGain(tm, base, "b", part) * m; keys.forEach(k => { let d; if (focus === "bal") d = g * 0.6 + gauss() * 0.6; else if (k === focus) d = focusUp(g, cur[k], base) + gauss() * 0.5; else if (part === "aero") d = -g * 0.3 + gauss() * 0.7; else d = g * 0.2 + gauss() * 0.7; v[k] = cur[k] + d; });
     const sp = newSpec(part, v, "第" + S.season + "期 新車（" + FOCUS[part][focus] + "）"); sp.from = "第" + S.season + "期 開幕前";
     if (mine) { sp.known = false; keys.forEach(k => sp.e[k] = clamp(Math.round(sp[k] + gauss() * 2), 45, 99)); }
     tm.specs[part].unshift(sp); if (!base0) tm.use[part] = sp.id; return { part, from: cur, to: sp };
@@ -1532,9 +1538,9 @@ const F1 = (() => {
     return { ok: true, msg: "新車ができました" };
   }
   // CPU：お金に合わせた力の入れ具合、コンセプトはおまかせ
-  function aiNewCar(tm) { const sz = tm.budget > 160 ? 3 : tm.budget > 110 ? 2 : 1, fa = pick(["df", "drag", "bal", "bal"]), fc = pick(["low", "high", "tyre", "bal", "bal"]); const ch = { aero: { size: sz, focus: fa }, chassis: { size: sz, focus: fc }, rel: { size: Math.max(1, sz - 1) } }; if (tm.budget < ncCost(ch) + 30) { ch.aero.size = ch.chassis.size = 1; ch.rel.size = 1; } if (tm.budget > 140 && rnd() < 0.4) ch.aero2 = { on: true, focus: fa === "drag" ? "df" : "drag" }; if (tm.budget < ncCost(ch)) delete ch.aero2; if (ncCost(ch) > ncRoom(tm)) { delete ch.aero2; ch.aero.size = ch.chassis.size = 1; ch.rel.size = 1; } if (tm.budget >= ncCost(ch) && ncCost(ch) <= ncRoom(tm)) buildNewCar(ch, tm); }
+  function aiNewCar(tm) { const sz = tm.budget > 160 ? 3 : tm.budget > 110 ? 2 : 1, smart = !aiDumb(tm) && rnd() < 0.75, gapK = ks => { const g = ks.map(k => [k, Math.max(...S.teams.map(t => t.car[k])) - tm.car[k]]).sort((a, b) => b[1] - a[1]); return g[0][1] - g[g.length - 1][1] > 1.5 ? g[0][0] : "bal"; }, fa = smart ? gapK(AERO_K) : pick(["df", "drag", "bal", "bal"]), fc = smart ? gapK(CHAS_K) : pick(["low", "high", "tyre", "bal", "bal"]); const ch = { aero: { size: sz, focus: fa }, chassis: { size: sz, focus: fc }, rel: { size: Math.max(1, sz - 1) } }; if (tm.budget < ncCost(ch) + 30) { ch.aero.size = ch.chassis.size = 1; ch.rel.size = 1; } if (tm.budget > 140 && rnd() < 0.4) ch.aero2 = { on: true, focus: fa === "drag" ? "df" : "drag" }; if (tm.budget < ncCost(ch)) delete ch.aero2; if (ncCost(ch) > ncRoom(tm)) { delete ch.aero2; ch.aero.size = ch.chassis.size = 1; ch.rel.size = 1; } if (tm.budget >= ncCost(ch) && ncCost(ch) <= ncRoom(tm)) buildNewCar(ch, tm); }
   function arrive(tm, p) {
-    const mine = tm.id === S.my, base = projBase(tm, p.part), g = rollGain(tm, base, p.size);
+    const mine = tm.id === S.my, base = projBase(tm, p.part), g = rollGain(tm, base, p.size, p.part);
     if (p.part === "rel") { const v = Math.round(g * 1.3); tm.car.rel = clamp(tm.car.rel + v, 50, 99); if (mine) news("信頼性の対策が入った：" + (v >= 0 ? "+" : "") + v); return; }
     if (p.part === "pu") { const pp = pu(tm.pu), v = r1(g * 0.7); pp.lvl = clamp(r1(pp.lvl + v), 55, 99); if (mine || S.teams.some(t => t.id === S.my && t.pu === tm.pu)) news(pp.name + " PU のアップデート：" + (v >= 0 ? "+" : "") + v); return; }
     const cur = specOf(tm, p.part), keys = p.part === "aero" ? AERO_K : CHAS_K, v = {};
@@ -1570,14 +1576,26 @@ const F1 = (() => {
     if (k === "pu") { const p = pu(tm.pu), g = devRoll(tm, p.lvl); p.lvl = Math.min(99, p.lvl + g * 0.7); news(p.name + " PU のアップデート" + (g ? "：+" + r1(g * 0.7) : "は不発")); save(); return { ok: true, msg: g ? "PU +" + r1(g * 0.7) + "（" + p.name + " を使う全チームに効きます）" : "アップデートは不発でした" }; }
     const g = devRoll(tm, tm.car[k]); tm.car[k] = Math.min(99, tm.car[k] + g); news(PARTS[k][0] + " のアップデート" + (g ? "：+" + g : "は不発でした")); save(); return { ok: true, msg: g ? PARTS[k][0] + " +" + g : "アップデートは不発でした" };
   }
+  // CPU の開発の狙い：いちばん強いチームとの差が大きい部品・項目。4回に1回は気まぐれ
+  const carPerfOf = t => ((t.car.df + t.car.drag) / 2 + (t.car.low + t.car.high + t.car.tyre) / 3) / 2;
+  function aiPick(tm) {
+    const best = k => Math.max(...S.teams.map(t => t.car[k])), aeroG = AERO_K.map(k => [k, best(k) - tm.car[k]]), chasG = CHAS_K.map(k => [k, best(k) - tm.car[k]]);
+    const relAvg = S.teams.reduce((a, t) => a + t.car.rel, 0) / S.teams.length, puG = tm.works ? Math.max(...S.teams.map(t => pu(t.pu).lvl)) - pu(tm.pu).lvl : 0;
+    const sc = { aero: Math.max(...aeroG.map(x => x[1])) * 1.1 + 0.5, chassis: Math.max(...chasG.map(x => x[1])) + 0.5, rel: Math.max(0, relAvg - tm.car.rel) * 0.6 + (tm.car.rel < 78 ? 2 : 0), pu: tm.works ? puG * 0.8 : -99 };
+    let part = Object.keys(sc).sort((a, b) => sc[b] - sc[a])[0]; if (rnd() < 0.25) part = pick(["aero", "chassis", "aero"]);
+    let focus = "bal"; if (part === "aero" || part === "chassis") { const gs = (part === "aero" ? aeroG : chasG).slice().sort((a, b) => b[1] - a[1]); if (gs[0][1] - gs[gs.length - 1][1] > 1.5) focus = gs[0][0]; }
+    return { part, focus };
+  }
+  const aiDumb = tm => S.aiSmartOnly != null ? tm.id !== S.aiSmartOnly : !S.aiSmart; // CPU の開発は普段は以前の形（2026-11-06 の測定で、賢い CPU は CPU どうしの順位を固めて連覇を増やし、独走を止める効果も確かめられなかったため止めた）。S.aiSmart で賢い形を試せる
   function aiDevelop(tm) {
     initFac(tm); if ((tm.build || []).length < 2 && tm.budget > 45 && rnd() < 0.12 * perRace()) { const ks = Object.keys(FACS).filter(k => fl(tm, k) < 10 && !tm.build.some(b => b.k === k)).sort((a, b) => fl(tm, a) - fl(tm, b)); if (ks.length) buildFac(ks[Math.min(ks.length - 1, ri(0, 2))], tm); }
     const big = S.nextReg && REG_TYPES[S.nextReg.type].big && S.nextReg.season === S.season + 1;
+    const dumb = aiDumb(tm), behind = dumb ? 0 : Math.max(0, Math.max(...S.teams.map(carPerfOf)) - carPerfOf(tm)); // トップとの車の差（大きいほど多く・大きく投資）
     for (let n = 0; n < 2; n++) {
-      if (rnd() > (0.45 + tm.budget / 700) * perRace()) continue;
-      const k = tm.works && rnd() < 0.2 ? "pu" : pick(["aero", "chassis", "rel", "aero", "chassis", "aero"]), size = rnd() < 0.3 ? "b" : "s", cost = projQuote(tm, k, size).cost;
+      if (rnd() > (0.45 + tm.budget / 700) * perRace() * (1 + clamp(behind / 8, 0, 0.5))) continue;
+      const ap = dumb ? null : aiPick(tm), k = ap ? ap.part : tm.works && rnd() < 0.2 ? "pu" : pick(["aero", "chassis", "rel", "aero", "chassis", "aero"]), size = rnd() < 0.3 + clamp(behind / 16, 0, 0.3) ? "b" : "s", cost = projQuote(tm, k, size).cost;
       if (tm.budget < cost + 15 || capLeft(tm) < cost) continue;
-      if (!(big && rnd() < 0.35 + S.round * perRace() / 40)) { if ((tm.proj || []).length < projCap(tm)) orderPart(k, pick(Object.keys(FOCUS[k])), size, tm); continue; }
+      if (!(big && rnd() < 0.35 + S.round * perRace() / 40)) { if ((tm.proj || []).length < projCap(tm)) orderPart(k, ap ? ap.focus : pick(Object.keys(FOCUS[k])), size, tm); continue; }
       tm.budget -= cost; S.spent[tm.id] = spent(tm) + cost;
       if (big && rnd() < 0.35 + S.round * perRace() / 40) { S.nextInv[tm.id] = S.nextInv[tm.id] || { car: 0, pu: 0 }; if (S.nextReg.type === "pu" && tm.works) { S.nextInv[tm.id].pu += cost; pu(tm.pu).nextInv += cost; } else S.nextInv[tm.id].car += cost; continue; }
     }
@@ -1795,7 +1813,7 @@ const F1 = (() => {
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
   const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * SC_K, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.012 : 0.007)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
-  return { heatChance, heatView, heatLoss, heatDecl, vestState, strain, VEST, vestPref, licPts, LIC_MAX, setReserve, carRows, FM, formD, ncRoom, gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { atrPct, setATR, heatChance, heatView, heatLoss, heatDecl, vestState, strain, VEST, vestPref, licPts, LIC_MAX, setReserve, carRows, FM, formD, ncRoom, gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -2615,7 +2633,7 @@ function vCar() {
   $("#main").innerHTML = `<div class="card"><h3>今のマシン</h3>${KS.map(k => `<div class="sr"><span style="width:92px">${F1.STAT_N[k]}</span>${rk(Math.round(val(t, k)))}<div class="bar"><i style="width:${Math.max(3, Math.round((val(t, k) - 55) / 44 * 100))}%"></i></div><span class="small muted" style="width:76px;text-align:right">平均${Math.round(avg(k))}/最高${Math.round(top(k))}</span></div><div class="small muted" style="margin:-2px 0 4px 98px">${KD[k]}</div>`).join("")}
     ${tr ? `<p class="small">次の ${esc(tr.name)}（${esc(F1.natName(tr.c))}）では ${s.teams.length}チーム中 <b>${order.indexOf(t) + 1}番目</b> の速さ。</p>` : ""}</div>
   <div class="card"><h3>使うパーツ</h3><p class="hint">届いたパーツは、旧パーツと比べて選べます。新しいパーツの数値は工場の予測で、実際に走らせる（フリー走行かレース）と本当の値が分かります。遅くなっていることもあります。${s.race ? "<b>予選のあとは変えられません。</b>" : ""}</p>${specCard("aero")}${specCard("chassis")}</div>
-  <div class="card"><h3>開発の発注</h3><div class="small">開発力（車体）${rk(t.devp)}・ドライバーの開発フィードバック ${rk(Math.round(F1.driverDev(t)))}・今季の開発費 ${money(F1.spent(t))} / 上限 ${money(s.regs.cap)}（使い残しは来年の新車の費用になる）・同時に${F1.projCap(t)}つまで</div>
+  <div class="card"><h3>開発の発注</h3><div class="small">開発力（車体）${rk(t.devp)}・ドライバーの開発フィードバック ${rk(Math.round(F1.driverDev(t)))}・今季の開発費 ${money(F1.spent(t))} / 上限 ${money(s.regs.cap)}（使い残しは来年の新車の費用になる）・同時に${F1.projCap(t)}つまで<br>ATR（風洞・CFD の枠）<b>${F1.atrPct(t)}%</b>（コンストラクターズの順位で決まる。1位70%〜最下位115%、開幕と中盤に見直し。空力の伸びにそのまま、シャシーには半分かかる）</div>
     ${bigNext ? `<div class="seg" style="margin-top:6px"><button class="${mode === "now" ? "on" : ""}" data-dm="now">今年の車</button><button class="${mode === "next" ? "on" : ""}" data-dm="next">来年の車（${esc(F1.REG_TYPES[nx.type].n)}）</button></div>` : ""}
     ${mode === "next" && bigNext ? `<p class="small">来年の車に投資するほど、規則が変わったあとの車（${nx.type === "aero" ? "空力・シャシー・信頼性" : "PU"}）が良くなる。${nx.type === "aero" ? "空力・シャシーの発注は規則変更で無駄になる。" : ""}</p><div class="row"><button class="b p sp" data-nx="car">車体に投資（${money(F1.devCost(t, "aero"))}）</button>${t.works ? `<button class="b p sp" data-nx="pu">PU に投資（${money(F1.devCost(t, "pu"))}）</button>` : ""}</div>`
     : `<div style="margin-top:6px">${seg("part", parts)}${seg("focus", F1.FOCUS[D.part])}${seg("size", { s: "小改良", b: "大型アップデート" })}</div>
