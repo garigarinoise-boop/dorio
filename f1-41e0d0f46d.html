@@ -1204,6 +1204,11 @@ const F1 = (() => {
     seated.forEach(id => {
       const d = drv(id), c = res.find(x => x.id === id), mine = mineIds.includes(id);
       d.hist = (d.hist || []).concat([c ? (c.out ? -1 : c.pos) : 0]).slice(-3);
+      // 結果が調子に効く（2026-11-08 ユーザー「スランプ中に優勝してもどうにもならんの？」）：不調・スランプ中の優勝は吹っ切れるきっかけ、表彰台でも早まる。好調中の自分のミスのクラッシュは好調を縮める
+      if (d.fm && d.fm.left > 0 && c) { const f = d.fm, crash = c.out && /^クラッシュ/.test(c.why || "");
+        if (f.k !== "hot" && !c.out && c.pos === 1) { if (f.k === "cold") f.left = 1; else { f.left = Math.max(1, f.left - 5); f.amt = r2(f.amt * 0.6); } if (mine) news("{i:go} " + d.name + "：優勝で吹っ切れた。" + (f.k === "cold" ? "不調から抜け出す" : "スランプが和らいだ（あと" + Math.max(0, f.left - 1) + "戦・+" + f.amt.toFixed(2) + "秒）")); }
+        else if (f.k !== "hot" && !c.out && c.pos <= 3) { f.left = Math.max(1, f.left - 2); if (mine) news(d.name + "：表彰台で少し自信が戻った（" + FM[f.k].replace(/^[▲▼ ]+/, "") + " あと" + Math.max(0, f.left - 1) + "戦）"); }
+        else if (f.k === "hot" && crash) { f.left = Math.max(1, f.left - 2); if (mine) news(d.name + "：クラッシュで流れが切れた（好調 あと" + Math.max(0, f.left - 1) + "戦）"); } }
       if (d.fm) { d.fm.left--; if (d.fm.left <= 0) { if (mine) news("{i:go} " + d.name + "：" + FM[d.fm.k].replace(/^[▲▼ ]+/, "") + " が終わり、いつもの調子に戻った"); delete d.fm; } }
       if (!d.fm) {
         const h = d.hist, gm = d.gt === "streaky" ? 2 : 1, podium = h.length >= 2 && h.slice(-2).every(p => p > 0 && p <= 3), dnf = h[h.length - 1] === -1 && c && /^クラッシュ/.test(c.why || "");
