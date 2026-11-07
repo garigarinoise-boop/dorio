@@ -927,7 +927,7 @@ const F1 = (() => {
       if (R.lap < R.rainAt && rnd() < 0.08) R.rainAt = Math.max(R.lap + 1, R.rainAt + ri(-2, 3));
       else if (R.lap >= R.rainAt && R.lap < R.rainAt + R.rainLen && rnd() < 0.2) { R.rainLen = Math.max(R.lap - R.rainAt + 1, R.rainLen + ri(-4, 5)); if (rnd() < 0.5) R.rainTo = clamp(R.rainTo + (rnd() - 0.45) * 0.2, 0.25, 0.9); }
       if (R.lap === R.rainAt) { say(R, "{i:rain} L" + R.lap + " 雨が降り始めた", true); R.alerts.push({ k: "rain" }); }
-      if (R.lap >= R.rainAt && R.lap < R.rainAt + R.rainLen) R.wet = Math.min(R.rainTo, R.wet + 0.07);
+      if (R.lap >= R.rainAt && R.lap < R.rainAt + R.rainLen) R.wet = R.wet > R.rainTo ? Math.max(R.rainTo, R.wet - 0.04) : Math.min(R.rainTo, R.wet + 0.07); // 雨が弱まっても溜まった水は少しずつ引く（以前は弱まった水準まで一気に下がっていた）
       else if (R.lap >= R.rainAt + R.rainLen && R.wet > 0) { const was = R.wet; R.wet = Math.max(0, R.wet - 0.05); dry(was); }
     } else if (R.wet > 0) { const was = R.wet; R.wet = Math.max(0, R.wet - 0.04); dry(was); }
     // 大雨（立ち水）：視界が悪いので SC。ひどい大雨が続けば赤旗（実際は大雨の周の約88%が SC・VSC・赤旗）
@@ -951,21 +951,25 @@ const F1 = (() => {
   const gm = () => { let a = 0, b = 0; while (!a) a = Math.random(); while (!b) b = Math.random(); return Math.sqrt(-2 * Math.log(a)) * Math.cos(2 * Math.PI * b); };
   function weatherOutlook(R) {
     const me = S.my != null ? S.teams.find(x => x.id === S.my) : null, acc = me ? clamp((100 - stratSk(me)) / 40, 0.4, 1.4) : 1;
-    if (!R.fc2 || R.lap - R.fc2.at >= 3 || R.lap < R.fc2.at) R.fc2 = { at: R.lap, wet: R.wet, rainAt: R.rainAt, rainLen: R.rainLen, rainTo: R.rainTo, z: Array.from({ length: 10 }, gm) };
+    // 天気の筋書き（降り出し・止む時期・強さ）が変わったら、3周待たずに予報を作り直す（2026-11-07 ユーザー指摘「こんなに濡れててそんなすぐ乾くんかな」：古い予報が出ていた）
+    const fcOld = R.fc2 && (R.fc2.rainAt !== R.rainAt || R.fc2.rainLen !== R.rainLen || R.fc2.rainTo !== R.rainTo || Math.abs((R.fc2.wNow || {})[R.lap] != null ? R.fc2.wNow[R.lap] - R.wet : 0) > 0.06);
+    if (!R.fc2 || fcOld || R.lap - R.fc2.at >= 3 || R.lap < R.fc2.at) R.fc2 = { at: R.lap, wet: R.wet, rainAt: R.rainAt, rainLen: R.rainLen, rainTo: R.rainTo, z: Array.from({ length: 10 }, gm) };
     const F = R.fc2; let w = F.wet; const tl = [], end = Math.min(R.laps, F.at + 28);
     for (let L = F.at + 1; L <= end; L++) {
-      if (F.rainAt > 0) { if (L >= F.rainAt && L < F.rainAt + F.rainLen) w = Math.min(F.rainTo, w + 0.07); else if (L >= F.rainAt + F.rainLen && w > 0) w = Math.max(0, w - 0.05); }
+      if (F.rainAt > 0) { if (L >= F.rainAt && L < F.rainAt + F.rainLen) w = w > F.rainTo ? Math.max(F.rainTo, w - 0.04) : Math.min(F.rainTo, w + 0.07); else if (L >= F.rainAt + F.rainLen && w > 0) w = Math.max(0, w - 0.05); }
       else if (w > 0) w = Math.max(0, w - 0.04);
-      tl.push({ lap: L, w: Math.round(w * 100) / 100 });
+      tl.push({ lap: L, w: Math.round(w * 100) / 100 }); F.wNow = F.wNow || {}; F.wNow[L] = w;
     }
     // 予報の周回 → 「a〜b」の幅（今より前は出さない。幅ごと過ぎたら出さない）
-    const span = (lap, i) => { const sd = (0.8 + Math.max(0, lap - F.at) * 0.2) * acc, c = lap + Math.round(F.z[i] * sd), h = Math.max(1, Math.round(sd)), a = Math.max(R.lap + 1, c - h), b = c + h; return b < R.lap + 1 ? null : [a, Math.max(a, b)]; };
+    const span = (lap, i, mn) => { const sd = (0.8 + Math.max(0, lap - F.at) * 0.2) * acc, c = Math.max(mn || 0, lap + Math.round(clamp(F.z[i], -1.5, 1.5) * sd)), h = Math.max(1, Math.round(sd)), a = Math.max(R.lap + 1, mn || 0, c - h), b = c + h; return b < R.lap + 1 ? null : [a, Math.max(a, b)]; }; // ブレは1.5σまで
+    // 物理的な下限：今の濡れから最速で乾いても（雨が止んでから1周5%）届かない周は出さない（2026-11-07：濡れ80%で5周後にドライと出ていた）
+    const minDry = w0 => R.rainRed ? 0 : R.lap + Math.max(0, Math.ceil((R.wet - w0) / 0.05)); // 雨の止む時期は途中で変わるので、下限には入れない
     const txt = r => r ? (r[0] === r[1] ? "" + r[0] : r[0] + "〜" + r[1]) : null;
-    const find = (f, i) => { const x = tl.find(f); return x ? txt(span(x.lap, i)) : null; };
+    const find = (f, i, mn) => { const x = tl.find(f); return x ? txt(span(Math.max(x.lap, mn || 0), i, mn)) : null; };
     const peak = tl.reduce((m, x) => Math.max(m, x.w), F.wet), pc = clamp(peak + F.z[6] * 0.05 * acc, 0, 1), ph = 0.06 * acc, pr = w => Math.round(clamp(w, 0, 1) * 100);
     const cr = F.rainAt > R.lap && F.rainAt - R.lap <= 6 ? span(F.rainAt, 0) : null;
     const rainStops = F.rainAt > 0 && R.lap < F.rainAt + F.rainLen ? txt(span(F.rainAt + F.rainLen, 1)) : null;
-    return { now: R.wet, label: wetLabel(R.wet), best: bestTyres(R.wet), peak, peakTxt: pr(pc - ph) + "〜" + pr(pc + ph) + "%", comingRain: cr ? txt(cr.map(x => Math.max(1, x - R.lap))) : null, rainStops, interFrom: find(x => x.w >= 0.22 && F.wet < 0.22, 2), wetFrom: find(x => x.w >= 0.72 && F.wet < 0.72, 3), backToInter: F.wet >= 0.72 ? find(x => x.w < 0.72, 4) : null, dryFrom: F.wet >= 0.22 ? find(x => x.w < 0.22, 5) : null, fcAt: F.at, steps: [3, 6, 10].map((k, j) => tl.find(x => x.lap === R.lap + k)).filter(Boolean).map((x, j) => { const fw = clamp(x.w + F.z[7 + j] * 0.04 * acc * (j + 1), 0, 1); return { lap: x.lap, w: fw, best: bestTyres(fw)[0].comp }; }) };
+    return { now: R.wet, label: wetLabel(R.wet), best: bestTyres(R.wet), peak, peakTxt: pr(pc - ph) + "〜" + pr(pc + ph) + "%", comingRain: cr ? txt(cr.map(x => Math.max(1, x - R.lap))) : null, rainStops, interFrom: find(x => x.w >= 0.22 && F.wet < 0.22, 2), wetFrom: find(x => x.w >= 0.72 && F.wet < 0.72, 3), backToInter: F.wet >= 0.72 ? find(x => x.w < 0.72, 4, minDry(0.72)) : null, dryFrom: F.wet >= 0.22 ? find(x => x.w < 0.22, 5, minDry(0.22)) : null, fcAt: F.at, steps: [3, 6, 10].map((k, j) => tl.find(x => x.lap === R.lap + k)).filter(Boolean).map((x, j) => { const fw = clamp(x.w + F.z[7 + j] * 0.04 * acc * (j + 1), 0, 1); return { lap: x.lap, w: fw, best: bestTyres(fw)[0].comp }; }) };
   }
   // VSC は全車が同時にペースを落とす：出た瞬間・終わった瞬間に、走っている途中の周の残りを同じ割合で伸ばす／戻す（線を越えた順で差がつかないように）
   // 周の終わりを ne に変えるとき、今の位置（周の何割か）が変わらないよう周の始まりもずらす（画面で車が飛ばないように）
