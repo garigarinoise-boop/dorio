@@ -2207,7 +2207,7 @@ function vHome() {
   $("#main").innerHTML = `
   ${done ? `<div class="card"><h3>シーズン終了</h3><p class="small muted">全${s.calendar.length}戦が終わりました。表彰・お金・規則変更・ドライバーの契約の処理をします。</p><button class="b p big" id="endS">シーズンを終える</button></div>`
   : `${absCard()}${s.ev ? (ev => `<div class="card selc"><h3>{i:mail} パドックの出来事：${esc(ev.title)}</h3><p class="small">${esc(ev.text)}</p>${ev.ch.map((c, i) => `<button class="b ${i === 0 ? "p" : ""}" style="display:block;width:100%;text-align:left;margin-top:6px" data-ev="${i}">${esc(c)}</button>`).join("")}<p class="hint">決めると次の週末へ進めます。</p></div>`)(F1.evView()) : ""}${ME().newPart ? `<div class="card"><b>新しいパーツが届いています。</b><span class="small muted">マシン画面で使うかどうか選んでくれ。</span></div>` : ""}<div class="card"><div class="small" style="margin-bottom:6px">{i:bolt} チームの士気 ${rk(F1.moraleOf(ME()))}<span class="muted">（高いとピット作業が速く、開発が伸び、ミスが減る。勝つと上がり、リタイアで下がる）</span></div>${gpCard(tr, s.round)}
-     <div class="stat" style="margin-top:8px"><span class="small muted">このコースでの速さ</span><div class="bar"><i style="width:${Math.round((F1.carPace(t, tr) - 60) / 35 * 100)}%"></i></div><span class="small">${Math.round(F1.carPace(t, tr))}</span></div>
+     <div class="stat" style="margin-top:8px"><span class="small muted">このコースでの速さ</span><div class="bar"><i style="width:${Math.round((F1.carPace(seenCar(t).t, tr) - 60) / 35 * 100)}%"></i></div><span class="small">${Math.round(F1.carPace(seenCar(t).t, tr))}${Object.keys(seenCar(t).unk).length ? "?" : ""}</span></div>
      <p class="hint">トップは ${Math.round(Math.max(...s.teams.map(x => F1.carPace(x, tr))))}。</p>
      ${fpDone() ? `<button class="b p big" id="quali" style="margin-top:6px">予選を走る</button>` : `<button class="b p big" id="fp" style="margin-top:6px">フリー走行</button><button class="b big" id="quali" style="margin-top:6px">フリー走行を飛ばして予選へ</button>`}</div>${fpDone() ? fpReport() : ""}`}
   ${regCard()}
@@ -2638,21 +2638,25 @@ function raceDone() {
 }
 
 /* ---------- マシン ---------- */
+// 自分の目に見えるマシン：使っているパーツが未確定なら、その項目は工場の予測値（本当の値は走るまで分からない）
+function seenCar(t) { if (t !== ME()) return { t, unk: {} }; const car = Object.assign({}, t.car), unk = {};
+  [["aero", F1.AERO_K], ["chassis", F1.CHAS_K]].forEach(([p, ks]) => { const sp = F1.specOf(t, p); if (sp && !sp.known && sp.e) ks.forEach(k => { car[k] = sp.e[k]; unk[k] = true; }); });
+  return { t: Object.keys(unk).length ? Object.assign(Object.create(Object.getPrototypeOf(t)), t, { car }) : t, unk }; }
 function vCar() {
   const t = ME(), s = S(), nx = s.nextReg, bigNext = nx && F1.REG_TYPES[nx.type].big && nx.season === s.season + 1, mode = U.sub.dev || "now";
   t.newPart = false;
-  const val = (x, k) => k === "pu" ? Math.round(F1.puPower(x)) : k === "devp" ? x.devp : x.car[k];
+  const SC = seenCar(t), val = (x, k) => { x = x === t ? SC.t : x; return k === "pu" ? Math.round(F1.puPower(x)) : k === "devp" ? x.devp : x.car[k]; };
   const KS = ["df", "drag", "low", "high", "tyre", "rel", "pu"], KD = { df: "コーナーでの踏ん張り", drag: "直線の伸び（空気抵抗の少なさ）", low: "低速コーナー", high: "高速コーナー", tyre: "タイヤの減りにくさ", rel: "壊れにくさ", pu: "パワー（" + esc(F1.pu(t.pu).name) + "）" };
   const avg = k => s.teams.reduce((a, x) => a + val(x, k), 0) / s.teams.length, top = k => Math.max(...s.teams.map(x => val(x, k)));
-  const tr = s.round < s.calendar.length ? F1.track() : null, order = tr ? s.teams.slice().sort((a, b) => F1.carPace(b, tr) - F1.carPace(a, tr)) : [];
+  const tr = s.round < s.calendar.length ? F1.track() : null, pc = x => F1.carPace(x === t ? SC.t : x, tr), order = tr ? s.teams.slice().sort((a, b) => pc(b) - pc(a)) : [];
   const D = U.dev = U.dev || { part: "aero", focus: "df", size: "s" }; if (!F1.FOCUS[D.part][D.focus]) D.focus = Object.keys(F1.FOCUS[D.part])[0];
   const q = F1.projQuote(t, D.part, D.size), dueR = s.round + q.races, dueTxt = dueR >= s.calendar.length ? "来季" : "第" + (dueR + 1) + "戦 " + esc(F1.TRACKS[s.calendar[dueR]].name);
   const facGP = s.calendar.map((id, i) => ({ id, i })).filter(x => F1.TRACKS[x.id].c === t.fac);
   const specCard = part => { const keys = part === "aero" ? F1.AERO_K : F1.CHAS_K, cur = F1.specOf(t, part); return `<div style="margin-top:8px"><b>${F1.PARTS[part][0]}</b>${t.specs[part].slice().reverse().map(sp => { const on = sp.id === t.use[part]; return `<div class="spec ${on ? "on" : ""}" data-use="${part}:${sp.id}"><div class="row"><b class="sp small">${esc(sp.label)}</b>${on ? '<span class="tag gold">使用中</span>' : ""}${sp.known ? "" : '<span class="tag">予測値（走ると分かる）</span>'}</div><div class="small">${keys.map(k => { const v = sp.known ? sp[k] : sp.e[k], d = v - (cur.known ? cur[k] : cur.e[k]); return `${F1.STAT_N[k]} ${rk(v, !sp.known)}${!on && d ? `<span class="${d > 0 ? "good" : "bad"}">(${d > 0 ? "+" : ""}${d})</span>` : ""}`; }).join("　")}</div>${sp.from ? `<div class="small muted">${esc(sp.from)}に届いた</div>` : ""}</div>`; }).join("")}</div>`; };
   const seg = (k, opts) => `<div class="seg">${Object.entries(opts).map(([v, l]) => `<button class="${D[k] === v ? "on" : ""}" data-dv="${k}:${v}">${l}</button>`).join("")}</div>`;
   const parts = { aero: "空力", chassis: "シャシー", rel: "信頼性" }; if (t.works) parts.pu = "PU";
-  $("#main").innerHTML = `<div class="card"><h3>今のマシン</h3>${KS.map(k => `<div class="sr"><span style="width:92px">${F1.STAT_N[k]}</span>${rk(Math.round(val(t, k)))}<div class="bar"><i style="width:${Math.max(3, Math.round((val(t, k) - 55) / 44 * 100))}%"></i></div><span class="small muted" style="width:76px;text-align:right">平均${Math.round(avg(k))}/最高${Math.round(top(k))}</span></div><div class="small muted" style="margin:-2px 0 4px 98px">${KD[k]}</div>`).join("")}
-    ${tr ? `<p class="small">次の ${esc(tr.name)}（${esc(F1.natName(tr.c))}）では ${s.teams.length}チーム中 <b>${order.indexOf(t) + 1}番目</b> の速さ。</p>` : ""}</div>
+  $("#main").innerHTML = `<div class="card"><h3>今のマシン</h3>${KS.map(k => `<div class="sr"><span style="width:92px">${F1.STAT_N[k]}</span>${rk(Math.round(val(t, k)), SC.unk[k])}<div class="bar"><i style="width:${Math.max(3, Math.round((val(t, k) - 55) / 44 * 100))}%"></i></div><span class="small muted" style="width:76px;text-align:right">平均${Math.round(avg(k))}/最高${Math.round(top(k))}</span></div><div class="small muted" style="margin:-2px 0 4px 98px">${KD[k]}</div>`).join("")}
+    ${tr ? `<p class="small">次の ${esc(tr.name)}（${esc(F1.natName(tr.c))}）では ${s.teams.length}チーム中 <b>${order.indexOf(t) + 1}番目</b> の速さ${Object.keys(SC.unk).length ? "（? は新しいパーツの予測値。走ると本当の値が分かる）" : ""}。</p>` : ""}</div>
   <div class="card"><h3>使うパーツ</h3><p class="hint">届いたパーツは、旧パーツと比べて選べます。新しいパーツの数値は工場の予測で、実際に走らせる（フリー走行かレース）と本当の値が分かります。遅くなっていることもあります。${s.race ? "<b>予選のあとは変えられません。</b>" : ""}</p>${specCard("aero")}${specCard("chassis")}</div>
   <div class="card"><h3>開発の発注</h3><div class="small">開発力（車体）${rk(t.devp)}・ドライバーの開発フィードバック ${rk(Math.round(F1.driverDev(t)))}・今季の開発費 ${money(F1.spent(t))} / 上限 ${money(s.regs.cap)}（使い残しは来年の新車の費用になる）・同時に${F1.projCap(t)}つまで<br>ATR（風洞・CFD の枠）<b>${F1.atrPct(t)}%</b>（コンストラクターズの順位で決まる。1位70%〜最下位115%、開幕と中盤に見直し。空力の伸びにそのまま、シャシーには半分かかる）</div>
     ${bigNext ? `<div class="seg" style="margin-top:6px"><button class="${mode === "now" ? "on" : ""}" data-dm="now">今年の車</button><button class="${mode === "next" ? "on" : ""}" data-dm="next">来年の車（${esc(F1.REG_TYPES[nx.type].n)}）</button></div>` : ""}
