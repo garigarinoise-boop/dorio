@@ -431,7 +431,23 @@ const F1 = (() => {
   const feverF = c => 0.5 + ((S.nations && S.nations[c] ? S.nations[c].fever : 50) / 100);
   // ホームGP：チームの国なら全員が気合い、ドライバーの国なら大声援
   const homeB = (tm, d, tr) => (tm.nat === tr.c ? 0.03 : 0) * feverF(tr.c) + (d.nat === tr.c ? 0.06 : 0) * feverF(tr.c);
-  const perfDelta = (tm, d, tr) => (75 - carPace(tm, tr)) * 0.045 + (82 - d.pace) * 0.03 - homeB(tm, d, tr) + evPace(tm, d) + formD(d);
+  // ---- レースエンジニア ----
+  function newEng(lvl) { const x = newStaff("eng", lvl); x.salary = Math.max(1, Math.round(x.skill / 16)); x.with = null; x.yrs = 0; x.known = {}; return x; }
+  const engFit = (x, d) => ((x.id * 7919 + d.id * 104729) % 11) - 5; // 相性の素（−5〜+5）。1シーズン組むと分かる
+  const engChem = (x, d) => clamp(engFit(x, d) + 2 * (x.with === d.id ? x.yrs : 0), -5, 10);
+  const engHint = (x, d) => { const v = engFit(x, d) + (((x.id * 31 + d.id * 17) % 5) - 2); return v >= 2 ? "良さそう" : v <= -2 ? "合わなさそう" : "ふつう"; }; // 評判からの見込み（外れることもある）
+  const fitLabel = v => v >= 3 ? "良い" : v <= -3 ? "悪い" : "ふつう";
+  function engSync(tm) { if (!tm.engs) { tm.engs = [0, 1].map(() => newEng((tm.staff.crew.skill + tm.staff.strat.skill) / 2 - 6)); tm.engs.forEach((x, i) => { if (tm.drivers[i] != null) { x.with = tm.drivers[i]; x.yrs = ri(0, 3); if (x.yrs) x.known[x.with] = true; } }); }
+    tm.engs.forEach(x => { if (x.with != null && !tm.drivers.includes(x.with)) { x.with = null; x.yrs = 0; } });
+    tm.drivers.forEach(id => { if (!tm.engs.some(x => x.with === id)) { const f = tm.engs.find(x => x.with == null); if (f) { f.with = id; f.yrs = 0; } } }); }
+  const engOf = (tm, d) => { if (!tm || !d) return null; engSync(tm); return tm.engs.find(x => x.with === d.id) || null; };
+  const engE = (tm, d) => { const x = engOf(tm, d); return x ? (x.skill - 75) / 20 + engChem(x, d) / 10 : 0; };
+  function engPool() { if (!S.engPool) { S.engPool = []; for (let k = 0; k < 6; k++) S.engPool.push(newEng(ri(58, 90))); } return S.engPool; }
+  function hireEng(eid, did) { const tm = me(), x = engPool().find(z => z.id === eid), d = drv(did); if (!x || !d || !tm.drivers.includes(did)) return { ok: false, msg: "できません" }; const fee = x.salary * 2; if (tm.budget < fee) return { ok: false, msg: "予算が足りません（" + money(fee) + "）" };
+    engSync(tm); tm.budget -= fee; const old = tm.engs.find(z => z.with === did); S.engPool = S.engPool.filter(z => z !== x); if (old) { tm.engs = tm.engs.filter(z => z !== old); old.with = null; old.yrs = 0; S.engPool.push(old); } x.with = did; x.yrs = 0; tm.engs.push(x);
+    news(d.name + " のレースエンジニアに " + x.name + "（腕" + x.skill + "）を迎えた"); save(); return { ok: true, msg: x.name + " を " + d.name + " に付けました" }; }
+  function swapEng() { const tm = me(); engSync(tm); const a = tm.engs.filter(x => x.with != null); if (a.length < 2) return { ok: false, msg: "入れ替えられません" }; const w = a[0].with; a[0].with = a[1].with; a[1].with = w; a.forEach(x => x.yrs = 0); news("レースエンジニアの担当を入れ替えた（組んだ年数は0から）"); save(); return { ok: true, msg: "担当を入れ替えました" }; }
+  const perfDelta = (tm, d, tr) => (75 - carPace(tm, tr)) * 0.045 + (82 - d.pace) * 0.03 - homeB(tm, d, tr) + evPace(tm, d) + formD(d) - engE(tm, d) * 0.04;
 
   // 戦略の見積もり
   // 第1スティントはタイヤの使用済み周回（age0）から数える
@@ -722,7 +738,7 @@ const F1 = (() => {
     return { pref: k, prefN: VEST[k].n, comfort: VEST[k].c, comfortT: r(VEST[k].c * L), coolLaps: Math.max(1, Math.round(VEST[k].d * L)), wear: r(a + VEST[k].c * L), no: r(b), endNo: Math.round(0.035 * E * tl * 100) / 100, illWear: pc(illP(R, cw, d)), illNo: pc(illP(R, cn, d)) }; }
   function lapTime(R, c) {
     const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[c.comp], pm = PACE[c.pace];
-    const wearMul = tr.wear * S.regs.wear * pm.w * (1.12 - d.tm / 250) * carWear(tm) * (c.comp === "I" || c.comp === "W" ? (R.wet < 0.25 ? 3 : 1) : 1);
+    const wearMul = tr.wear * S.regs.wear * pm.w * (1.12 - (d.tm + engE(tm, d) * 3) / 250) * carWear(tm) * (c.comp === "I" || c.comp === "W" ? (R.wet < 0.25 ? 3 : 1) : 1);
     const wfc = trueWf(c.comp);
     let t = tr.base + perfDelta(tm, d, tr) - (c.tm === S.my ? setupB(c.id) : 0.02) + T.off + trueOff(c.comp) + T.deg * (c.age + (c.dw || 0)) * wearMul * wfc + pm.t;
     const life = T.life / (tr.wear * S.regs.wear * pm.w * wfc); t += cliffT(c.age + (c.dw || 0), life);
@@ -964,7 +980,7 @@ const F1 = (() => {
     if (rain) { R.rainRed = true; R.rainRedTo = Math.round((0.55 + rnd() * 0.12) * 100) / 100; R.rainTo = Math.min(R.rainTo, R.rainRedTo); } } // 雨の赤旗：雨が弱まるのを待って再開
   function startSC(R, why) { R.neutralId = (R.neutralId || 0) + 1; R.cars.forEach(c => c.drs = false); R.drsFrom = 999; R.sc = { left: ri(3, 5), from: R.lap }; scScale(R); R.scCount++; say(R, "{i:sc} L" + Math.max(1, R.lap) + " セーフティカー出動" + (why ? "：" + why : "") + "（ピットの損失が半分）", true); R.alerts.push({ k: "sc" }); }
   // タイヤだけのタイム（新品との比較用）
-  function tyreTime(R, c, comp, age) { const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[comp], wf = trueWf(comp), w = tr.wear * S.regs.wear * (1.12 - d.tm / 250) * carWear(tm) * wf; let t = T.off + trueOff(comp) + T.deg * age * w; const life = T.life / (tr.wear * S.regs.wear * wf); return t + cliffT(age, life); }
+  function tyreTime(R, c, comp, age) { const tr = TRACKS[R.tr], tm = team(c.tm), d = drv(c.id), T = TYRE[comp], wf = trueWf(comp), w = tr.wear * S.regs.wear * (1.12 - (d.tm + engE(tm, d) * 3) / 250) * carWear(tm) * wf; let t = T.off + trueOff(comp) + T.deg * age * w; const life = T.life / (tr.wear * S.regs.wear * wf); return t + cliffT(age, life); }
   const nextComp = c => { const nx = c.plan.stops[c.stopsDone]; if (nx) return nx.comp; return c.comp === "S" ? "M" : c.comp === "M" ? "H" : "M"; };
   // 前の車に対してアンダーカットが効くか・ピット後に何位で戻るか
   // 前の車に対してアンダーカットが効くか・ピット後に何位で戻るか（今の時点の「何周目のどこにいるか」で比べる）
@@ -1734,7 +1750,7 @@ const F1 = (() => {
     S.history.push(rec); dt[0].career.titles++;
     if (S.rk && S.rk.season === S.season && S.rk.skip > 0 && S.rk.n < 2) { const f = r1(1.5 * (2 - S.rk.n)); me().budget -= f; news("{i:warn} ルーキーのフリー走行義務を果たせず、罰金 $" + f + "M"); }
     // お金：スポンサー＋賞金＋ペイドライバー − 給料 − PU代
-    tt.forEach((tm, i) => { const sal = tm.drivers.reduce((t, id) => t + drv(id).salary, 0) + tm.staff.strat.salary + tm.staff.crew.salary, fee = tm.works ? 0 : pu(tm.pu).fee, pay = tm.drivers.reduce((t, id) => t + drv(id).sponsor, 0); const carry = Math.max(0, tm.budget) * 0.25; tm.lastYear = { owner: tm.owner, sponsor: tm.sponsor, prize: (S.teams.length - i) * 4, pay, sal, fee, carry: r1(carry) }; tm.budget = Math.max(60, Math.round(tm.owner + tm.sponsor + (S.teams.length - i) * 4 + pay - sal - fee + carry)); { const sp0 = tm.sponsor; tm.sponsor = clamp(Math.round(tm.sponsor + (6 - i) * 1.5), 30, 130); tm.lastYear.spUp = tm.sponsor - sp0; } tm.hist.push(i + 1); tm.pts = 0; });
+    tt.forEach((tm, i) => { const sal = tm.drivers.reduce((t, id) => t + drv(id).salary, 0) + tm.staff.strat.salary + tm.staff.crew.salary + (tm.engs || []).reduce((a, x) => a + x.salary, 0), fee = tm.works ? 0 : pu(tm.pu).fee, pay = tm.drivers.reduce((t, id) => t + drv(id).sponsor, 0); const carry = Math.max(0, tm.budget) * 0.25; tm.lastYear = { owner: tm.owner, sponsor: tm.sponsor, prize: (S.teams.length - i) * 4, pay, sal, fee, carry: r1(carry) }; tm.budget = Math.max(60, Math.round(tm.owner + tm.sponsor + (S.teams.length - i) * 4 + pay - sal - fee + carry)); { const sp0 = tm.sponsor; tm.sponsor = clamp(Math.round(tm.sponsor + (6 - i) * 1.5), 30, 130); tm.lastYear.spUp = tm.sponsor - sp0; } tm.hist.push(i + 1); tm.pts = 0; });
     // 規則変更
     const reg = S.nextReg && S.nextReg.season === S.season + 1 ? S.nextReg : null;
     applyReg(reg); rec.reg = reg ? REG_TYPES[reg.type].n : null;
@@ -1763,6 +1779,8 @@ const F1 = (() => {
     });
     S.teams.forEach(tm => { const rank = tt.indexOf(tm); tm.devp = clamp(Math.round(tm.devp + (rank < 3 ? 1 : rank > 7 ? -1 : 0) + (tm.budget > 160 ? 1 : tm.budget < 90 ? -1 : 0) + gauss() * 1.2), 40, 95); for (const k of ["strat", "crew"]) { const st = tm.staff[k]; st.skill = clamp(Math.round(st.skill + gauss() * 1.5 + (k === "crew" ? 0.5 : 0)), 40, 97); } });
     S.staffPool.forEach(st => st.skill = clamp(Math.round(st.skill + gauss() * 1.5), 40, 97));
+    S.teams.forEach(tm => { engSync(tm); tm.engs.forEach(x => { if (x.with != null) { const d = drv(x.with); x.known[d.id] = true; if (d.age <= 25 && d.pace < (d.pot || 99) && rnd() < clamp((x.skill - 70) / 50 + engChem(x, d) / 30, 0, 0.6)) { d.pace++; if (tm.id === S.my) news("{i:fast} " + d.name + "：レースエンジニア " + x.name + " との仕事で速さ +1"); } x.yrs++; } x.skill = clamp(Math.round(x.skill + gauss() * 1.5), 40, 97); x.salary = Math.max(1, Math.round(x.skill / 16)); }); });
+    { const P = engPool(); P.forEach(x => x.skill = clamp(Math.round(x.skill + gauss() * 1.5), 40, 97)); for (let k = 0; k < 2 && P.length; k++) P.splice(ri(0, P.length - 1), 1); while (P.length < 6) P.push(newEng(ri(58, 92))); }
     // ジュニアは毎年もう少し伸びる（チームの育成）
     Object.entries(S.academy || {}).forEach(([t, l]) => l.forEach(id => { const d = drv(id); if (+t === S.my) { const j = jrOf(d); j.yrs = (j.yrs || 0) + 1; if (!j.gtShown && gtKnown(d)) { j.gtShown = true; news("{i:mail} " + d.name + "：成長タイプは「" + GT[d.gt || "steady"].n + "型」と分かった"); } } if (d.pace < d.pot) { d.pace = Math.min(d.pot, d.pace + 1 + (rnd() < 0.5 ? 1 : 0) + (rnd() < (fl(team(+t), "acad") - 1) * 0.06 ? 1 : 0)); } const lo = ["craft", "cons", "tm", "wet"].sort((a, b) => d[a] - d[b])[0]; d[lo] = clamp(d[lo] + 1 + (rnd() < (fl(team(+t), "acad") - 1) * 0.06 ? 1 : 0), 35, 98); }));
     const growth = myIds.map(id => { const d = drv(id), b = before[id], diff = {}; ["pace", "craft", "cons", "tm", "wet", "dev", "adapt", "calm"].forEach(k => { if (d[k] !== b[k]) diff[k] = d[k] - b[k]; }); return { id, name: d.name, age: d.age, diff }; });
@@ -1881,7 +1899,7 @@ const F1 = (() => {
   const passNeed = tr => r1(0.25 + (1 - tr.ovt) * 1.6);
   // SC・VSC が出る確率の見積もり（コースの事故の起きやすさ＋周回数＋市街地。自動試験に合わせた式）
   const scChance = tr => { const L = tr.laps, rand = 1 - Math.pow(1 - tr.sc * SC_K, L - 3), crash = 1 - Math.exp(-L * (tr.street ? 0.012 : 0.007)); return { sc: Math.round((1 - (1 - rand) * (1 - crash)) * 100), vsc: Math.round((1 - Math.exp(-L * 0.0085)) * 100) }; };
-  return { puAvail, answerWorks, answerBuy, BUYERS, atrPct, setATR, heatChance, heatView, heatLoss, heatDecl, vestState, strain, VEST, vestPref, licPts, LIC_MAX, setReserve, carRows, FM, formD, ncRoom, gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
+  return { engFitL: (x, d) => x.known[d.id] ? fitLabel(engFit(x, d)) : null, engOf, engE, engChem, engHint, fitLabel, engPool, hireEng, swapEng, engSync, puAvail, answerWorks, answerBuy, BUYERS, atrPct, setATR, heatChance, heatView, heatLoss, heatDecl, vestState, strain, VEST, vestPref, licPts, LIC_MAX, setReserve, carRows, FM, formD, ncRoom, gtView, GT, gtStep, assignGrowth, evView, jrOf, setJunior, JR_FOCUS, JR_INT, JR_ORD, answerEvent, startRed, loyalOf, teamAppeal, transferFee, willMove, willTxt, answerOffer, poachList, poach, calRange, RACE_OPTS, setRaces, SLOTS, slotNo: () => slot, slotInfo, useSlot, backups, restoreBackup, importSave, NC, NC_REL, ncCost, buildNewCar, renewDriver, releaseDriver, signDriver, setPU, offStep, startSeason, puUsers, PU_MAX, salaryOf, FACS, fl, facCost, facTime, buildFac, stratSk, moraleOf, scChance, weatherOutlook, bestTyres, wetLabel, planOptions, undercut, drsZones, drsGain, nextComp, passNeed, NATIONS, natName, STAT_N, FOCUS, SIZE, projCap, projQuote, orderPart, setUse, specOf, carWear, homeB, feverF, AERO_K, CHAS_K, wk, runPractice, PROGS, estLife, ALLOC, setsLeft, planAges, f2Table, joinAcademy, leaveAcademy, promote, academyOf, academyFee, potView, newGame, chooseTeam, newEntrant, driverCandidates, confirmDrivers, signCost, setupRace, advance, order, carAt, bestPlan, recPlan, planCost, develop, devCost, capLeft, spent, PARTS, driverTable, teamTable, teamOf, endSeason, swapDriver, hireStaff, track, TRACKS, TYRE, PACE, FUEL, POINTS, REG_TYPES, perfDelta, carPace, puPower, traits, team, drv, pu, me, money, save, load, wipe, exportSave, get S() { return S; }, rnd, driverDev };
 })();
 
 </script>
@@ -2183,7 +2201,7 @@ function offseason() {
     }
   } else if (st === 4) {
     const tc = r.teamChange || {}, sg = v => v ? `<span class="${v > 0 ? "good" : "bad"}">（${v > 0 ? "+" : ""}${v}）</span>` : "";
-    body = `<div class="card"><h3>スタッフ</h3><p>戦略担当 <b>${esc(t.staff.strat.name)}</b>：腕 ${t.staff.strat.skill}${sg(tc.strat)}・年俸${money(t.staff.strat.salary)}</p><p>ピットクルー責任者 <b>${esc(t.staff.crew.name)}</b>：腕 ${t.staff.crew.skill}${sg(tc.crew)}・年俸${money(t.staff.crew.salary)}</p><p class="small">開発力 ${t.devp}${sg(tc.devp)}</p><p class="small muted">入れ替えるなら下から（契約金＝年俸2年分）。そのままでよければ次へ。</p></div>
+    body = `<div class="card"><h3>スタッフ</h3><p>戦略担当 <b>${esc(t.staff.strat.name)}</b>：腕 ${t.staff.strat.skill}${sg(tc.strat)}・年俸${money(t.staff.strat.salary)}</p><p>ピットクルー責任者 <b>${esc(t.staff.crew.name)}</b>：腕 ${t.staff.crew.skill}${sg(tc.crew)}・年俸${money(t.staff.crew.salary)}</p><p class="small">開発力 ${t.devp}${sg(tc.devp)}</p><p class="small muted">入れ替えるなら下から（契約金＝年俸2年分）。そのままでよければ次へ。</p></div>${engHtml(t)}
       <div class="card"><h3>引き抜ける人</h3>${s.staffPool.slice().sort((a, b) => b.skill - a.skill).map(x => { const now = t.staff[x.kind].skill; return `<div class="pick"><div class="sp"><b>${esc(x.name)}</b><div class="small muted">${x.kind === "strat" ? "戦略担当" : "ピットクルー"}・腕 ${x.skill}<span class="${x.skill > now ? "good" : "bad"}">（今の人 ${now}）</span>・年俸${money(x.salary)}</div></div><button class="b" data-hire="${x.id}">${money(x.salary * 2)} で雇う</button></div>`; }).join("")}</div>`;
   } else if (st === 5) {
     const bo = s.buyOffer, boHtml = bo ? `<div class="card selc"><h3>{i:mail} ${esc(F1.BUYERS[bo.k].n)}の${esc(bo.buyer)} から買収の打診</h3><p class="small">受けると：今季の予算 <b>+${money(bo.now)}</b>・毎年のオーナー出資 <b>+${money(bo.owner)}</b>・チーム名が「<b>${esc(bo.name)}</b>」に変わる。オーナーの目標は「今季のコンストラクターズ ${bo.goal}位以内」、届かなければ来季からオーナー出資 −${money(bo.pen)}（届けば +$5M）。<br>断ると：独立を守ってチームの士気 +8。</p><div class="row"><button class="b p" data-bo="1">受ける</button><button class="b" data-bo="0">断る（士気 +8）</button></div></div>` : "";
@@ -2207,6 +2225,7 @@ function offseason() {
   document.querySelectorAll("[data-wo]").forEach(b => b.onclick = () => go(() => F1.answerWorks(b.dataset.wo === "1")));
   document.querySelectorAll("[data-bo]").forEach(b => b.onclick = () => { if (b.dataset.bo === "1" && !confirm("買収を受けますか？（チーム名が変わり、オーナーの目標が付きます）")) return; go(() => F1.answerBuy(b.dataset.bo === "1")); });
   document.querySelectorAll("[data-hire]").forEach(b => b.onclick = () => go(() => F1.hireStaff(+b.dataset.hire)));
+  engBind(offseason);
   document.querySelectorAll("[data-fac]").forEach(b => b.onclick = () => go(() => F1.buildFac(b.dataset.fac)));
   const ncChoice = () => { const ch = {}; ["aero", "chassis", "rel"].forEach(p => { const f = document.querySelector(`[data-ncf="${p}"]`), z = document.querySelector(`[data-ncs="${p}"]`); ch[p] = { focus: f ? f.value : "bal", size: z ? +z.value : 0 }; });
     ["aero", "chassis"].forEach(p => { const c = document.querySelector(`[data-nc2="${p}"]`), f = document.querySelector(`[data-ncf="${p}2"]`); if (c && c.checked) ch[p + "2"] = { on: true, focus: f.value }; }); return ch; };
@@ -2755,7 +2774,7 @@ function vTeam() {
       ${s.f2.champs.length ? `<div class="card"><h3>F2 歴代王者</h3>${s.f2.champs.map(c => `<div class="small">第${c.season}シーズン：${esc(c.name)}${F1.teamOf(c.id) ? "（今は " + esc(F1.teamOf(c.id).short) + "）" : ""}</div>`).join("")}</div>` : ""}`;
   } else if (sub === "staff") {
     const stCard = (st, kind) => `<div class="card"><h3>${kind === "strat" ? "戦略担当" : "ピットクルー責任者"}</h3><div class="row"><b class="sp">${esc(st.name)}</b><span>腕 <b>${st.skill}</b>${F1.fl(t, kind === "strat" ? "data" : "pit") > 1 ? `<span class="small good">（施設 +${Math.round((F1.fl(t, kind === "strat" ? "data" : "pit") - 1) * 0.8)}）</span>` : ""}</span><span class="small muted">年俸${money(st.salary)}</span></div><p class="hint">${kind === "strat" ? "腕が高いほど、レース前の「戦略担当の案」がズレにくく、セーフティカーへの反応も良い。" : "腕が高いほど、ピット作業が速く、作業ミスが少ない。"}</p></div>`;
-    body = stCard(t.staff.strat, "strat") + stCard(t.staff.crew, "crew") + `<div class="card"><h3>引き抜ける人</h3><p class="small muted">雇うには年俸2年分の契約金がかかります。今の人と入れ替わります。</p>${s.staffPool.slice().sort((a, b) => b.skill - a.skill).map(st => `<div class="pick"><div class="sp"><b>${esc(st.name)}</b><div class="small muted">${st.kind === "strat" ? "戦略担当" : "ピットクルー"}・腕 ${st.skill}・年俸${money(st.salary)}</div></div><button class="b" data-hire="${st.id}">${money(st.salary * 2)} で雇う</button></div>`).join("")}</div>`;
+    body = stCard(t.staff.strat, "strat") + stCard(t.staff.crew, "crew") + engHtml(t) + `<div class="card"><h3>引き抜ける人</h3><p class="small muted">雇うには年俸2年分の契約金がかかります。今の人と入れ替わります。</p>${s.staffPool.slice().sort((a, b) => b.skill - a.skill).map(st => `<div class="pick"><div class="sp"><b>${esc(st.name)}</b><div class="small muted">${st.kind === "strat" ? "戦略担当" : "ピットクルー"}・腕 ${st.skill}・年俸${money(st.salary)}</div></div><button class="b" data-hire="${st.id}">${money(st.salary * 2)} で雇う</button></div>`).join("")}</div>`;
   } else if (sub === "fac") {
     const bl = t.build || [], pip = L => Array.from({ length: 10 }, (_, i) => `<span style="display:inline-block;width:9px;height:9px;margin-right:2px;border-radius:2px;background:${i < L ? "var(--acc)" : "var(--chip)"}"></span>`).join("");
     body = `<div class="card"><h3>施設</h3><p class="small muted">施設はレベル1〜10。お金を払って工事すると数戦で完成し、ずっと効きます。費用は開発の予算上限には数えません（設備投資）。工事は同時に2つまで、シーズンが終わると工事中のものも完成します。ライバルも少しずつ建てています。</p><p>予算 <b>${money(t.budget)}</b>　工事中 ${bl.length}/2</p></div>`
@@ -2779,6 +2798,7 @@ function vTeam() {
   document.querySelectorAll("[data-sw]").forEach(sel => sel.onchange = () => { if (!sel.value) return; if (S().race) { toast("レース週末中は入れ替えできません"); render(); return; } const r = F1.swapDriver(+sel.value, +sel.dataset.sw); toast(r.msg); render(); });
   document.querySelectorAll("[data-fac]").forEach(b => b.onclick = () => { const r = F1.buildFac(b.dataset.fac); toast(r.msg); render(); });
   document.querySelectorAll("[data-hire]").forEach(b => b.onclick = () => { const r = F1.hireStaff(+b.dataset.hire); toast(r.msg); render(); });
+  engBind(render);
   document.querySelectorAll("[data-ja]").forEach(b => b.onclick = () => { const r = F1.joinAcademy(+b.dataset.ja); toast(r.msg); render(); });
   document.querySelectorAll("[data-rs]").forEach(b => b.onclick = () => { const r = F1.setReserve(+b.dataset.rs); toast(r.msg); render(); });
   document.querySelectorAll("[data-lv]").forEach(b => b.onclick = () => { const r = F1.leaveAcademy(+b.dataset.lv); toast(r.msg); render(); });
@@ -2793,6 +2813,15 @@ function vTeam() {
   document.querySelectorAll("[data-nr]").forEach(b => b.onclick = () => { const r = F1.setRaces(+b.dataset.nr); toast(r.msg); render(); });
 }
 
+/* ---------- レースエンジニア ---------- */
+function engHtml(t) { F1.engSync(t); const ds = t.drivers.map(F1.drv);
+  const row = d => { const x = F1.engOf(t, d); if (!x) return ""; const E = F1.engE(t, d), fl = F1.engFitL(x, d), sec = E * 0.04;
+    return `<div class="pick"><div class="sp"><b>${esc(d.name)}</b> の担当：<b>${esc(x.name)}</b><div class="small muted">腕 ${x.skill}・相性 ${fl ? "<b>" + fl + "</b>" : "まだ分からない（1シーズン組むと分かる）"}・組んで${x.yrs}年（1年ごとに相性 +2）・年俸${money(x.salary)}</div><div class="small ${sec >= 0 ? "good" : "bad"}">1周あたり 約${sec >= 0 ? "−" : "+"}${Math.abs(sec).toFixed(2)}秒・タイヤ管理 ${E >= 0 ? "+" : ""}${(E * 3).toFixed(1)}${d.age <= 25 ? "・25歳以下なのでオフに速さが伸びることがある" : ""}</div></div></div>`; };
+  const pool = F1.engPool().slice().sort((a, b) => b.skill - a.skill).map(x => `<div class="pick"><div class="sp"><b>${esc(x.name)}</b><div class="small muted">腕 ${x.skill}・年俸${money(x.salary)}・相性の見込み ${ds.map(d => esc(d.name.split("・").pop()) + "：" + F1.engHint(x, d)).join("／")}</div></div><div>${ds.map(d => `<button class="b" style="margin:2px" data-he="${x.id}:${d.id}">${esc(d.name.split("・").pop())}に付ける（${money(x.salary * 2)}）</button>`).join("")}</div></div>`).join("");
+  return `<div class="card"><h3>レースエンジニア（ドライバーごと）</h3><p class="hint">無線の相手でセットアップを受け持つ。腕と相性で、1周のタイム・タイヤの扱い・若手の伸びが変わる。相性は組んだ年数で上がる。ドライバーが替わってもエンジニアは残り、新しいドライバーと0年から組む。</p>${ds.map(row).join("")}${ds.length === 2 ? '<button class="b" data-swe="1" style="margin-top:6px">担当を入れ替える（組んだ年数は0に戻る）</button>' : ""}</div>
+    <div class="card"><h3>雇えるレースエンジニア</h3><p class="small muted">契約金は年俸2年分。付けたドライバーの今の担当は外れる。相性の見込みは評判からで、外れることもある。</p>${pool}</div>`; }
+function engBind(after) { document.querySelectorAll("[data-he]").forEach(b => b.onclick = () => { const [x, d] = b.dataset.he.split(":").map(Number); const r = F1.hireEng(x, d); toast(r.msg); after(); });
+  document.querySelectorAll("[data-swe]").forEach(b => b.onclick = () => { if (!confirm("担当を入れ替えますか？（組んだ年数は0に戻る）")) return; const r = F1.swapEng(); toast(r.msg); after(); }); }
 /* ---------- 順位 ---------- */
 function vTable() {
   const sub = U.sub.tb || "drv", s = S();
