@@ -937,12 +937,29 @@ function analyzeDeck(deck, db, opt) {
   var sureSum = sure.reduce(function (a2, x) { return a2 + x.n; }, 0);
   var maybeList = Object.keys(maybe).map(function (k) { return maybe[k]; });
   var maybeSum = maybeList.reduce(function (a2, x) { return a2 + x.n; }, 0);
-  var pSure = costP - sureSum, pMin = pSure - maybeSum;
-  var pDetail = '合計 ' + costP + (sureSum ? '（' + sure.map(function (x) { return x.name + ' -' + x.n; }).join('・') + '）→ ' + pSure : '') + ' / 上限 ' + (team.maxP || '?');
-  if (team.maxP && pSure > team.maxP && pMin <= team.maxP) {
-    add(true, '投手コスト合計', pDetail + '。' + maybeList.map(function (x) { return x.src + 'の効果で' + x.target + 'のコスト-' + x.n + '（条件：' + x.cond + '）'; }).join('、') + 'を使えば ' + pMin + ' / ' + team.maxP);
+  // 投手コストの上限は「登録した投手全員」ではなく「その試合で登板した投手」の合計で数える（2026-11-18 ユーザー確認。
+  // 公式のエリア予選入賞デッキにも、スチュワート3・松本2・オスナ3＝登録8 のものがある）。
+  // → 先発だけで上限以内か（NG判定）＋ 先発＋継投ごとに上限以内か（出せない組み合わせは注意として表示）
+  var effCost = function (c) { var s = sure.filter(function (x) { return x.name === c.name; }).reduce(function (a2, x) { return a2 + x.n; }, 0); return (Number(c.cost) || 0) - s; };
+  var starterP = pitchers0.find(function (c) { return c.role === '先発'; }) || pitchers0[0] || null;
+  var relP = pitchers0.filter(function (c) { return c !== starterP; });
+  var pDetail = '登板した投手の合計で数える（上限 ' + (team.maxP || '?') + '）。登録の合計は ' + costP + (sureSum ? '（' + sure.map(function (x) { return x.name + ' -' + x.n; }).join('・') + '）' : '');
+  if (!starterP) {
+    add(true, '投手コスト（登板した投手の合計）', pDetail);
   } else {
-    add(!team.maxP || pSure <= team.maxP, '投手コスト合計', pDetail);
+    var sc = effCost(starterP), parts = ['先発 ' + starterP.name + ' ' + sc], bad = [];
+    relP.forEach(function (r) {
+      var rc = effCost(r), mb = maybe[r.no], tot = sc + rc, totMin = mb ? tot - mb.n : tot;
+      var txt = '→' + r.name + ' ' + tot + (mb && totMin < tot ? '（' + mb.src + 'の効果を使えば ' + totMin + '）' : '');
+      if (team.maxP && totMin > team.maxP) { bad.push(r.name); txt += '＝継投できない'; }
+      parts.push(txt);
+    });
+    if (team.maxP && relP.length >= 2) {
+      var two = sc + relP.reduce(function (a2, r) { return a2 + effCost(r); }, 0);
+      if (two > team.maxP) parts.push('継投の' + relP.length + '人をすべて出すと ' + two + ' で上限を超える（出せるのは上限内の組み合わせだけ）');
+    }
+    var okS = !team.maxP || sc <= team.maxP;
+    add(okS && !bad.length, '投手コスト（登板した投手の合計）', pDetail + '。' + parts.join(' ／ '), okS && bad.length > 0);
   }
   add(!team.maxB || costB <= team.maxB, '野手コスト合計', costB + ' / ' + (team.maxB || '?'));
   add(!team.mainMax || mainTotal === team.mainMax, 'メインデッキの枚数', mainTotal + ' / ' + (team.mainMax || '?') + ' 枚');
