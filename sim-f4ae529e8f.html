@@ -2654,6 +2654,9 @@ function simRun_(SA, SB, opt) {
         }
       }
       if (pick < 0 && level >= 1 && risp) for (i2 = 0; i2 < hB.length && pick < 0; i2++) { var x3 = hB[i2]; if (okd(x3) && !plain(x3) && !upM(x3) && !upS(x3)) { pick = i2; pickN = pfx.swap.n; } }
+      // 山札が早く回るので、この勝負で DP を上げない札はどんどん捨てる（威圧も。ただし相手の主砲の打席では残す。勝負師・強心臓・不屈は残す）（2026-11-19 ユーザー談）
+      if (pick < 0) { var SWm = atk.S.X.mainCards.filter(function (x) { return x.no === b.no; }).reduce(function (t, x) { return t + x.num; }, 0) >= 3 && (function (q) { return q >= 0 && q < 5; })(atk.lineup.findIndex(function (u) { return u.no === b.no; }));
+        for (i2 = 0; i2 < hB.length && pick < 0; i2++) { var x4 = hB[i2]; if ((pfx.swap.tactic && x4.kind !== '戦術') || upM(x4) || upS(x4) || nm(x4) === '勝負師' || /^(強心臓|不屈)$/.test(nm(x4)) || (nm(x4) === '威圧' && SWm) || x4.no === pit.no) continue; pick = i2; pickN = plain(x4) ? pfx.swap.plainN : pfx.swap.n; } }
       if (pick >= 0) { discard(def, pick, true); def.swaps++; draw(def, pickN); ev(def, nm(pit) + 'の入れ替え'); }
     }
     // 守備側が先に伏せる（属性はまだ分からない）。張る属性はこの試合の相手の宣言で変える
@@ -2900,9 +2903,10 @@ function simRun_(SA, SB, opt) {
         }
       } else if (kd.type === 'ap') {
         if (kd.cost === 'hand') {
-          var j2 = kd.drawIfTactic ? junk(function (x) { return x.kind === '戦術'; }) : kd.drawIfName ? junk(function (x) { return nm(x) === kd.drawIfName; }) : kd.drawIfCost ? junk(function (x) { return costOf(atk, x) >= kd.drawIfCost.min; }) : { i: -1 };
+          var KPn = !atk.human, KPp = function (x) { return x.kind === '戦術' && !String(x.eff || '').trim(); }; var j2 = (kd.drawIfTactic && KPn) ? (function () { var hv = hA.filter(function (x) { return /^(強心臓|不屈)$/.test(nm(x)); }).length, bi = -1, bw = 1e9; hA.forEach(function (x, i) { if (x.kind !== '戦術' || KPp(x) || isKill(x)) return; if (/^(強心臓|不屈)$/.test(nm(x)) && hv < 2) return; var w = Math.max(calc(b, [x], 'ミート', sit) - calc(b, [], 'ミート', sit), calc(b, [x], '強振', sit) - calc(b, [], '強振', sit)); if (w < bw) { bw = w; bi = i; } }); return { i: bi, score: bi >= 0 ? 0 : 99 }; })() : kd.drawIfTactic ? junk(function (x) { return x.kind === '戦術'; }) : kd.drawIfName ? junk(function (x) { return nm(x) === kd.drawIfName; }) : kd.drawIfCost ? junk(function (x) { return costOf(atk, x) >= kd.drawIfCost.min; }) : { i: -1 };
           if (j2.i >= 0 && j2.score <= 8) j2.score = Math.min(j2.score, 4); // 捨てても1枚引けるので、多少値打ちのある札でも捨てる
-          if (j2.i < 0 || j2.score > 4) j2 = junk();
+          // 起動の費用（戦術なら1枚引く）に特殊能力なしの戦術は使わない。強心臓・不屈は2枚以上ある時の1枚。無ければ起動しない（2026-11-19 ユーザー談）
+          if ((j2.i < 0 || j2.score > 4) && !(kd.drawIfTactic && KPn)) j2 = junk();
           if (j2.i >= 0 && j2.score <= 4) {
             var dx = discard(atk, j2.i, true); sit.kidou = true; used = true;
             if ((kd.drawIfTactic && dx.kind === '戦術') || (kd.drawIfName && nm(dx) === kd.drawIfName)) draw(atk, 1);
@@ -3606,6 +3610,21 @@ function simRun_(SA, SB, opt) {
       var rn0 = restNeed(T); if (rn0 && nm(x) === rn0.name && rn0.short > 0) { setup = true; T.rest.push(T.hand.splice(i, 1)[0]); T.mullSetup = (T.mullSetup || 0) + 1; ev(T, '入れ替えで' + nm(x) + 'をレストへ'); out.push(null); continue; }
       if (setup || worth(T, x) < 2) { out.push(T.hand.splice(i, 1)[0]); if (setup) ev(T, '入れ替えで' + nm(x) + 'をレストへ'); }
     }
+    if (!T.human) {
+      // 先攻・後攻と回収役に合わせた入れ替え（2026-11-19 ユーザー談）
+      var MF = T.batFirst != null ? T.batFirst : (opt.aFirstM != null ? (T.key === 'A' ? !!opt.aFirstM : !opt.aFirstM) : null);
+      var MPl = function (x) { return x.kind === '戦術' && !String(x.eff || '').trim(); };
+      var MDa = T.lineup.some(function (v) { return /特殊能力を持たない戦術カードのサポートのDPは、サポートのAPとしても扱う/.test(String((T.S.rowOf[v.no] || v).eff || '')); });
+      var MH, Mi;
+      // 先攻：攻撃に使えない戦術（APサポート無し：威圧・強心臓・不屈など）は全部戻す。勝負師と、ヒュンメルがいるときの特殊能力なしDP札（警戒）は残す。投手の覚醒札・選手は残す
+      if (MF === true) for (Mi = T.hand.length - 1; Mi >= 0; Mi--) { MH = T.hand[Mi]; if (MH.kind !== '戦術' || MH.apSup || nm(MH) === '勝負師' || (MDa && MPl(MH) && MH.dpSup)) continue; out.push(T.hand.splice(Mi, 1)[0]); }
+      // 後攻：守備に使えず回収もできない攻撃専用の戦術（好球必打・値千金など）は戻す
+      if (MF === false) for (Mi = T.hand.length - 1; Mi >= 0; Mi--) { MH = T.hand[Mi]; if (MH.kind !== '戦術' || MH.dpSup || nm(MH) === '勝負師' || MPl(MH) || /【守備】|【攻.守】/.test(String(MH.eff || ''))) continue; out.push(T.hand.splice(Mi, 1)[0]); }
+      // 1番打者が「打席に入った時、レストから特殊能力なしの戦術を手札に加える」（度会など）なら、特殊能力なしの戦術を1枚レストへ置いておく（1打席目に拾い直す）
+      var MS0 = T.lineup[0], MSf = MS0 ? T.S.fx(T.S.rowOf[MS0.no] || MS0) : {};
+      if (MSf.onEnter && !T.rest.some(MPl) && !out.some(function (x) { return x && MPl(x); })) { var MSi = -1, MSv = -1; T.hand.forEach(function (x, i) { if (!MPl(x)) return; var v = Math.max(calc(MS0, [x], 'ミート', {}), calc(MS0, [x], '強振', {})); if (v > MSv) { MSv = v; MSi = i; } }); if (MSi >= 0) out.push(T.hand.splice(MSi, 1)[0]); }
+      if (out.length && opt.log) opt.log('CPU：開始時の入れ替え（' + T.key + '）' + out.filter(function (x) { return x; }).map(nm).join('・'));
+    }
     out.forEach(function (x) { if (x) T.rest.push(x); }); draw(T, out.length); T.mull = out.length;
   };
   if (opt.mulligan !== false) { mulligan(A); mulligan(B); }
@@ -3628,7 +3647,7 @@ function simulateGame2(XA, XB, opt) {
     var chA = SA.teamFx && SA.teamFx.chooseOrder, chB = SB.teamFx && SB.teamFx.chooseOrder;
     if (chA && !chB) aFirst = false; else if (chB && !chA) aFirst = true;
     var readAgg = function (q) { var at = q.aKey, df = at === 'A' ? 'B' : 'A'; if (q.killD) { out.kill[df].use++; if (q.playA) out.kill[df].hit++; } if (q.playA) out.kill[df].faced++; if (q.killA) { out.kill[at].use++; if (q.playP) out.kill[at].hit++; } if (q.playP) out.kill[at].faced++; if (opt.readLog) opt.readLog(q); };
-    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, awkHoldOff: opt.awkHoldOff, recovOff: opt.recovOff, earlyCloser: opt.earlyCloser, fullFor: opt.fullFor, inn1Two: opt.inn1Two, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
+    var R = simRun_(SA, SB, { killOld: opt.killOld, comboOff: opt.comboOff, awkHoldOff: opt.awkHoldOff, recovOff: opt.recovOff, earlyCloser: opt.earlyCloser, fullFor: opt.fullFor, inn1Two: opt.inn1Two, pinchOld: opt.pinchOld, killK: opt.killK, killP: opt.killP, dbgEnterTP: opt.dbgEnterTP, readOld: opt.readOld, defReadOld: opt.defReadOld, tpHoldOld: opt.tpHoldOld, tpHoldAll: opt.tpHoldAll, clogOff: opt.clogOff, atk2Old: opt.atk2Old, atk2N: opt.atk2N, engOld: opt.engOld, zoneAt: opt.zoneAt, zonePlan: opt.zonePlan, handLog: opt.handLog, innFloor: opt.innFloor, noAwk: opt.noAwk, atkLog: opt.atkLog, atkFixOld: opt.atkFixOld, pairOld: opt.pairOld, fetchOld: opt.fetchOld, readLog: readAgg, rnd: rnd, swapLevel: opt.swapLevel, memo: memo, worthMemo: wmemo, log: opt.log, bet: opt.bet, adapt: opt.adapt, guardPrevOn: opt.guardPrevOn, aFirstM: aFirst, atkPlan: opt.atkPlan, save: opt.save, def2: opt.def2 });
     var T = { A: R.A, B: R.B }, order = aFirst ? ['A', 'B'] : ['B', 'A'], first = true; R.A.batFirst = aFirst; R.B.batFirst = !aFirst; if (aFirst) out.nF++; else out.nS++;
     for (var inn = 1; inn <= 3; inn++) {
       for (var h = 0; h < 2; h++) {
