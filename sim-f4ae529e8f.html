@@ -2101,10 +2101,13 @@ function simRun_(SA, SB, opt) {
   var onField = function (T) { var s = {}; T.lineup.forEach(function (v) { s[v.no] = true; }); if (T.pitcher) s[T.pitcher.no] = true; return s; };
   var honActive = function (T, no, x) {
     if (onField(T)[no]) return true;
+    // 呼び出しでカードを渡していない時（ゲッツーの判定など）は番号からメインデッキのカードを探す（2026-11-20）
+    if (!x) x = (T.S.X && T.S.X.mainCards || []).find(function (c) { return c.no === no; });
     var n0 = x ? nm(x) : null; if (!n0) return false;
     // 楽天のチームカード：同じ名前でコストが同じ以上の選手が出場していれば有効（守備）
     if (T.S.teamFx && T.S.teamFx.honByName && T.isDef !== false && x.kind === '選手' && T.lineup.concat([T.pitcher]).some(function (v) { return nm(v) === n0 && rowCost(T, v) >= (Number(x.cost) || 0); })) return true;
-    return T.lineup.concat([T.pitcher]).some(function (v) { var f = T.S.fx(T.S.rowOf[v.no] || v); return f.enableSupHon && f.enableSupHon === n0; });
+    // 【ベンチ】「サポートエリアの○○の【本領発揮】を有効にする」（源田・菊池）はオーダーにいなくてもメインデッキにいれば働く（2026-11-20 ユーザー談）
+    return T.lineup.concat([T.pitcher]).concat(T.S.X && T.S.X.mainCards || []).some(function (v) { if (!v) return false; var f = T.S.fx(T.S.rowOf[v.no] || v); return f.enableSupHon && f.enableSupHon === n0; });
   };
   // 自分のカードの効果で手札から捨てる（【レスト】【本領発揮】の効果が働く）
   var discard = function (T, idx, byOwn) {
