@@ -2470,7 +2470,8 @@ function simRun_(SA, SB, opt) {
       var zDraw = atk.S.teamFx && atk.S.teamFx.zoneDraw; if (drawFirst == null) drawFirst = zoneDrawFirst(zRow);
       if (zDraw && drawFirst) draw(atk, zDraw);
       var zf = atk.S.fx(zRow || atk.S.zoneRow); if (zf.zoneRispAP && risp) { atk.zonePendAP = zf.zoneRispAP; ev(atk, nm(b) + '（ZONE：得点圏で AP+' + zf.zoneRispAP + '）'); }
-      if (zf.zoneReveal) {
+      var zqM = String((zRow || atk.S.zoneRow || {}).eff || '').match(/【ZONE([②③④])】ZONE状態になった時/), zqN = zqM ? ({ '②': 2, '③': 3, '④': 4 })[zqM[1]] : 0; // 公式Q&A Q278：【ZONE③】は ZONE 状態の選手のコストが3以上の時だけ有効（2026-11-21 ユーザー指摘）
+      if (zf.zoneReveal && rowCost(atk, b) >= zqN) {
         var rev = []; for (var zi = 0; zi < zf.zoneReveal.n; zi++) { var tc = topCard(atk); if (tc) rev.push(tc); }
         if (manual) return { cards: rev, take: zf.zoneReveal.take, drawAfter: zDraw && !drawFirst ? zDraw : 0 };
         rev.sort(function (x, y) { return worth(atk, y) - worth(atk, x); });
