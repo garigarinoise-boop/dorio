@@ -4344,20 +4344,25 @@ function laRun(withWin) {
   const jobs = [];
   rows.forEach((c, k) => { c.me = 0; c.op = 0; c.n = 0; c.w = 0; c.wn = 0; c.z = 0; for (let r = 0; r < LA_NR; r++) jobs.push({ k, cand: c.ans, rseed: (SO.seed * 7919 + SO.ans.length * 131 + r) >>> 0, stopHalf: true, wantPlan: true }); });
   LA.rows = rows; LA.key = SO.ans.length; LA.running = true; LA.done = 0; LA.total = jobs.length + (withWin ? 3 * LA_WIN : 0); LA.stop = false; LA.win = !!withWin; LA.plans = rows.map(() => []);
-  const pool = laPool(); let next = 0, inflight = 0, phase2 = false;
+  const pool = laPool(); let next = 0, inflight = 0, phase2 = false, refined = false;
+  const startRefine = () => { // 一番上の案だけ、別の乱数でもう一度
+    refined = true; const best = laOrder(q)[0]; if (!best) return; const k = rows.indexOf(best); best.rn = 0; best.rme = 0; best.rop = 0; best.rz = 0;
+    for (let r = 0; r < LA_NR; r++) jobs.push({ k, cand: best.ans, rseed: (SO.seed * 104723 + SO.ans.length * 17 + r + 99991) >>> 0, stopHalf: true, refine: true });
+    LA.total += LA_NR;
+  };
   const finish = () => { LA.running = false; laRecord(q); render(); };
   const startWin = () => { // 期待値の上位3つだけ、試合の最後まで回して勝率を出す
     phase2 = true; const order = laOrder(q); order.slice(0, 3).forEach(c => { const k = rows.indexOf(c); for (let r = 0; r < LA_WIN; r++) jobs.push({ k, cand: c.ans, rseed: (SO.seed * 104729 + SO.ans.length * 7 + r) >>> 0, stopHalf: false, win: true }); });
   };
   const give = w => {
     if (LA.stop) { if (inflight === 0) finish(); return; }
-    if (next >= jobs.length) { if (withWin && !phase2 && inflight === 0) { startWin(); pool.forEach(give); return; } if (inflight === 0) finish(); return; }
+    if (next >= jobs.length) { if (!refined && inflight === 0) { startRefine(); pool.forEach(give); return; } if (withWin && !phase2 && inflight === 0) { startWin(); pool.forEach(give); return; } if (inflight === 0) finish(); return; }
     const j = jobs[next], id = next++; inflight++;
     w.postMessage(Object.assign({ id, cand: j.cand, rseed: j.rseed, stopHalf: j.stopHalf, wantPlan: !!j.wantPlan }, base));
   };
   pool.forEach(w => { w.onmessage = e => {
     const m = e.data, j = jobs[m.id], c = rows[j.k]; inflight--; LA.done++;
-    if (m.err) c.err = m.err; else if (j.win) { c.w += m.res; c.wn++; } else { c.me += m.me; c.op += m.op; c.n++; if (q.type === "defPlace" ? m.op === 0 : m.me >= 1) c.z++; if (m.plan) LA.plans[j.k].push(m.plan); }
+    if (m.err) c.err = m.err; else if (j.refine) { c.rme += m.me; c.rop += m.op; c.rn++; if (q.type === "defPlace" ? m.op === 0 : m.me >= 1) c.rz++; } else if (j.win) { c.w += m.res; c.wn++; } else { c.me += m.me; c.op += m.op; c.n++; if (q.type === "defPlace" ? m.op === 0 : m.me >= 1) c.z++; if (m.plan) LA.plans[j.k].push(m.plan); }
     if (LA.done % 16 === 0) render();
     give(w);
   }; });
@@ -4376,7 +4381,8 @@ function laRecord(q) {
   if (SO.preds[key]) return;
   const best = laOrder(q)[0]; if (!best) return;
   const def = q.type === "defPlace";
-  SO.preds[key] = { key, inn: c.inn, top: c.top, atkKey: c.atkKey, def, outs: c.half.outs, e: def ? best.op / best.n : best.me / best.n, p: best.z / best.n, label: best.label };
+  const rn = best.rn || 0, e = rn ? (def ? best.rop / rn : best.rme / rn) : (def ? best.op / best.n : best.me / best.n), p = rn ? best.rz / rn : best.z / best.n;
+  SO.preds[key] = { key, inn: c.inn, top: c.top, atkKey: c.atkKey, def, outs: c.half.outs, e, p, label: best.label };
 }
 function laPredHtml(q) {
   const P = SO.preds || {}, ks = Object.keys(P); if (!ks.length) return "";
@@ -4394,6 +4400,7 @@ function laHtml(q) {
       h += `<table class="small" style="width:auto;margin-top:6px"><thead><tr><th>候補</th><th class="n">${def ? "この回の期待失点" : "この回の期待得点"}</th><th class="n">${def ? "無失点の確率" : "1点以上の確率"}</th>${LA.win ? `<th class="n">勝率</th>` : ""}<th></th><th></th></tr></thead><tbody>`;
       ord.forEach((c, i) => { const k = LA.rows.indexOf(c); h += `<tr${i === 0 ? ' style="font-weight:bold"' : ""}><td>${esc(c.label)}</td><td class="n num">${(def ? c.op / c.n : c.me / c.n).toFixed(2)}</td><td class="n num">${(c.z / c.n * 100).toFixed(0)}%</td>${LA.win ? `<td class="n num">${c.wn ? (c.w / c.wn * 100).toFixed(0) + "%" : ""}</td>` : ""}<td class="muted">${esc(c.note)}</td><td><button data-act="laPick" data-k="${k}">この札を選ぶ</button></td></tr>`; });
       h += `</tbody></table>`;
+      const b0 = ord[0]; if (b0.rn) h += `<p class="small" style="margin-top:4px"><b>一番上の案の予想（別の乱数で${b0.rn}回出し直し）</b>：${def ? "失点" : "得点"} ${(def ? b0.rop / b0.rn : b0.rme / b0.rn).toFixed(2)}・${def ? "無失点" : "1点以上"} ${(b0.rz / b0.rn * 100).toFixed(0)}%（表の値は候補を比べた時の値で、一番上は高め／低めに出やすい）</p>`;
       const pl = laPlan(LA.rows.indexOf(ord[0]));
       if (pl.length) h += `<p class="small" style="margin-top:6px"><b>一番上の案の続き（この回）</b><br>${pl.join("<br>")}</p>`;
       if (!def && LA.pickAttr) h += `<p class="small">選んだ候補の宣言は <b>${esc(LA.pickAttr)}</b> です（下の宣言のボタンで決めてください）</p>`;
