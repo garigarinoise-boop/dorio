@@ -3147,7 +3147,7 @@ function simRun_(SA, SB, opt) {
     var aSho = aCards.some(function (x) { return !tacOff(x) && atk.S.fx(x).shobushi; });
     var aLive = aCards, dLive = dCards;
     if (dumpMD) { while (hA.length) discard(atk, hA.length - 1, true); extraAP += bfx.mainEndDump.ap; extraDice += bfx.mainEndDump.dice; ev(atk, nm(b) + '（手札をすべて捨てる）'); }
-    var aAwk = aCards.filter(function (x) { return x.no === b.no; });
+    var aAwk = aCards.filter(function (x) { return x.no === b.no; }), bouncedA = [];
     atk.awkOpp = (atk.awkOpp || 0) + 1; if (aAwk.length) atk.awkSeen = (atk.awkSeen || 0) + 1;
     if (opt.readLog) opt.readLog({ predA: predA, playA: aAwk.length > 0, killD: dCards.some(isKill), predP: predP, playP: dCards.some(function (x) { return x.no === pit.no; }), killA: aCards.some(isKill), risp: risp, inn: half.inn, aKey: atk.key, deckA: atk.deck.length, deckD: def.deck.length, restA: atk.rest.length, restD: def.rest.length });
     def.oppSupCostSum = (def.oppSupCostSum || 0) + costSum(atk, aCards); def.oppSupCostN = (def.oppSupCostN || 0) + 1;
@@ -3155,7 +3155,7 @@ function simRun_(SA, SB, opt) {
     atk.readPExp = (atk.readPExp || 0) + predP; if (dCards.some(function (x) { return x.no === pit.no; })) atk.readPObs = (atk.readPObs || 0) + 1;
     def.pAwkOpp = (def.pAwkOpp || 0) + 1; if (dCards.some(function (x) { return x.no === pit.no; })) def.pAwkSeen = (def.pAwkSeen || 0) + 1;
     if (dIatsu && aAwk.length) {
-      ev(def, '威圧で覚醒札を手札に戻す');
+      ev(def, '威圧で覚醒札を手札に戻す'); bouncedA = aAwk.map(nm);
       aLive = aCards.filter(function (x) { return x.no !== b.no; }); aCards = aLive;
       aAwk.forEach(function (x) { hA.push(x); });
       draw(def, 1);
@@ -3478,10 +3478,10 @@ function simRun_(SA, SB, opt) {
     if (runs) { atk.score += runs; draw(def, runs); if (pfx.onRunDraw && def.usedRunDraw !== half.inn + ':' + atk.key) { def.usedRunDraw = half.inn + ':' + atk.key; draw(def, pfx.onRunDraw); ev(def, nm(pit) + '（相手の得点で引く）'); } }
     if (bfx.ground && bfx.ground.behindDraw && atk.score < def.score) draw(atk, 1);
     st.runs = (st.runs || 0) + runs;
-    var summary = { diceParts: (typeof dParts !== 'undefined' ? dParts : []), batter: b.name, pitcher: pit.name, attr: attr, aCards: aLive.map(nm), dCards: dLive.map(nm), killedA: killedA.map(nm), killedD: dCards.filter(function (x) { return dLive.indexOf(x) < 0; }).map(nm),
+    var summary = { diceParts: (typeof dParts !== 'undefined' ? dParts : []), batter: b.name, pitcher: pit.name, attr: attr, aCards: aLive.map(nm), dCards: dLive.map(nm), killedA: killedA.map(nm), bouncedA: bouncedA, killedD: dCards.filter(function (x) { return dLive.indexOf(x) < 0; }).map(nm),
       AP: AP, DP: DP, judged: AP >= DP, d1: typeof d1 === 'number' && AP >= DP ? d1 : null, d2: typeof d2 === 'number' && AP >= DP ? d2 : null, dice: AP >= DP ? dice : null, res: res, runs: runs, atkHuman: !!atk.human };
     if (logf) LG((atk.human ? '自分' : 'CPU') + '｜' + b.name + '（' + attr + '）［' + (summary.aCards.join('・') || 'なし') + '］AP ' + AP + ' vs DP ' + DP + ' ［' + (summary.dCards.join('・') || 'なし') + '］' +
-      (summary.killedA.length || summary.killedD.length ? '（消えた札：' + summary.killedA.concat(summary.killedD).join('・') + '）' : '') + (AP >= DP ? ' → 打撃判定 ' + d1 + '+' + d2 + (dice ? (dice > 0 ? '+' : '') + dice : '') + '=' + (d1 + d2 + dice) + (summary.diceParts && summary.diceParts.length ? '（ダイス：' + summary.diceParts.map(function (p) { return p[0] + (p[1] > 0 ? '+' : '') + p[1]; }).join('、') + '）' : '') : '') + ' → ' + res + (runs ? '（' + runs + '点）' : ''));
+      (summary.killedA.length || summary.killedD.length ? '（消えた札：' + summary.killedA.concat(summary.killedD).join('・') + '）' : '') + (summary.bouncedA.length ? '（威圧で手札に戻った札：' + summary.bouncedA.join('・') + '）' : '') + (AP >= DP ? ' → 打撃判定 ' + d1 + '+' + d2 + (dice ? (dice > 0 ? '+' : '') + dice : '') + '=' + (d1 + d2 + dice) + (summary.diceParts && summary.diceParts.length ? '（ダイス：' + summary.diceParts.map(function (p) { return p[0] + (p[1] > 0 ? '+' : '') + p[1]; }).join('、') + '）' : '') : '') + ' → ' + res + (runs ? '（' + runs + '点）' : ''));
     refreshNow(atk); refreshNow(def);
     if (opt.human) yield { type: 'result', summary: summary, side: atk };
     return { res: res, runs: runs, attr: attr, batter: b.name, summary: summary };
@@ -4559,7 +4559,7 @@ function vSolo() {
       panel = `<h3>${s.atkHuman ? "自分" : "CPU"}の攻撃：${esc(s.batter)}（${esc(s.attr)}） vs ${esc(s.pitcher)}</h3>
       <table style="width:auto"><tbody><tr><td>攻撃の札</td><td>${esc(s.aCards.join("・") || "なし")}</td><td class="n num"><b>AP ${s.AP}</b></td></tr>
       <tr><td>守備の札</td><td>${esc(s.dCards.join("・") || "なし")}</td><td class="n num"><b>DP ${s.DP}</b></td></tr></tbody></table>
-      ${s.killedA.length || s.killedD.length ? `<p class="small">勝負師・威圧で消えた札：${esc(s.killedA.concat(s.killedD).join("・"))}</p>` : ""}
+      ${s.killedA.length || s.killedD.length ? `<p class="small">勝負師・威圧で消えた札：${esc(s.killedA.concat(s.killedD).join("・"))}</p>` : ""}${s.bouncedA && s.bouncedA.length ? `<p class="small">威圧で手札に戻った札：${esc(s.bouncedA.join("・"))}（攻撃の札から外れる）</p>` : ""}
       <p style="font-size:16px">${s.judged ? `打撃判定 ${s.d1}+${s.d2}${s.dice ? (s.dice > 0 ? "+" : "") + s.dice : ""}＝${s.d1 + s.d2 + s.dice} → ` : "DP が上 → "}<b>${esc(s.res)}</b>${s.runs ? `（${s.runs}点）` : ""}</p>${s.judged && s.diceParts && s.diceParts.length ? `<p class="small muted">ダイスの内訳：${s.diceParts.map(p => esc(p[0]) + (p[1] > 0 ? "+" : "") + p[1]).join("、")}</p>` : ""}
       <button class="primary" data-act="next">次へ</button>`; break;
     }
