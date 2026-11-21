@@ -4331,7 +4331,9 @@ function laCands(q) {
     else for (const a of ["ミート", "強振"]) { if (seen.has(a + key)) continue; seen.add(a + key); const v = q.preview(cb, a); C.push({ idx: cb, attr: a, label: `${a}：${key}`, h: v, note: `AP ${v}`, ans: { idx: cb, attr: a } }); }
   }
   C.sort((x, y) => y.h - x.h);
-  if (q.type === "defPlace") return C.slice(0, LA_TOP);
+  if (q.type === "defPlace") { // 勝負師・威圧を含む組み合わせは守備の値が低く漏れやすいので、上位2つは必ず入れる（相手の覚醒を止める価値が大きい）
+    const isK = c => c.idx.some(i => /^(勝負師|威圧)$/.test(nmC(H[i]))), kk = C.filter(isK).slice(0, 2), rest = C.filter(c => kk.indexOf(c) < 0).slice(0, LA_TOP - kk.length);
+    return rest.concat(kk).sort((x, y) => y.h - x.h); }
   const out = []; for (const a of ["ミート", "強振"]) out.push(...C.filter(c => c.attr === a).slice(0, LA_TOP / 2)); return out;
 }
 const laKey = d => { const t = JSON.stringify(d); let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return t.length + ":" + h; };
