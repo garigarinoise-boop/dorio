@@ -4390,6 +4390,40 @@ function laPredHtml(q) {
     return `<tr><td>${esc(k)}</td><td>${p.def ? "守備" : "攻撃"}（${p.outs}アウトから）</td><td class="n num">${p.e.toFixed(2)}点</td><td class="n num">${p.def ? "無失点" : "1点以上"} ${(p.p * 100).toFixed(0)}%</td><td class="n num">${done && act != null ? `<b>${act}点</b>` : "（この回の途中）"}</td></tr>`; }).join("");
   return `<details class="small" style="margin-top:6px" open><summary>この試合の予想と結果（その回で最初に先読みした時の、一番上の案の予想）</summary><table class="small" style="width:auto"><thead><tr><th>回</th><th></th><th class="n">予想</th><th class="n"></th><th class="n">実際</th></tr></thead><tbody>${rows}</tbody></table></details>`;
 }
+// ===== 1人対戦の記録（2026-11-22）：札選びのたびに両方の手札を記録し、書き出し・直近20試合の保存 =====
+function soSnap() {
+  const q = SO.req; if (!q || !q.ctx || !q.ctx.R) return;
+  if (q.type === "defPlace" || q.type === "atkSelect") {
+    const R = q.ctx.R, h = q.ctx.half || { base: [0, 0, 0], outs: 0 }, nmL = a => a.map(x => nmC(x)).join("・") || "なし";
+    const last = SO.snaps[SO.snaps.length - 1];
+    if (last && last.at === SO.log.length && last.type === q.type) return;
+    SO.snaps.push({ at: SO.log.length, type: q.type, me: `〔手札〕自分（${R.A.hand.length}枚・TP${R.A.tp}・山札${R.A.deck.length}）：${nmL(R.A.hand)}`, cpu: `〔手札〕CPU（${R.B.hand.length}枚・TP${R.B.tp}・山札${R.B.deck.length}）：${nmL(R.B.hand)}`, sit: `〔場面〕${q.ctx.inn}回${q.ctx.top ? "表" : "裏"} ${q.type === "defPlace" ? "守備" : "攻撃"} ${h.outs}アウト 走者${h.base.map(x => x ? "●" : "○").join("")} 自分${R.A.score}-${R.B.score}CPU 打者 ${nmC(q.batter)}` });
+  }
+  if (q.type === "end" && !SO.saved) { SO.saved = true; soSave(q); }
+}
+function soText(showCpu) {
+  const out = [], snaps = (SO.snaps || []).slice(); let k = 0;
+  const head = [`# ドリオ 1人対戦の記録（${new Date().toLocaleString()}）`, `自分：${S.A && S.A.X ? (S.A.X.title || "") + " " + (S.A.X.code || "") : ""}　仮想敵：${S.B && S.B.X ? (S.B.X.title || "") + " " + (S.B.X.code || "") : ""}　自分が${SO.aFirst ? "先攻" : "後攻"}`, ""];
+  for (let i = 0; i <= SO.log.length; i++) {
+    while (k < snaps.length && snaps[k].at === i) { out.push(snaps[k].sit); out.push(snaps[k].me); if (showCpu) out.push(snaps[k].cpu); k++; }
+    if (i < SO.log.length) out.push(SO.log[i]);
+  }
+  const tail = ["", "## 再現用（シミュの先読みで振り返る時に使う）", JSON.stringify({ seed: SO.seed, aFirst: SO.aFirst, opt: SO.repOpt, answers: SO.ans, A: S.A && S.A.X && S.A.X.code, B: S.B && S.B.X && S.B.X.code })];
+  return head.concat(out, tail).join("\n");
+}
+function soSave(q) {
+  try { const k = "dorio_solo_hist", a = JSON.parse((LS && LS.getItem(k)) || "[]");
+    a.unshift({ at: Date.now(), A: S.A && S.A.X && (S.A.X.title || S.A.X.code), B: S.B && S.B.X && (S.B.X.title || S.B.X.code), score: q.ctx.R.A.score + "-" + q.ctx.R.B.score, res: q.result, text: soText(true) });
+    LS && LS.setItem(k, JSON.stringify(a.slice(0, 20))); } catch (e) {}
+}
+function soHist() { try { return JSON.parse((LS && LS.getItem("dorio_solo_hist")) || "[]"); } catch (e) { return []; } }
+function soDl(text, name) { const u = URL.createObjectURL(new Blob([text], { type: "text/plain" })); const a = document.createElement("a"); a.href = u; a.download = name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 1000); }
+function soCopy(text) { try { navigator.clipboard.writeText(text); alert("記録をコピーしました"); } catch (e) { soDl(text, "dorio_solo.txt"); } }
+function soLogBtns(done) { return `<div class="row small" style="gap:8px;margin-top:8px"><button data-act="logCopy">記録をコピー</button><button data-act="logDl">記録をダウンロード</button><span class="muted">${done ? "両方の手札・再現用の種と答えも入ります" : "試合中は CPU の手札は伏せます（試合が終わると入ります）"}</span></div>`; }
+function soHistHtml() {
+  const a = soHist(); if (!a.length) return "";
+  return `<details class="small" style="margin-bottom:10px"><summary>過去の1人対戦の記録（直近${a.length}試合、このブラウザに保存）</summary>${a.map((x, i) => `<div class="row" style="gap:8px;margin:4px 0"><span>${esc(new Date(x.at).toLocaleString())}　${esc(x.A || "")} 対 ${esc(x.B || "")}　${esc(x.score)}（${esc(x.res || "")}）</span><button data-hist="${i}">ダウンロード</button></div>`).join("")}</details>`;
+}
 function laHtml(q) {
   if (!S.A || !S.A.raw || !S.B || !S.B.raw || SO.seed == null) return "";
   let h = `<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px"><div class="row small" style="gap:8px;align-items:center"><button data-act="la" ${LA.running ? "disabled" : ""}>先読みで比べる</button><button data-act="laWin" ${LA.running ? "disabled" : ""}>勝率も見る（時間がかかります）</button><span class="muted">候補ごとに、相手の見えない札を混ぜ直して先を${LA_NR}回打たせます（札を出した後は自分も CPU の型で打ちます）</span></div>`;
@@ -4422,7 +4456,7 @@ function chip(x, i, opts) {
 }
 function soloStart() {
   SO.log = []; SO.sel = []; SO.extra = {};
-  SO.seed = (Math.floor(Math.random() * 4294967296) ^ Date.now()) >>> 0; SO.ans = []; SO.rec = false; LA.rows = null; SO.preds = {};
+  SO.seed = (Math.floor(Math.random() * 4294967296) ^ Date.now()) >>> 0; SO.ans = []; SO.rec = false; LA.rows = null; SO.preds = {}; SO.snaps = []; SO.saved = false;
   SO.repOpt = Object.assign({ aFirst: SO.aFirst, swapLevel: S.lv }, betOpt());
   SO.it = soloGame(S.A.X, S.B.X, Object.assign({}, SO.repOpt, { rnd: laRng(SO.seed), log: t => SO.log.push(t) }));
   soloStep(undefined);
@@ -4430,7 +4464,7 @@ function soloStart() {
 function soloStep(ans) {
   if (SO.rec) SO.ans.push(ans); SO.rec = true; LA.rows = null; LA.stop = true;
   const r = SO.it.next(ans);
-  SO.req = r.done ? null : r.value; SO.sel = SO.req && (SO.req.type === "zoneReveal" || SO.req.type === "revealPick" || SO.req.type === "pick") ? (SO.req.suggest || []).slice() : SO.req && SO.req.type === "scry" ? SO.req.cards.map((x, i) => i) : []; SO.extra = {};
+  SO.req = r.done ? null : r.value; soSnap(); SO.sel = SO.req && (SO.req.type === "zoneReveal" || SO.req.type === "revealPick" || SO.req.type === "pick") ? (SO.req.suggest || []).slice() : SO.req && SO.req.type === "scry" ? SO.req.cards.map((x, i) => i) : []; SO.extra = {};
   render();
 }
 function boardHtml(req) {
@@ -4453,7 +4487,7 @@ function boardHtml(req) {
     <div class="loaders">${side(A, true)}${side(B, false)}</div>`;
 }
 function vSolo() {
-  if (!SO.req) return betSel(true) + atkSel(true) + `<div class="row small" style="gap:12px;margin-bottom:8px"><label><input type="checkbox" id="soFirst" ${SO.aFirst ? "checked" : ""}> 自分が先攻</label>${lvSel("lv")}<button id="soStart" class="primary">試合を始める</button></div>
+  if (!SO.req) return soHistHtml() + betSel(true) + atkSel(true) + `<div class="row small" style="gap:12px;margin-bottom:8px"><label><input type="checkbox" id="soFirst" ${SO.aFirst ? "checked" : ""}> 自分が先攻</label>${lvSel("lv")}<button id="soStart" class="primary">試合を始める</button></div>
     <p class="note">自分のデッキを1打席ずつ操作し、仮想敵は CPU が回します（CPU の判断は「前提と決まり」タブの型）。カードにマウスを乗せると効果が出ます。${SO.log.length ? "" : ""}</p>${SO.log.length ? `<h3>前の試合の記録</h3><div class="small" style="max-height:300px;overflow:auto">${SO.log.map(esc).join("<br>")}</div>` : ""}`;
   const q = SO.req, me = q.ctx.R.A;
   let panel = "";
@@ -4530,14 +4564,14 @@ function vSolo() {
       <button class="primary" data-act="next">次へ</button>`; break;
     }
     case "end":
-      panel = `<h3>試合終了：${q.ctx.R.A.score} - ${q.ctx.R.B.score}（${esc(q.result)}）</h3>${laPredHtml(q)}<button class="primary" data-act="again">もう一度</button>`; break;
+      panel = `<h3>試合終了：${q.ctx.R.A.score} - ${q.ctx.R.B.score}（${esc(q.result)}）</h3>${laPredHtml(q)}${soLogBtns(true)}<button class="primary" data-act="again" style="margin-top:8px">もう一度</button>`; break;
   }
   return boardHtml(q) + `<div class="panel" style="background:var(--panel-2)">${panel}${q.type === "defPlace" || q.type === "atkSelect" ? laHtml(q) : ""}</div>
     <h3>あなたの手札（${me.hand.length}枚）</h3><div class="small muted">${me.hand.map(x => esc(x.name)).join("・")}</div>
-    <h3>記録</h3><div class="small" id="solog" style="max-height:260px;overflow:auto">${SO.log.slice(-60).map(esc).join("<br>")}</div>`;
+    <h3>記録</h3>${q.type !== "end" ? soLogBtns(false) : ""}<div class="small" id="solog" style="max-height:260px;overflow:auto">${SO.log.slice(-60).map(esc).join("<br>")}</div>`;
 }
 function wireSolo() {
-  const st = $("#soStart"); if (st) { const f = $("#soFirst"); st.onclick = () => { SO.aFirst = f.checked; soloStart(); }; wireCommon(); return; }
+  const st = $("#soStart"); if (st) { const f = $("#soFirst"); st.onclick = () => { SO.aFirst = f.checked; soloStart(); }; document.querySelectorAll("[data-hist]").forEach(b => b.onclick = () => { const x = soHist()[+b.dataset.hist]; if (x) soDl(x.text, "dorio_solo_" + new Date(x.at).toISOString().slice(0, 16).replace(/[-:T]/g, "") + ".txt"); }); wireCommon(); return; }
   const q = SO.req; if (!q) return;
   const lg = $("#solog"); if (lg) lg.scrollTop = lg.scrollHeight;
   const maxSel = { zoneReveal: q.take || 2, revealPick: q.take || 1, scry: q.cards ? q.cards.length : 0, mulligan: 99, kidou: q.kd && q.kd.type === "cycle" ? q.kd.n : 1, atkSelect: q.max || 2, defPre: 1, defPlace: q.max || q.forced || 2, honSwap: 1, honDiscard: 1, takeBack: 1, inningPick: 1, payHand: 1, discardPick: q.n || 1, pick: q.take || 1 }[q.type] || 0;
@@ -4553,6 +4587,7 @@ function wireSolo() {
     if (a === "step") { SO.extra.step = b.dataset.s || true; SO.sel = []; return render(); }
     if (a === "back") { SO.extra = {}; SO.sel = []; return render(); }
     if (a === "la" || a === "laWin") { laRun(a === "laWin"); return; }
+    if (a === "logCopy" || a === "logDl") { const done = q.type === "end", t = soText(done); if (a === "logCopy") soCopy(t); else soDl(t, "dorio_solo_" + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "") + ".txt"); return; }
     if (a === "laPick") { const c = LA.rows && LA.rows[+b.dataset.k]; if (c) { SO.sel = c.idx.slice(); LA.pickAttr = c.attr || null; } return render(); }
     switch (q.type) {
       case "mulligan": return soloStep({ idx: a === "ok" ? sel : [] });
