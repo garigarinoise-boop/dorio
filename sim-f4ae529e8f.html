@@ -3068,7 +3068,7 @@ function simRun_(SA, SB, opt) {
     var attr = fixedAttr, ansA = null;
     if (atk.human) {
       var prevA = function (idx, a) { var cs = idx.map(function (i) { return hA[i]; }).concat(preA); var q = bfx.parity ? (bfx.parity[costSum(atk, cs) % 2 === 0 ? 'even' : 'odd'] || {}) : {}; return calc(b, cs, a, sit) + (bfx.pinchBehindAP && pinchNow && diff < 0 ? -diff : 0) + extraAP + (q.ap || 0) + supBonusOf(atk, cs, 'AP', a, sit, b, pit) + tierVal(atk, b, 'ap', sit); };
-      refreshNow(atk); refreshNow(def); ansA = yield { type: 'atkSelect', side: atk, batter: b, pitcher: pit, max: maxHandPlace + extraSlot, preview: prevA, pitDP: { ミート: calc(pit, [], 'ミート', sitD), 強振: calc(pit, [], '強振', sitD) }, kidouOn: sit.kidou, defN: dCards.length };
+      refreshNow(atk); refreshNow(def); ansA = yield { type: 'atkSelect', side: atk, batter: b, pitcher: pit, max: maxHandPlace + extraSlot, preview: prevA, pitDP: { ミート: calc(pit, [], 'ミート', sitD), 強振: calc(pit, [], '強振', sitD) }, kidouOn: sit.kidou, defN: dCards.length, _dCards: dCards };
       attr = (ansA && ansA.attr) || 'ミート';
     }
     // 攻撃の方針（opt.atkPlan[チーム] = { def: 全体, per: { 打者の番号: 方針 } }）。auto は手札で決める
@@ -4279,6 +4279,113 @@ function vRules() {
 }
 // ===== 1人対戦（自分＝人、仮想敵＝CPU） =====
 const SO = { it: null, req: null, sel: [], log: [], aFirst: true, extra: {} };
+// ===== 先読み（2026-11-21）：今の場面まで同じ種と答えで再現し、候補の札ごとに「相手の見えない札を混ぜ直して」先を何回も打たせる =====
+// その回の期待失点（守備）・期待得点（攻撃）と、勝率（試合の最後まで）を比べる。候補の札を出した後は、自分側も CPU の型で打つ
+const LA = { rows: null, key: -1, running: false, done: 0, total: 0, stop: false, pickAttr: null, plan: null, win: false };
+const LA_NR = 24, LA_TOP = 8, LA_WIN = 40;
+function laRng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+let LA_POOL = null;
+function laPool() {
+  if (LA_POOL) return LA_POOL;
+  const texts = [...document.querySelectorAll("script")].map(s => s.textContent);
+  const ana = texts.find(t => t.includes("function analyzeDeck")), sim = texts.find(t => t.includes("function simulateGame2"));
+  const w = String.raw`
+var __DB = null, __X = {};
+function __mk(seed) { var s = seed >>> 0; return function () { s = (s + 0x6D2B79F5) >>> 0; var t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function __shuf(a, r) { for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(r() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } }
+function __deck(k, j) { if (!__X[k]) __X[k] = analyzeDeck(JSON.parse(j), __DB, {}); return __X[k]; }
+onmessage = function (e) {
+  var m = e.data; if (m.type === 'init') { __DB = m.DB; return; }
+  try {
+    var A = __deck(m.ka, m.da), B = __deck(m.kb, m.db), cur = __mk(m.seed), started = false, R = null, plan = [], STOP = {};
+    var logf = function (l) { if (!started) return; if (m.stopHalf && /^―― \d回/.test(l)) throw STOP; if (m.wantPlan && R && plan.length < 8 && /^CPU｜/.test(l)) plan.push((R.A.isDef ? 'D' : 'A') + l); };
+    var opt = {}; for (var k in m.opt) opt[k] = m.opt[k]; opt.rnd = function () { return cur(); }; opt.log = logf;
+    var it = soloGame(A, B, opt), r = it.next();
+    for (var i = 0; i < m.answers.length; i++) r = it.next(m.answers[i]);
+    var q = r.value; R = q.ctx.R;
+    cur = __mk(m.rseed); var hr = __mk(m.rseed ^ 0x9e3779b9);
+    // 見えない札を混ぜ直す：相手の手札＋山札（＋相手が伏せた札）、自分の山札
+    var op = R.B, placed = q._dCards || null, pool = op.hand.concat(op.deck, placed || []); __shuf(pool, hr);
+    var nh = op.hand.length, np = placed ? placed.length : 0; op.hand.length = 0; op.deck.length = 0;
+    if (placed) { placed.length = 0; var top = pool.slice(0, nh + np).sort(function (x, y) { return (+y.dpSup || 0) - (+x.dpSup || 0); }); top.forEach(function (x, i2) { (i2 < np ? placed : op.hand).push(x); }); pool.slice(nh + np).forEach(function (x) { op.deck.push(x); }); }
+    else pool.forEach(function (x, i2) { (i2 < nh ? op.hand : op.deck).push(x); });
+    __shuf(R.A.deck, hr);
+    var sA = R.A.score, sB = R.B.score, res = null; started = true;
+    try { r = it.next(m.cand); R.A.human = false; while (!r.done && r.value.type !== 'end') r = it.next(null); res = R.A.score > R.B.score ? 1 : R.A.score === R.B.score ? 0.5 : 0; }
+    catch (err) { if (err !== STOP) throw err; }
+    postMessage({ id: m.id, me: R.A.score - sA, op: R.B.score - sB, res: res, plan: plan });
+  } catch (err) { postMessage({ id: m.id, err: String(err && err.message || err) }); }
+};`;
+  const url = URL.createObjectURL(new Blob([ana + "\n" + sim + "\n" + w], { type: "text/javascript" }));
+  const n = Math.max(1, Math.min(8, (navigator.hardwareConcurrency || 4) - 1));
+  LA_POOL = Array.from({ length: n }, () => { const wk = new Worker(url); wk.postMessage({ type: "init", DB }); return wk; });
+  return LA_POOL;
+}
+// 候補：守備＝置く札1〜2枚（DP の上がりで上位）、攻撃＝出す札1〜2枚×宣言（AP で上位、宣言ごとに半分ずつ）
+function laCands(q) {
+  const H = q.ctx.R.A.hand, C = [], seen = new Set(), max = Math.min(2, q.max || 2), combos = [];
+  for (let i = 0; i < H.length; i++) { combos.push([i]); if (max >= 2) for (let j = i + 1; j < H.length; j++) combos.push([i, j]); }
+  for (const cb of combos) {
+    const key = cb.map(i => nmC(H[i])).sort().join("・");
+    if (q.type === "defPlace") { if (seen.has(key)) continue; seen.add(key); const m = q.preview(cb, "ミート"), p = q.preview(cb, "強振"); C.push({ idx: cb, label: key, h: Math.max(m, p) + Math.min(m, p) * 0.5, note: `DP ミ${m}・強${p}`, ans: { idx: cb } }); }
+    else for (const a of ["ミート", "強振"]) { if (seen.has(a + key)) continue; seen.add(a + key); const v = q.preview(cb, a); C.push({ idx: cb, attr: a, label: `${a}：${key}`, h: v, note: `AP ${v}`, ans: { idx: cb, attr: a } }); }
+  }
+  C.sort((x, y) => y.h - x.h);
+  if (q.type === "defPlace") return C.slice(0, LA_TOP);
+  const out = []; for (const a of ["ミート", "強振"]) out.push(...C.filter(c => c.attr === a).slice(0, LA_TOP / 2)); return out;
+}
+const laKey = d => { const t = JSON.stringify(d); let h = 0; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) | 0; return t.length + ":" + h; };
+function laRun(withWin) {
+  const q = SO.req; if (!q || LA.running) return;
+  const rows = laCands(q); if (!rows.length) return;
+  const da = JSON.stringify(S.A.raw), db = JSON.stringify(S.B.raw), base = { ka: laKey(S.A.raw), da, kb: laKey(S.B.raw), db, seed: SO.seed, opt: SO.repOpt, answers: SO.ans.slice() };
+  const jobs = [];
+  rows.forEach((c, k) => { c.me = 0; c.op = 0; c.n = 0; c.w = 0; c.wn = 0; for (let r = 0; r < LA_NR; r++) jobs.push({ k, cand: c.ans, rseed: (SO.seed * 7919 + SO.ans.length * 131 + r) >>> 0, stopHalf: true, wantPlan: true }); });
+  LA.rows = rows; LA.key = SO.ans.length; LA.running = true; LA.done = 0; LA.total = jobs.length + (withWin ? 3 * LA_WIN : 0); LA.stop = false; LA.win = !!withWin; LA.plans = rows.map(() => []);
+  const pool = laPool(); let next = 0, inflight = 0, phase2 = false;
+  const finish = () => { LA.running = false; render(); };
+  const startWin = () => { // 期待値の上位3つだけ、試合の最後まで回して勝率を出す
+    phase2 = true; const order = laOrder(q); order.slice(0, 3).forEach(c => { const k = rows.indexOf(c); for (let r = 0; r < LA_WIN; r++) jobs.push({ k, cand: c.ans, rseed: (SO.seed * 104729 + SO.ans.length * 7 + r) >>> 0, stopHalf: false, win: true }); });
+  };
+  const give = w => {
+    if (LA.stop) { if (inflight === 0) finish(); return; }
+    if (next >= jobs.length) { if (withWin && !phase2 && inflight === 0) { startWin(); pool.forEach(give); return; } if (inflight === 0) finish(); return; }
+    const j = jobs[next], id = next++; inflight++;
+    w.postMessage(Object.assign({ id, cand: j.cand, rseed: j.rseed, stopHalf: j.stopHalf, wantPlan: !!j.wantPlan }, base));
+  };
+  pool.forEach(w => { w.onmessage = e => {
+    const m = e.data, j = jobs[m.id], c = rows[j.k]; inflight--; LA.done++;
+    if (m.err) c.err = m.err; else if (j.win) { c.w += m.res; c.wn++; } else { c.me += m.me; c.op += m.op; c.n++; if (m.plan) LA.plans[j.k].push(m.plan); }
+    if (LA.done % 16 === 0) render();
+    give(w);
+  }; });
+  pool.forEach(give); render();
+}
+function laOrder(q) { return LA.rows.filter(c => c.n).slice().sort((x, y) => q.type === "defPlace" ? x.op / x.n - y.op / y.n : y.me / y.n - x.me / x.n); }
+// 最良の候補の続き：この回で自分が次に何をしたか（多かった順）
+function laPlan(k) {
+  const cnt = [];
+  (LA.plans[k] || []).forEach(p => { let st = 0; p.forEach(l => { const side = l[0], m = l.slice(1).match(/^CPU｜(.+?)（(ミート|強振)）［(.*?)］AP (\d+) vs DP (\d+) ［(.*?)］.*?→ (.*)$/); if (!m) return; const mine = side === "A" ? `${m[1]}（${m[2]}）に ${m[3]}` : `${m[1]} に ${m[6]}`; if (st === 0) { st++; return; } const i = st++ - 1; if (i > 2) return; (cnt[i] = cnt[i] || {})[mine] = ((cnt[i] || {})[mine] || 0) + 1; }); });
+  return cnt.map((o, i) => { const e = Object.entries(o).sort((a, b) => b[1] - a[1])[0]; return e ? `${i + 1}手後：${esc(e[0])}（${e[1]}/${(LA.plans[k] || []).length}回）` : ""; }).filter(Boolean);
+}
+function laHtml(q) {
+  if (!S.A || !S.A.raw || !S.B || !S.B.raw || SO.seed == null) return "";
+  let h = `<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px"><div class="row small" style="gap:8px;align-items:center"><button data-act="la" ${LA.running ? "disabled" : ""}>先読みで比べる</button><button data-act="laWin" ${LA.running ? "disabled" : ""}>勝率も見る（時間がかかります）</button><span class="muted">候補ごとに、相手の見えない札を混ぜ直して先を${LA_NR}回打たせます（札を出した後は自分も CPU の型で打ちます）</span></div>`;
+  if (LA.running) h += `<p class="small">計算中… ${LA.done} / ${LA.total}</p>`;
+  if (LA.rows && LA.key === SO.ans.length) {
+    const ord = laOrder(q), def = q.type === "defPlace";
+    if (ord.length) {
+      h += `<table class="small" style="width:auto;margin-top:6px"><thead><tr><th>候補</th><th class="n">${def ? "この回の期待失点" : "この回の期待得点"}</th>${LA.win ? `<th class="n">勝率</th>` : ""}<th></th><th></th></tr></thead><tbody>`;
+      ord.forEach((c, i) => { const k = LA.rows.indexOf(c); h += `<tr${i === 0 ? ' style="font-weight:bold"' : ""}><td>${esc(c.label)}</td><td class="n num">${(def ? c.op / c.n : c.me / c.n).toFixed(2)}</td>${LA.win ? `<td class="n num">${c.wn ? (c.w / c.wn * 100).toFixed(0) + "%" : ""}</td>` : ""}<td class="muted">${esc(c.note)}</td><td><button data-act="laPick" data-k="${k}">この札を選ぶ</button></td></tr>`; });
+      h += `</tbody></table>`;
+      const pl = laPlan(LA.rows.indexOf(ord[0]));
+      if (pl.length) h += `<p class="small" style="margin-top:6px"><b>一番上の案の続き（この回）</b><br>${pl.join("<br>")}</p>`;
+      if (!def && LA.pickAttr) h += `<p class="small">選んだ候補の宣言は <b>${esc(LA.pickAttr)}</b> です（下の宣言のボタンで決めてください）</p>`;
+      h += `<p class="small muted">数字は ${LA_NR} 回の平均で、ぶれます（0.2 くらいの差は同じと見てください）。相手の伏せた札・手札は分からない前提で混ぜ直しています。</p>`;
+    }
+  }
+  return h + `</div>`;
+}
 const nmC = x => String(x && x.name || "").replace(/[\s　]/g, "");
 function supTag(x) {
   const t = [];
@@ -4292,10 +4399,13 @@ function chip(x, i, opts) {
 }
 function soloStart() {
   SO.log = []; SO.sel = []; SO.extra = {};
-  SO.it = soloGame(S.A.X, S.B.X, Object.assign({ aFirst: SO.aFirst, swapLevel: S.lv, log: t => SO.log.push(t) }, betOpt()));
+  SO.seed = (Math.floor(Math.random() * 4294967296) ^ Date.now()) >>> 0; SO.ans = []; SO.rec = false; LA.rows = null;
+  SO.repOpt = Object.assign({ aFirst: SO.aFirst, swapLevel: S.lv }, betOpt());
+  SO.it = soloGame(S.A.X, S.B.X, Object.assign({}, SO.repOpt, { rnd: laRng(SO.seed), log: t => SO.log.push(t) }));
   soloStep(undefined);
 }
 function soloStep(ans) {
+  if (SO.rec) SO.ans.push(ans); SO.rec = true; LA.rows = null; LA.stop = true;
   const r = SO.it.next(ans);
   SO.req = r.done ? null : r.value; SO.sel = SO.req && (SO.req.type === "zoneReveal" || SO.req.type === "revealPick" || SO.req.type === "pick") ? (SO.req.suggest || []).slice() : SO.req && SO.req.type === "scry" ? SO.req.cards.map((x, i) => i) : []; SO.extra = {};
   render();
@@ -4399,7 +4509,7 @@ function vSolo() {
     case "end":
       panel = `<h3>試合終了：${q.ctx.R.A.score} - ${q.ctx.R.B.score}（${esc(q.result)}）</h3><button class="primary" data-act="again">もう一度</button>`; break;
   }
-  return boardHtml(q) + `<div class="panel" style="background:var(--panel-2)">${panel}</div>
+  return boardHtml(q) + `<div class="panel" style="background:var(--panel-2)">${panel}${q.type === "defPlace" || q.type === "atkSelect" ? laHtml(q) : ""}</div>
     <h3>あなたの手札（${me.hand.length}枚）</h3><div class="small muted">${me.hand.map(x => esc(x.name)).join("・")}</div>
     <h3>記録</h3><div class="small" id="solog" style="max-height:260px;overflow:auto">${SO.log.slice(-60).map(esc).join("<br>")}</div>`;
 }
@@ -4419,6 +4529,8 @@ function wireSolo() {
     const a = b.dataset.act, sel = SO.sel.slice();
     if (a === "step") { SO.extra.step = b.dataset.s || true; SO.sel = []; return render(); }
     if (a === "back") { SO.extra = {}; SO.sel = []; return render(); }
+    if (a === "la" || a === "laWin") { laRun(a === "laWin"); return; }
+    if (a === "laPick") { const c = LA.rows && LA.rows[+b.dataset.k]; if (c) { SO.sel = c.idx.slice(); LA.pickAttr = c.attr || null; } return render(); }
     switch (q.type) {
       case "mulligan": return soloStep({ idx: a === "ok" ? sel : [] });
       case "atkPre": return soloStep(a === "zone" ? { zone: true } : a === "pinch" ? { pinch: b.dataset.no } : {});
