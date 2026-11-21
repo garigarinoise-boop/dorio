@@ -4340,10 +4340,10 @@ function laRun(withWin) {
   const rows = laCands(q); if (!rows.length) return;
   const da = JSON.stringify(S.A.raw), db = JSON.stringify(S.B.raw), base = { ka: laKey(S.A.raw), da, kb: laKey(S.B.raw), db, seed: SO.seed, opt: SO.repOpt, answers: SO.ans.slice() };
   const jobs = [];
-  rows.forEach((c, k) => { c.me = 0; c.op = 0; c.n = 0; c.w = 0; c.wn = 0; for (let r = 0; r < LA_NR; r++) jobs.push({ k, cand: c.ans, rseed: (SO.seed * 7919 + SO.ans.length * 131 + r) >>> 0, stopHalf: true, wantPlan: true }); });
+  rows.forEach((c, k) => { c.me = 0; c.op = 0; c.n = 0; c.w = 0; c.wn = 0; c.z = 0; for (let r = 0; r < LA_NR; r++) jobs.push({ k, cand: c.ans, rseed: (SO.seed * 7919 + SO.ans.length * 131 + r) >>> 0, stopHalf: true, wantPlan: true }); });
   LA.rows = rows; LA.key = SO.ans.length; LA.running = true; LA.done = 0; LA.total = jobs.length + (withWin ? 3 * LA_WIN : 0); LA.stop = false; LA.win = !!withWin; LA.plans = rows.map(() => []);
   const pool = laPool(); let next = 0, inflight = 0, phase2 = false;
-  const finish = () => { LA.running = false; render(); };
+  const finish = () => { LA.running = false; laRecord(q); render(); };
   const startWin = () => { // 期待値の上位3つだけ、試合の最後まで回して勝率を出す
     phase2 = true; const order = laOrder(q); order.slice(0, 3).forEach(c => { const k = rows.indexOf(c); for (let r = 0; r < LA_WIN; r++) jobs.push({ k, cand: c.ans, rseed: (SO.seed * 104729 + SO.ans.length * 7 + r) >>> 0, stopHalf: false, win: true }); });
   };
@@ -4355,7 +4355,7 @@ function laRun(withWin) {
   };
   pool.forEach(w => { w.onmessage = e => {
     const m = e.data, j = jobs[m.id], c = rows[j.k]; inflight--; LA.done++;
-    if (m.err) c.err = m.err; else if (j.win) { c.w += m.res; c.wn++; } else { c.me += m.me; c.op += m.op; c.n++; if (m.plan) LA.plans[j.k].push(m.plan); }
+    if (m.err) c.err = m.err; else if (j.win) { c.w += m.res; c.wn++; } else { c.me += m.me; c.op += m.op; c.n++; if (q.type === "defPlace" ? m.op === 0 : m.me >= 1) c.z++; if (m.plan) LA.plans[j.k].push(m.plan); }
     if (LA.done % 16 === 0) render();
     give(w);
   }; });
@@ -4368,6 +4368,20 @@ function laPlan(k) {
   (LA.plans[k] || []).forEach(p => { let st = 0; p.forEach(l => { const side = l[0], m = l.slice(1).match(/^CPU｜(.+?)（(ミート|強振)）［(.*?)］AP (\d+) vs DP (\d+) ［(.*?)］.*?→ (.*)$/); if (!m) return; const mine = side === "A" ? `${m[1]}（${m[2]}）に ${m[3]}` : `${m[1]} に ${m[6]}`; if (st === 0) { st++; return; } const i = st++ - 1; if (i > 2) return; (cnt[i] = cnt[i] || {})[mine] = ((cnt[i] || {})[mine] || 0) + 1; }); });
   return cnt.map((o, i) => { const e = Object.entries(o).sort((a, b) => b[1] - a[1])[0]; return e ? `${i + 1}手後：${esc(e[0])}（${e[1]}/${(LA.plans[k] || []).length}回）` : ""; }).filter(Boolean);
 }
+// 予想と結果：その回で最初に先読みした時の一番上の案の予想を残し、回が終わったら実際の点と並べる
+function laRecord(q) {
+  const c = q.ctx, key = c.inn + (c.top ? "表" : "裏"); SO.preds = SO.preds || {};
+  if (SO.preds[key]) return;
+  const best = laOrder(q)[0]; if (!best) return;
+  const def = q.type === "defPlace";
+  SO.preds[key] = { key, inn: c.inn, top: c.top, atkKey: c.atkKey, def, outs: c.half.outs, e: def ? best.op / best.n : best.me / best.n, p: best.z / best.n, label: best.label };
+}
+function laPredHtml(q) {
+  const P = SO.preds || {}, ks = Object.keys(P); if (!ks.length) return "";
+  const c = q.ctx, rows = ks.map(k => { const p = P[k], done = c.inn > p.inn || (c.inn === p.inn && p.top && !c.top) || q.type === "end"; const act = c.line[p.atkKey][p.inn - 1];
+    return `<tr><td>${esc(k)}</td><td>${p.def ? "守備" : "攻撃"}（${p.outs}アウトから）</td><td class="n num">${p.e.toFixed(2)}点</td><td class="n num">${p.def ? "無失点" : "1点以上"} ${(p.p * 100).toFixed(0)}%</td><td class="n num">${done && act != null ? `<b>${act}点</b>` : "（この回の途中）"}</td></tr>`; }).join("");
+  return `<details class="small" style="margin-top:6px" open><summary>この試合の予想と結果（その回で最初に先読みした時の、一番上の案の予想）</summary><table class="small" style="width:auto"><thead><tr><th>回</th><th></th><th class="n">予想</th><th class="n"></th><th class="n">実際</th></tr></thead><tbody>${rows}</tbody></table></details>`;
+}
 function laHtml(q) {
   if (!S.A || !S.A.raw || !S.B || !S.B.raw || SO.seed == null) return "";
   let h = `<div style="margin-top:10px;border-top:1px solid var(--line);padding-top:8px"><div class="row small" style="gap:8px;align-items:center"><button data-act="la" ${LA.running ? "disabled" : ""}>先読みで比べる</button><button data-act="laWin" ${LA.running ? "disabled" : ""}>勝率も見る（時間がかかります）</button><span class="muted">候補ごとに、相手の見えない札を混ぜ直して先を${LA_NR}回打たせます（札を出した後は自分も CPU の型で打ちます）</span></div>`;
@@ -4375,8 +4389,8 @@ function laHtml(q) {
   if (LA.rows && LA.key === SO.ans.length) {
     const ord = laOrder(q), def = q.type === "defPlace";
     if (ord.length) {
-      h += `<table class="small" style="width:auto;margin-top:6px"><thead><tr><th>候補</th><th class="n">${def ? "この回の期待失点" : "この回の期待得点"}</th>${LA.win ? `<th class="n">勝率</th>` : ""}<th></th><th></th></tr></thead><tbody>`;
-      ord.forEach((c, i) => { const k = LA.rows.indexOf(c); h += `<tr${i === 0 ? ' style="font-weight:bold"' : ""}><td>${esc(c.label)}</td><td class="n num">${(def ? c.op / c.n : c.me / c.n).toFixed(2)}</td>${LA.win ? `<td class="n num">${c.wn ? (c.w / c.wn * 100).toFixed(0) + "%" : ""}</td>` : ""}<td class="muted">${esc(c.note)}</td><td><button data-act="laPick" data-k="${k}">この札を選ぶ</button></td></tr>`; });
+      h += `<table class="small" style="width:auto;margin-top:6px"><thead><tr><th>候補</th><th class="n">${def ? "この回の期待失点" : "この回の期待得点"}</th><th class="n">${def ? "無失点の確率" : "1点以上の確率"}</th>${LA.win ? `<th class="n">勝率</th>` : ""}<th></th><th></th></tr></thead><tbody>`;
+      ord.forEach((c, i) => { const k = LA.rows.indexOf(c); h += `<tr${i === 0 ? ' style="font-weight:bold"' : ""}><td>${esc(c.label)}</td><td class="n num">${(def ? c.op / c.n : c.me / c.n).toFixed(2)}</td><td class="n num">${(c.z / c.n * 100).toFixed(0)}%</td>${LA.win ? `<td class="n num">${c.wn ? (c.w / c.wn * 100).toFixed(0) + "%" : ""}</td>` : ""}<td class="muted">${esc(c.note)}</td><td><button data-act="laPick" data-k="${k}">この札を選ぶ</button></td></tr>`; });
       h += `</tbody></table>`;
       const pl = laPlan(LA.rows.indexOf(ord[0]));
       if (pl.length) h += `<p class="small" style="margin-top:6px"><b>一番上の案の続き（この回）</b><br>${pl.join("<br>")}</p>`;
@@ -4384,7 +4398,7 @@ function laHtml(q) {
       h += `<p class="small muted">数字は ${LA_NR} 回の平均で、ぶれます（0.2 くらいの差は同じと見てください）。相手の伏せた札・手札は分からない前提で混ぜ直しています。</p>`;
     }
   }
-  return h + `</div>`;
+  return h + laPredHtml(q) + `</div>`;
 }
 const nmC = x => String(x && x.name || "").replace(/[\s　]/g, "");
 function supTag(x) {
@@ -4399,7 +4413,7 @@ function chip(x, i, opts) {
 }
 function soloStart() {
   SO.log = []; SO.sel = []; SO.extra = {};
-  SO.seed = (Math.floor(Math.random() * 4294967296) ^ Date.now()) >>> 0; SO.ans = []; SO.rec = false; LA.rows = null;
+  SO.seed = (Math.floor(Math.random() * 4294967296) ^ Date.now()) >>> 0; SO.ans = []; SO.rec = false; LA.rows = null; SO.preds = {};
   SO.repOpt = Object.assign({ aFirst: SO.aFirst, swapLevel: S.lv }, betOpt());
   SO.it = soloGame(S.A.X, S.B.X, Object.assign({}, SO.repOpt, { rnd: laRng(SO.seed), log: t => SO.log.push(t) }));
   soloStep(undefined);
@@ -4507,7 +4521,7 @@ function vSolo() {
       <button class="primary" data-act="next">次へ</button>`; break;
     }
     case "end":
-      panel = `<h3>試合終了：${q.ctx.R.A.score} - ${q.ctx.R.B.score}（${esc(q.result)}）</h3><button class="primary" data-act="again">もう一度</button>`; break;
+      panel = `<h3>試合終了：${q.ctx.R.A.score} - ${q.ctx.R.B.score}（${esc(q.result)}）</h3>${laPredHtml(q)}<button class="primary" data-act="again">もう一度</button>`; break;
   }
   return boardHtml(q) + `<div class="panel" style="background:var(--panel-2)">${panel}${q.type === "defPlace" || q.type === "atkSelect" ? laHtml(q) : ""}</div>
     <h3>あなたの手札（${me.hand.length}枚）</h3><div class="small muted">${me.hand.map(x => esc(x.name)).join("・")}</div>
