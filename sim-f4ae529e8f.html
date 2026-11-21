@@ -3022,7 +3022,7 @@ function simRun_(SA, SB, opt) {
     var unseen = def.deck.length + hB.length + dCards.length, kLeft = Math.max(0, killTotal - killSeen), hN = hB.length + dCards.length;
     var pNone = 1; for (var kq = 0; kq < hN && unseen - kq > 0; kq++) pNone *= Math.max(0, (unseen - kLeft - kq)) / (unseen - kq);
     var pKill = (1 - pNone) * (risp ? 0.85 : 0.3);
-    if (readNew(atk)) pKill = Math.min(0.95, pKill * (1 + 0.12 * Math.min(5, gainR(atk, b, atk)))); // 強い覚醒ほど相手は勝負師を張ってくる（その裏をかく）
+    if (readNew(atk)) pKill = Math.min(0.95, pKill * (1 + 0.12 * Math.min(5, gainR(atk, b, atk)))); pKill = Math.min(pKill, 0.3); /* 勝負師・威圧を張られる見込みは3割まで：怖がって覚醒札を引っ込めすぎていた（2026-11-22 測定：対20デッキ +28.6→+35.5） */ // 強い覚醒ほど相手は勝負師を張ってくる（その裏をかく）
     // 偶数・奇数で AP が変わる打者（泉口・吉川・キャベッジ）：伏せる札のコストの合計も見て選ぶ
     var parAP = function (s) { if (!bfx.parity) return 0; var q = bfx.parity[costSum(atk, s) % 2 === 0 ? 'even' : 'odd'] || {}; return (q.ap || 0) + (q.dice || 0) * 0.5; };
     var withRisk = function (s, a, base0) {
