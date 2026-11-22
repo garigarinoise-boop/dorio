@@ -2462,7 +2462,7 @@ function simRun_(SA, SB, opt) {
     var final = half.inn >= finalInn, base = half.base, risp = !!(base[1] || base[2]), runner = !!(base[0] || base[1] || base[2]);
     var diff = atk.score - def.score;
     // TP の残し方：継投（抑えか中継ぎがいて、まだ交代していない）・ZONE（まだ使っていない）のぶん
-    var reserve = function (T) { return ((T.S.closer || T.S.middle) && !T.relieved ? 1 : 0) + (T.S.zoneRow && !T.zoneUsed && T.S.zoneFor ? 1 : 0); };
+    var reserve = function (T) { return ((T.S.closer || T.S.middle) && !T.relieved && !T.lineup.some(function (v) { return v.no === 'BP01-DB04'; }) ? 1 : 0) + (T.S.zoneRow && !T.zoneUsed && T.S.zoneFor ? 1 : 0); };
     // ZONE：TP1。チームカードのドロー（ロッテ）。【ZONE③】は山札の上から3枚公開して2枚まで手札へ（人は公開した札から選ぶので、公開した札を返す）
     var zoneDrawFirst = function (zRow) { var zf0 = atk.S.fx(zRow || atk.S.zoneRow), D = atk.deck.length; return !(zf0.zoneReveal && D >= 2 && D <= zf0.zoneReveal.n); };
     var zoneDo = function (manual, zRow, drawFirst) {
