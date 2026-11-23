@@ -2525,7 +2525,7 @@ function simRun_(SA, SB, opt) {
     var cpuPinch = function () {
       if (!(!opt.noPinch && final && (risp || diff < 0) && atk.tp - reserve(atk) >= 1 && !(String(opt.tpHoldOld || '').indexOf(atk.key) < 0 && atk.lineup.some(function (v) { var kf = atk.S.fx(atk.S.rowOf[v.no] || v).kidou; return kf && kf.type === 'revealTPN' && v.no !== b.no && (atk.abSeen[v.no] || 0) < 2 && atk.tp - 1 < kf.bonusAt + 1; })))) return;
         var bestP = null, bestV = -99, sitP = { runner: runner, risp: risp, norunner: !runner, behind: diff < 0, lead: diff > 0, pinch: true };
-        var cur = Math.max(calc(b, [], 'ミート', Object.assign({}, sitP, { pinch: false })), calc(b, [], '強振', Object.assign({}, sitP, { pinch: false })));
+        var cur = Math.max(calc(b, [], 'ミート', Object.assign({}, sitP, { pinch: false })), calc(b, [], '強振', Object.assign({}, sitP, { pinch: false }))); if (String(opt.pinchOld || '').indexOf(atk.key) < 0 && hA.some(function (x) { return x.no === b.no; })) cur += awkGainOf(atk, b) * 0.7; /* 今の打者の覚醒札が手札にあれば、代打の側と同じく値に足す（2026-11-23 ユーザー指摘：宮﨑を京田に代えた） */
         pinchCands().forEach(function (pp) {
           var v = Math.max(calc(pp, [], 'ミート', sitP), calc(pp, [], '強振', sitP)) + (atk.S.fx(atk.S.rowOf[pp.no] || pp).pinchBehindAP && diff < 0 ? -diff : 0);
           batDice_((atk.S.rowOf[pp.no] || {}).eff).forEach(function (e) { if (e.kind === 'pinch') v += e.n * 0.6; });
